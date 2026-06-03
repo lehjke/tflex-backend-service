@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T-FLEX Drawing Service</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>T-FLEX Drawing Service</h1>
+      <p>Очередь параметрической генерации чертежей</p>
+    </div>
+    <span class="badge">MVP</span>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Новое задание</h2>
+      </div>
+
+      <form id="jobForm">
+        <div class="form-grid">
+          <label class="field">
+            <span class="field__label">Шаблон</span>
+            <select id="templateSelect" name="templateId"></select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Формат</span>
+            <select id="formatSelect" name="outputFormat"></select>
+          </label>
+        </div>
+
+        <div id="parametersForm" class="parameters"></div>
+
+        <button id="submitButton" class="primary" type="submit">Создать задание</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Статус</h2>
+      </div>
+      <div id="statusPanel" class="empty">Нет активного задания</div>
+    </section>
+
+    <section class="panel panel--wide">
+      <div class="panel__header">
+        <h2>Последние задания</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Шаблон</th>
+              <th>Статус</th>
+              <th>Формат</th>
+              <th>Создано</th>
+              <th>Файлы</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

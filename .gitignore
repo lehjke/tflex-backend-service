@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+.vscode/
+.DS_Store
+
+storage/**/*.db
+storage/**/*.db-shm
+storage/**/*.db-wal
+storage/jobs/*
+storage/generated/*
+!storage/jobs/.gitkeep
+!storage/generated/.gitkeep
+
+*.user
+*.suo

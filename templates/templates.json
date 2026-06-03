@@ -1,0 +1,74 @@
+{
+  "templates": [
+    {
+      "id": "frame_drawing",
+      "code": "frame_drawing",
+      "name": "Чертеж рамы",
+      "description": "Параметрический чертеж рамы по ширине, высоте и толщине профиля",
+      "templateFilePath": "templates/frame/frame_template.grb",
+      "outputFormats": ["pdf", "dwg", "dxf"],
+      "parameters": [
+        {
+          "name": "WIDTH",
+          "displayName": "Ширина",
+          "type": "number",
+          "unit": "mm",
+          "isRequired": true,
+          "minValue": 100,
+          "maxValue": 5000,
+          "defaultValue": 1000,
+          "description": "Габаритная ширина изделия"
+        },
+        {
+          "name": "HEIGHT",
+          "displayName": "Высота",
+          "type": "number",
+          "unit": "mm",
+          "isRequired": true,
+          "minValue": 100,
+          "maxValue": 5000,
+          "defaultValue": 800,
+          "description": "Габаритная высота изделия"
+        },
+        {
+          "name": "PROFILE_THICKNESS",
+          "displayName": "Толщина профиля",
+          "type": "number",
+          "unit": "mm",
+          "isRequired": true,
+          "minValue": 1,
+          "maxValue": 100,
+          "defaultValue": 8,
+          "description": "Толщина профиля рамы"
+        },
+        {
+          "name": "MATERIAL",
+          "displayName": "Материал",
+          "type": "string",
+          "isRequired": true,
+          "allowedValues": ["Сталь", "Алюминий"],
+          "defaultValue": "Сталь",
+          "description": "Материал изделия"
+        }
+      ]
+    },
+    {
+      "id": "lehy_l_pro_320_1050",
+      "code": "lehy_l_pro_320_1050",
+      "name": "LEHY-L-PRO [320-1050]",
+      "description": "Главный T-FLEX шаблон LEHY-L-PRO [320-1050] с одноименной папкой фрагментов",
+      "templateFilePath": "templates/LEHY-L-PRO [320-1050].grb",
+      "outputFormats": ["pdf", "dwg", "dxf"],
+      "parameters": []
+    },
+    {
+      "id": "lehy_l_pro_1050_2500",
+      "code": "lehy_l_pro_1050_2500",
+      "name": "LEHY-L-PRO [1050-2500]",
+      "description": "Главный T-FLEX шаблон LEHY-L-PRO [1050-2500] с одноименной папкой фрагментов",
+      "templateFilePath": "templates/LEHY-L-PRO [1050-2500].grb",
+      "outputFormats": ["pdf", "dwg", "dxf"],
+      "parameters": []
+    }
+  ]
+}

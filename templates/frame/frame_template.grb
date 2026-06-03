@@ -1,0 +1,4 @@
+Mock T-FLEX template placeholder.
+
+Replace this file with a real T-FLEX CAD template file.
+The service copies this source file into storage/jobs/{jobId} before generation.
