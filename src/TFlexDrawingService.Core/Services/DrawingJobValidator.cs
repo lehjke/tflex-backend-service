@@ -55,7 +55,7 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
                     continue;
                 }
 
-                if (HasDefaultValue(definition))
+                if (definition.SubmitDefault && HasDefaultValue(definition))
                 {
                     if (TryNormalizeParameter(definition, definition.DefaultValue!.Value, errors, out var defaultValue))
                     {

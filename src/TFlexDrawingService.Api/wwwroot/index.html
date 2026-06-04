@@ -4,21 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>T-FLEX Drawing Service</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=20260604-pit-near-shaft">
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>T-FLEX Drawing Service</h1>
-      <p>Очередь параметрической генерации чертежей</p>
-    </div>
-    <span class="badge">MVP</span>
+    <a class="brand" href="#jobForm" aria-label="T-FLEX Drawing Service">
+      <span class="brand__name">T-FLEX</span>
+      <span class="brand__suffix">Drawing Service</span>
+    </a>
+
+    <nav class="topbar__nav" aria-label="Разделы">
+      <a href="#jobForm">Конфигуратор</a>
+      <a href="#statusPanel">Статус</a>
+      <a href="#jobsPanel">История</a>
+    </nav>
+
+    <button class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
   </header>
 
   <main class="layout">
-    <section class="panel">
+    <nav class="breadcrumbs" aria-label="Навигация">
+      <span>Главная страница</span>
+      <span aria-hidden="true">→</span>
+      <span>Онлайн-инструменты</span>
+      <span aria-hidden="true">→</span>
+      <span>Конфигуратор чертежей</span>
+    </nav>
+
+    <section class="intro">
+      <h1>Строительные задания</h1>
+      <p>Параметры T-FLEX шаблона для выпуска PDF, DWG или DXF.</p>
+    </section>
+
+    <section class="panel panel--config">
       <div class="panel__header">
         <h2>Новое задание</h2>
+        <button class="secondary" type="reset" form="jobForm">Начать заново</button>
       </div>
 
       <form id="jobForm">
@@ -36,18 +57,20 @@
 
         <div id="parametersForm" class="parameters"></div>
 
+        <div id="validationPanel" class="validation-panel" hidden></div>
+
         <button id="submitButton" class="primary" type="submit">Создать задание</button>
       </form>
     </section>
 
-    <section class="panel">
+    <section class="panel panel--status">
       <div class="panel__header">
         <h2>Статус</h2>
       </div>
       <div id="statusPanel" class="empty">Нет активного задания</div>
     </section>
 
-    <section class="panel panel--wide">
+    <section id="jobsPanel" class="panel panel--wide">
       <div class="panel__header">
         <h2>Последние задания</h2>
       </div>
@@ -69,6 +92,6 @@
     </section>
   </main>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=20260604-pit-near-shaft"></script>
 </body>
 </html>

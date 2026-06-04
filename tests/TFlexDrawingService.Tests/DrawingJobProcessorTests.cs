@@ -60,7 +60,10 @@ public sealed class DrawingJobProcessorTests
             OutputFormat = "pdf",
             InputParametersJson = JsonSerializer.Serialize(new Dictionary<string, object?>
             {
-                ["WIDTH"] = 1000
+                ["WIDTH"] = 1000,
+                ["$Oboznach"] = "L1",
+                ["TR"] = 30,
+                ["$Address"] = "г. Москва, ул. Мира 21\r\n(Корпус 1)"
             })
         };
 
@@ -82,6 +85,8 @@ public sealed class DrawingJobProcessorTests
         Assert.Equal(DrawingJobStatus.Completed, savedJob.Status);
         Assert.Single(savedJob.ResultFiles);
         Assert.True(File.Exists(savedJob.ResultFiles[0].Path));
+        Assert.Equal("L1 (30) - г. Москва, ул. Мира 21 (Корпус 1).pdf", savedJob.ResultFiles[0].FileName);
+        Assert.EndsWith(savedJob.ResultFiles[0].FileName, savedJob.ResultFiles[0].Path);
         Assert.Equal(originalTemplateContent, await File.ReadAllTextAsync(templatePath));
         Assert.True(File.Exists(Path.Combine(savedJob.WorkingDirectory!, "template.grb")));
         Assert.True(File.Exists(Path.Combine(savedJob.WorkingDirectory!, "template", "fragment.grb")));

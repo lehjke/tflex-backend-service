@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/TFlexDrawingService.Api/TFlexDrawingService.Api.csproj" />
+    <Project Path="src/TFlexAutomationRunner/TFlexAutomationRunner.csproj" />
     <Project Path="src/TFlexDrawingService.Core/TFlexDrawingService.Core.csproj" />
     <Project Path="src/TFlexDrawingService.Infrastructure/TFlexDrawingService.Infrastructure.csproj" />
     <Project Path="src/TFlexDrawingService.Worker/TFlexDrawingService.Worker.csproj" />

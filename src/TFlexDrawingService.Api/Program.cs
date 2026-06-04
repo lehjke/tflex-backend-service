@@ -10,6 +10,7 @@ var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 };
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options => options.ServiceName = "TFlexDrawingService.Api");
 builder.Services.AddDrawingInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 
 var app = builder.Build();

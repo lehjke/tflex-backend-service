@@ -18,10 +18,17 @@ public sealed class JsonTemplateCatalog(
 
     private readonly SemaphoreSlim _lock = new(1, 1);
     private IReadOnlyList<DrawingTemplate>? _templates;
+    private DateTimeOffset? _loadedWriteTimeUtc;
 
     public async Task<IReadOnlyList<DrawingTemplate>> ListAsync(CancellationToken cancellationToken = default)
     {
-        if (_templates is not null)
+        if (!File.Exists(options.Value.ConfigPath))
+        {
+            throw new FileNotFoundException("Template configuration file was not found.", options.Value.ConfigPath);
+        }
+
+        var writeTimeUtc = File.GetLastWriteTimeUtc(options.Value.ConfigPath);
+        if (_templates is not null && _loadedWriteTimeUtc == writeTimeUtc)
         {
             return _templates;
         }
@@ -29,14 +36,10 @@ public sealed class JsonTemplateCatalog(
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            if (_templates is not null)
+            writeTimeUtc = File.GetLastWriteTimeUtc(options.Value.ConfigPath);
+            if (_templates is not null && _loadedWriteTimeUtc == writeTimeUtc)
             {
                 return _templates;
-            }
-
-            if (!File.Exists(options.Value.ConfigPath))
-            {
-                throw new FileNotFoundException("Template configuration file was not found.", options.Value.ConfigPath);
             }
 
             await using var stream = File.OpenRead(options.Value.ConfigPath);
@@ -46,6 +49,7 @@ public sealed class JsonTemplateCatalog(
             _templates = catalog.Templates
                 .Select(NormalizeTemplate)
                 .ToArray();
+            _loadedWriteTimeUtc = writeTimeUtc;
 
             return _templates;
         }
