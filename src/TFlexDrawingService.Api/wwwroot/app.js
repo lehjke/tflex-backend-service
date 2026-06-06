@@ -47,10 +47,21 @@ const FIELD_LABEL_OVERRIDES = new Map([
   ["PD", "Приямок"]
 ]);
 const CATEGORY_DISPLAY_ORDER = [
+  "Инфо о проекте",
+  "Общие параметры",
+  "Характеристики",
+  "Параметры эскалатора",
   "Кабина",
   "Двери",
   "Противовес",
   "Шахта",
+  "Ферма",
+  "Опции",
+  "Опоры",
+  "Приямок",
+  "Этаж",
+  "Входные площадки",
+  "Рамка",
   "Приямок и оголовок",
   "Основная надпись",
   "Вертикальный разрез",
@@ -151,6 +162,68 @@ function tflexAtof(value) {
   return toNumber(value);
 }
 
+function tflexVal(value, lookupValue) {
+  return hasValue(lookupValue) ? toNumber(lookupValue) : toNumber(value);
+}
+
+function tflexTan(value) {
+  return Math.tan(toNumber(value) * Math.PI / 180);
+}
+
+function tflexCos(value) {
+  return Math.cos(toNumber(value) * Math.PI / 180);
+}
+
+function tflexSin(value) {
+  return Math.sin(toNumber(value) * Math.PI / 180);
+}
+
+function tflexCeil(value, step = 1) {
+  const number = toNumber(value);
+  const increment = Math.abs(toNumber(step)) || 1;
+  return Math.ceil(number / increment) * increment;
+}
+
+function tflexTpart(value, start, length) {
+  const text = String(value ?? "");
+  const from = Math.max(0, Math.trunc(toNumber(start)) - 1);
+  const count = Math.trunc(toNumber(length));
+  return (count > 0 ? text.slice(from, from + count) : text.slice(from)).trim();
+}
+
+function tflexFtoa(value) {
+  return hasValue(value) ? String(value) : "";
+}
+
+function tflexLtot(value, step = 0.001, sign = 1, precision = 3) {
+  const number = toNumber(value);
+  const decimals = Math.max(0, Math.trunc(toNumber(precision)));
+  return number.toFixed(decimals);
+}
+
+function tflexGet() {
+  return 0;
+}
+
+function tflexGetv() {
+  return 0;
+}
+
+function tflexTgetv(part) {
+  const now = new Date();
+  const key = String(part || "").trim().toUpperCase();
+  const values = {
+    YEAR: now.getFullYear(),
+    MONTH: now.getMonth() + 1,
+    DAY: now.getDate(),
+    HOUR: now.getHours(),
+    MINUTE: now.getMinutes(),
+    SECOND: now.getSeconds()
+  };
+
+  return String(values[key] ?? "");
+}
+
 function tflexSelect(...pairs) {
   for (let index = 0; index < pairs.length - 1; index += 2) {
     if (Boolean(pairs[index])) return pairs[index + 1];
@@ -167,6 +240,10 @@ function tflexRound(value, step = 1) {
 
 function tflexError() {
   return 0;
+}
+
+function tflexWarn() {
+  return 1;
 }
 
 function tflexFind(tableName, fieldName, predicate) {
@@ -273,19 +350,59 @@ function translateFindExpressions(expression) {
   return result;
 }
 
+function truncateTopLevelSemicolon(expression) {
+  const value = String(expression || "");
+  let depth = 0;
+  let quote = null;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const previous = value[index - 1];
+
+    if (quote) {
+      if (char === quote && previous !== "\\") quote = null;
+      continue;
+    }
+
+    if (char === "\"" || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth = Math.max(0, depth - 1);
+    } else if (char === ";" && depth === 0) {
+      return value.slice(0, index).trim();
+    }
+  }
+
+  return value;
+}
+
 function translateTFlexExpression(expression) {
-  return translateFindExpressions(expression)
-    .replace(/\berror\s*\([^)]*\)/g, "tflexError()")
+  return translateFindExpressions(truncateTopLevelSemicolon(expression))
+    .replace(/\b(?:ERROR|error)\s*\([^)]*\)/g, "tflexError()")
+    .replace(/\b(?:WARN|warn)\s*\([^)]*\)/g, "tflexWarn()")
     .replace(/\*\*/g, "*")
     .replace(/\^/g, "**")
-    .replace(/\bswitch\s*\(/g, "tflexSwitch(")
-    .replace(/\bselect\s*\(/g, "tflexSelect(")
-    .replace(/\batof\s*\(/g, "tflexAtof(")
-    .replace(/\bmax\s*\(/g, "Math.max(")
-    .replace(/\bmin\s*\(/g, "Math.min(")
-    .replace(/\babs\s*\(/g, "Math.abs(")
-    .replace(/\bfloor\s*\(/g, "Math.floor(")
-    .replace(/\bround\s*\(/g, "tflexRound(");
+    .replace(/\b(?:switch|SWITCH)\s*\(/g, "tflexSwitch(")
+    .replace(/\b(?:select|SELECT)\s*\(/g, "tflexSelect(")
+    .replace(/\b(?:atof|ATOF)\s*\(/g, "tflexAtof(")
+    .replace(/\b(?:val|VAL)\s*\(/g, "tflexVal(")
+    .replace(/\b(?:TPART|tpart)\s*\(/g, "tflexTpart(")
+    .replace(/\b(?:FTOA2|FTOA|ftoa2|ftoa)\s*\(/g, "tflexFtoa(")
+    .replace(/\b(?:ltot|LTOT)\s*\(/g, "tflexLtot(")
+    .replace(/\b(?:tgetv|TGETV)\s*\(/g, "tflexTgetv(")
+    .replace(/\b(?:getv|GETV)\s*\(/g, "tflexGetv(")
+    .replace(/\b(?:GET|get)\s*\(/g, "tflexGet(")
+    .replace(/\b(?:max|MAX)\s*\(/g, "Math.max(")
+    .replace(/\b(?:min|MIN)\s*\(/g, "Math.min(")
+    .replace(/\b(?:abs|ABS)\s*\(/g, "Math.abs(")
+    .replace(/\b(?:floor|FLOOR)\s*\(/g, "Math.floor(")
+    .replace(/\b(?:ceil|CEIL)\s*\(/g, "tflexCeil(")
+    .replace(/\b(?:tan|TAN)\s*\(/g, "tflexTan(")
+    .replace(/\b(?:cos|COS)\s*\(/g, "tflexCos(")
+    .replace(/\b(?:sin|SIN)\s*\(/g, "tflexSin(")
+    .replace(/\b(?:round|ROUND)\s*\(/g, "tflexRound(");
 }
 
 function evaluateFormulaExpression(expression, context) {
@@ -298,11 +415,42 @@ function evaluateFormulaExpression(expression, context) {
       "tflexSwitch",
       "tflexSelect",
       "tflexAtof",
+      "tflexVal",
       "tflexRound",
+      "tflexCeil",
+      "tflexTan",
+      "tflexCos",
+      "tflexSin",
+      "tflexTpart",
+      "tflexFtoa",
+      "tflexLtot",
+      "tflexGet",
+      "tflexGetv",
+      "tflexTgetv",
       "tflexError",
+      "tflexWarn",
       "tflexFind",
       `with (context) { return (${translated}); }`
-    )(context, tflexSwitch, tflexSelect, tflexAtof, tflexRound, tflexError, tflexFind);
+    )(
+      context,
+      tflexSwitch,
+      tflexSelect,
+      tflexAtof,
+      tflexVal,
+      tflexRound,
+      tflexCeil,
+      tflexTan,
+      tflexCos,
+      tflexSin,
+      tflexTpart,
+      tflexFtoa,
+      tflexLtot,
+      tflexGet,
+      tflexGetv,
+      tflexTgetv,
+      tflexError,
+      tflexWarn,
+      tflexFind);
   } catch {
     return undefined;
   }
@@ -482,6 +630,11 @@ function applyReadOnlyExpressions(context) {
 
 function buildLevelContext() {
   const context = {
+    Electric: {
+      Heat: 0,
+      Heat_Rel: 0,
+      Regen: 0
+    },
     name: 0,
     level: 0,
     main: 0,
@@ -619,6 +772,10 @@ function resolveParameterDependencies(token, definitionMap, parameterNames, visi
 }
 
 function getValidationFieldNames(rule) {
+  if (Array.isArray(rule.fieldNames) && rule.fieldNames.length > 0) {
+    return rule.fieldNames;
+  }
+
   const parameterNames = getParameterNameSet();
   const definitionMap = getTemplateDefinitionMap();
   const messageFields = extractMessageExpressionTokens(rule.message)
@@ -633,9 +790,12 @@ function getValidationFieldNames(rule) {
   for (const token of extractIdentifierTokens(rule.expression)) {
     if (parameterNames.has(token)) {
       fields.add(token);
-      continue;
     }
+  }
 
+  if (fields.size > 0) return [...fields];
+
+  for (const token of extractIdentifierTokens(rule.expression)) {
     for (const dependency of resolveParameterDependencies(token, definitionMap, parameterNames)) {
       fields.add(dependency);
     }
@@ -1100,11 +1260,17 @@ function wireParameterInput(input, parameter, isDisabled) {
   input.dataset.parameterName = parameter.name;
   input.disabled = isDisabled;
   input.required = Boolean(parameter.isRequired) && !input.disabled;
-  input.addEventListener("change", () => {
+  const handleParameterChange = () => {
     const focusTarget = getInputFocusTarget(input);
     state.parameterValues[parameter.name] = readInputValue(input, parameter);
     renderParametersAfterInputChange(focusTarget);
-  });
+  };
+
+  if (input.tagName === "INPUT" || input.tagName === "TEXTAREA") {
+    input.addEventListener("input", handleParameterChange);
+  }
+
+  input.addEventListener("change", handleParameterChange);
 }
 
 function createParameterInput(parameter, context) {
