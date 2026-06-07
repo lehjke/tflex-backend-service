@@ -46,6 +46,7 @@ $ErrorActionPreference = "Stop"
 
 $NetFx472DeveloperPackUrl = "https://go.microsoft.com/fwlink/?linkid=874338"
 $DotNetInstallScriptUrl = "https://dot.net/v1/dotnet-install.ps1"
+$VisualStudioBuildToolsUrl = "https://aka.ms/vs/17/release/vs_buildtools.exe"
 
 function Write-Step {
     param([string]$Message)
@@ -207,6 +208,24 @@ function Test-NetFx472TargetingPack {
     return Test-Path -LiteralPath $path
 }
 
+function Install-VsBuildToolsNetFx472TargetingPack {
+    New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+    $installerPath = Join-Path $WorkDir "vs_buildtools.exe"
+    Invoke-WebRequest -Uri $VisualStudioBuildToolsUrl -OutFile $installerPath -UseBasicParsing
+
+    $exitCode = Invoke-Native -FilePath $installerPath -Arguments @(
+        "--quiet",
+        "--wait",
+        "--norestart",
+        "--nocache",
+        "--add", "Microsoft.Net.Component.4.7.2.TargetingPack"
+    ) -AllowedExitCodes @(0, 3010, 1641)
+
+    if ($exitCode -eq 3010 -or $exitCode -eq 1641) {
+        Write-Warning "Visual Studio Build Tools requested a reboot."
+    }
+}
+
 function Install-NetFx472DeveloperPack {
     if (Test-NetFx472TargetingPack) {
         return
@@ -215,13 +234,21 @@ function Install-NetFx472DeveloperPack {
     New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
     $installerPath = Join-Path $WorkDir "NDP472-DevPack-ENU.exe"
     Invoke-WebRequest -Uri $NetFx472DeveloperPackUrl -OutFile $installerPath -UseBasicParsing
-    $exitCode = Invoke-Native -FilePath $installerPath -Arguments @("/quiet", "/norestart") -AllowedExitCodes @(0, 3010, 1641)
+    $exitCode = Invoke-Native -FilePath $installerPath -Arguments @("/q", "/norestart") -AllowedExitCodes @(0, 3010, 1641, 1638, 5100)
     if ($exitCode -eq 3010 -or $exitCode -eq 1641) {
         Write-Warning ".NET Framework 4.7.2 Developer Pack requested a reboot."
     }
+    elseif ($exitCode -eq 1638 -or $exitCode -eq 5100) {
+        Write-Warning ".NET Framework 4.7.2 Developer Pack was blocked because another/newer .NET Framework is already installed."
+    }
 
     if (-not (Test-NetFx472TargetingPack)) {
-        throw ".NET Framework 4.7.2 targeting pack was not found after installation."
+        Write-Warning ".NET Framework 4.7.2 Developer Pack did not add reference assemblies. Trying Visual Studio Build Tools targeting pack component."
+        Install-VsBuildToolsNetFx472TargetingPack
+    }
+
+    if (-not (Test-NetFx472TargetingPack)) {
+        throw ".NET Framework 4.7.2 targeting pack was not found after installation. Check Visual Studio Installer logs or pass -SkipRunnerBuild with a prebuilt runner."
     }
 }
 

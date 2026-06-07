@@ -98,13 +98,13 @@ function Install-OrUpdateService {
     )
 
     if (Test-ServiceExists $Name) {
-        Invoke-Sc @("config", $Name, "binPath= $BinaryPath", "DisplayName= $DisplayName", "start= auto")
+        Invoke-Sc @("config", $Name, "binPath=", $BinaryPath, "DisplayName=", $DisplayName, "start=", "auto")
     }
     else {
-        Invoke-Sc @("create", $Name, "binPath= $BinaryPath", "DisplayName= $DisplayName", "start= auto")
+        Invoke-Sc @("create", $Name, "binPath=", $BinaryPath, "DisplayName=", $DisplayName, "start=", "auto")
     }
 
-    Invoke-Sc @("failure", $Name, "reset= 86400", "actions= restart/60000/restart/60000/restart/60000")
+    Invoke-Sc @("failure", $Name, "reset=", "86400", "actions=", "restart/60000/restart/60000/restart/60000")
 
     if (-not [string]::IsNullOrWhiteSpace($User)) {
         if ([string]::IsNullOrWhiteSpace($Password)) {
@@ -112,7 +112,7 @@ function Install-OrUpdateService {
             $Password = Get-PlainTextPassword $securePassword
         }
 
-        Invoke-Sc @("config", $Name, "obj= $User", "password= $Password")
+        Invoke-Sc @("config", $Name, "obj=", $User, "password=", $Password)
     }
 }
 
