@@ -22449,7 +22449,7 @@
           "name": "Handmade",
           "displayName": "Опции / Ручная настройка",
           "type": "boolean",
-          "isRequired": true,
+          "isRequired": false,
           "defaultValue": true,
           "expression": "1"
         },
@@ -22478,6 +22478,22 @@
           ]
         },
         {
+          "name": "temp",
+          "displayName": "Температурный режим / Диапазон",
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": -1,
+          "expression": "-1",
+          "allowedValues": [
+            "-1",
+            "1"
+          ],
+          "allowedValueLabels": {
+            "1": "-25...+40 °C",
+            "-1": "+5...+40 °C"
+          }
+        },
+        {
           "name": "Drain_v",
           "displayName": "Опции / Дренаж в приямке",
           "type": "boolean",
@@ -22486,6 +22502,23 @@
           "levelExpression": "-temp",
           "expression": "0",
           "submitDefault": false
+        },
+        {
+          "name": "f_SUP1",
+          "displayName": "Опоры / Режим SUP1",
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": -1,
+          "levelExpression": "((W==600 && TG>18000) || (W==800 && TG>17000) || (W==1000 && TG>16000)) ? 0 : -1",
+          "expression": "-1",
+          "allowedValues": [
+            "-1",
+            "0"
+          ],
+          "allowedValueLabels": {
+            "0": "Вручную",
+            "-1": "Авто"
+          }
         },
         {
           "name": "SUP1_v",
@@ -22498,14 +22531,36 @@
           "submitDefault": false
         },
         {
+          "name": "HGAP",
+          "displayName": "Приямок / Монтажный зазор",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 40,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "W1-W4"
+        },
+        {
           "name": "HGAP_v",
           "displayName": "Приямок / Монтажный зазор",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 40,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "40",
           "submitDefault": false
+        },
+        {
+          "name": "FFL",
+          "displayName": "Этаж / Уровень чистого пола",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 0,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "0"
         },
         {
           "name": "FFL_v",
@@ -22513,7 +22568,7 @@
           "type": "integer",
           "isRequired": false,
           "defaultValue": 0,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "0",
           "submitDefault": false
         },
@@ -22530,6 +22585,23 @@
           "expression": "\"Сбоку\""
         },
         {
+          "name": "f_SUP2",
+          "displayName": "Опоры / Режим SUP2",
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": -1,
+          "levelExpression": "alpha==35? -1 : (Deep_truss == -1 ? (TG+240 > 25000 ? 0 : -1) : (TG+240 > 28000 ? 0 : -1))",
+          "expression": "-1",
+          "allowedValues": [
+            "-1",
+            "0"
+          ],
+          "allowedValueLabels": {
+            "0": "Вручную",
+            "-1": "Авто"
+          }
+        },
+        {
           "name": "SUP2_v",
           "displayName": "Опоры / SUP2",
           "type": "integer",
@@ -22540,12 +22612,23 @@
           "submitDefault": false
         },
         {
+          "name": "Dpit",
+          "displayName": "Приямок / Глубина приямка",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 1250,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "Dpit_min"
+        },
+        {
           "name": "Dpit_v",
           "displayName": "Приямок / Глубина приямка",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 1250,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "1250",
           "submitDefault": false
         },
@@ -22562,12 +22645,23 @@
           "expression": "\"Стекло\""
         },
         {
+          "name": "TK",
+          "displayName": "Входные площадки / Нижняя площадка TK",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 2253,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "TKmin"
+        },
+        {
           "name": "TK_v",
           "displayName": "Входные площадки / Нижняя площадка TK",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 2253,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "2253",
           "submitDefault": false
         },
@@ -22600,14 +22694,36 @@
           "expression": "3900"
         },
         {
+          "name": "Lpit",
+          "displayName": "Приямок / Длина приямка",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 4300,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "Lpit_min"
+        },
+        {
           "name": "Lpit_v",
           "displayName": "Приямок / Длина приямка",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 4300,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "4300",
           "submitDefault": false
+        },
+        {
+          "name": "TJ",
+          "displayName": "Входные площадки / Верхняя площадка TJ",
+          "type": "integer",
+          "isRequired": false,
+          "isReadOnly": true,
+          "submitDefault": false,
+          "defaultValue": 2625,
+          "levelExpression": "Handmade == 1 ? -1 : 0",
+          "expression": "TJmin"
         },
         {
           "name": "TJ_v",
@@ -22615,9 +22731,25 @@
           "type": "integer",
           "isRequired": false,
           "defaultValue": 2625,
-          "levelExpression": "1",
+          "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "2625",
           "submitDefault": false
+        },
+        {
+          "name": "f_Ct",
+          "displayName": "Провозная способность / Режим расчета",
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": 0,
+          "expression": "0",
+          "allowedValues": [
+            "0",
+            "1"
+          ],
+          "allowedValueLabels": {
+            "0": "Теоретическая",
+            "1": "Фактическая"
+          }
         },
         {
           "name": "V_v",
@@ -22632,18 +22764,44 @@
           ]
         },
         {
+          "name": "Lighting",
+          "displayName": "Опции / Подсветка фартука",
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": -1,
+          "expression": "-1",
+          "allowedValues": [
+            "-1",
+            "1"
+          ],
+          "allowedValueLabels": {
+            "1": "Да",
+            "-1": "Нет"
+          }
+        },
+        {
           "name": "Deep_truss",
           "displayName": "Опции / Глубокая ферма",
-          "type": "boolean",
-          "isRequired": true,
-          "defaultValue": false,
-          "expression": "0"
+          "type": "integer",
+          "isRequired": false,
+          "defaultValue": 0,
+          "expression": "0",
+          "allowedValues": [
+            "0",
+            "1",
+            "2"
+          ],
+          "allowedValueLabels": {
+            "0": "Нет",
+            "1": "Глубокая рама",
+            "2": "Глубокая рама (тип Б)"
+          }
         },
         {
           "name": "rev",
           "displayName": "Рамка / Ревизия",
           "type": "boolean",
-          "isRequired": true,
+          "isRequired": false,
           "defaultValue": false,
           "expression": "0"
         },
@@ -22771,7 +22929,7 @@
           "name": "Double_truss",
           "displayName": "Опции / Двойная ферма",
           "type": "boolean",
-          "isRequired": true,
+          "isRequired": false,
           "defaultValue": false,
           "expression": "0"
         }
@@ -23287,12 +23445,6 @@
           "expression": "Handmade==1? FFL_v : 0"
         },
         {
-          "name": "temp",
-          "type": "integer",
-          "defaultValue": -1,
-          "expression": "-1"
-        },
-        {
           "name": "LFL",
           "type": "integer",
           "defaultValue": 3900,
@@ -23467,28 +23619,10 @@
           "expression": "Handmade==1? Dpit_v : Dpit_min"
         },
         {
-          "name": "f_SUP1",
-          "type": "integer",
-          "defaultValue": -1,
-          "expression": "-1"
-        },
-        {
-          "name": "f_SUP2",
-          "type": "integer",
-          "defaultValue": -1,
-          "expression": "-1"
-        },
-        {
           "name": "SUP_n",
           "type": "integer",
           "defaultValue": 0,
           "expression": "2+s1+s2"
-        },
-        {
-          "name": "f_Ct",
-          "type": "integer",
-          "defaultValue": 0,
-          "expression": "0"
         },
         {
           "name": "Ct_teor",
@@ -23507,12 +23641,6 @@
           "type": "integer",
           "defaultValue": 9000,
           "expression": "f_Ct==1? Ct_fact : Ct_teor"
-        },
-        {
-          "name": "Lighting",
-          "type": "integer",
-          "defaultValue": -1,
-          "expression": "-1"
         },
         {
           "name": "$temp",

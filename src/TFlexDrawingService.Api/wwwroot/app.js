@@ -505,6 +505,11 @@ function getAllowedValues(parameter, context) {
   return parameter.allowedValues || [];
 }
 
+function getAllowedValueLabel(parameter, value) {
+  const key = String(value);
+  return parameter.allowedValueLabels?.[key] || key;
+}
+
 function normalizeValueForAllowedList(parameter, value, context) {
   const allowedValues = getAllowedValues(parameter, context);
   if (allowedValues.length === 0 || !hasValue(value)) return value;
@@ -1306,7 +1311,7 @@ function createParameterInput(parameter, context) {
     for (const value of allowedValues) {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = value;
+      option.textContent = getAllowedValueLabel(parameter, value);
       input.append(option);
     }
   } else {

@@ -34,6 +34,8 @@ public sealed class DrawingParameterDefinition
 
     public List<string> AllowedValues { get; set; } = [];
 
+    public Dictionary<string, string> AllowedValueLabels { get; set; } = [];
+
     public string? Description { get; set; }
 
     public bool Multiline { get; set; }
