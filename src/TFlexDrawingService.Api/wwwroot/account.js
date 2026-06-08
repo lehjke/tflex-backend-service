@@ -28,6 +28,7 @@ const adminNavLink = document.querySelector("#adminNavLink");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
+const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -77,6 +78,28 @@ function getTemplate(templateId) {
 function getTemplateLabel(templateId) {
   const template = getTemplate(templateId);
   return template ? (template.name || template.code || template.id) : templateId;
+}
+
+function getConfigurationName(configuration) {
+  const parameters = configuration.parameters || {};
+  for (const name of CONFIGURATION_NAME_PARAMETER_NAMES) {
+    const value = parameters[name];
+    if (value !== null && value !== undefined && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  const template = getTemplate(configuration.templateId);
+  const titleParameter = template?.parameters
+    ?.find(parameter => (parameter.displayName || "").includes("№"));
+  if (titleParameter) {
+    const value = parameters[titleParameter.name];
+    if (value !== null && value !== undefined && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  return configuration.name || "Конфигурация";
 }
 
 function getTemplateFormats(configuration) {
@@ -242,7 +265,7 @@ function createConfigurationsTable(project, configurations) {
       .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
       .join("");
     row.innerHTML = `
-      <td>${escapeHtml(configuration.name)}</td>
+      <td>${escapeHtml(getConfigurationName(configuration))}</td>
       <td>${escapeHtml(getTemplateLabel(configuration.templateId))}</td>
       <td>
         <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
