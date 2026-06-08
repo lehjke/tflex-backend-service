@@ -38,6 +38,7 @@ const saveConfigurationButton = document.querySelector("#saveConfigurationButton
 
 const STOP_CONTROL_NAMES = new Set(["main", "name", "level", "main_floor"]);
 const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$ver"]);
+const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 const STOP_GROUP_LABEL = "\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438";
 const STOP_LOBBY_LABEL = "\u041b\u043e\u0431\u0431\u0438";
 const STOP_FLOOR_LABEL = "\u042d\u0442\u0430\u0436";
@@ -103,6 +104,22 @@ function canCreateJobs() {
 function getTemplateLabel(templateId) {
   const template = state.templates.find(item => item.id === templateId || item.code === templateId);
   return template ? (template.name || template.code || template.id) : templateId;
+}
+
+function getConfigurationName(parameters) {
+  for (const name of CONFIGURATION_NAME_PARAMETER_NAMES) {
+    const value = parameters?.[name] ?? getParameterValueByName(name);
+    if (hasValue(value) && String(value).trim()) return String(value).trim();
+  }
+
+  const titleParameter = state.selectedTemplate?.parameters
+    ?.find(parameter => (parameter.displayName || "").includes("№"));
+  if (titleParameter) {
+    const value = parameters?.[titleParameter.name] ?? getParameterValue(titleParameter);
+    if (hasValue(value) && String(value).trim()) return String(value).trim();
+  }
+
+  return state.selectedTemplate?.name || state.selectedTemplate?.code || state.selectedTemplate?.id || "Конфигурация";
 }
 
 function escapeHtml(value) {
@@ -1795,7 +1812,8 @@ async function saveCurrentConfiguration() {
     return;
   }
 
-  const name = state.selectedTemplate.name || state.selectedTemplate.code || state.selectedTemplate.id;
+  const parameters = collectParameters();
+  const name = getConfigurationName(parameters);
   const response = await apiFetch(`/api/projects/${projectSelect.value}/configurations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1803,7 +1821,7 @@ async function saveCurrentConfiguration() {
       name,
       templateId: state.selectedTemplate.id,
       outputFormat: formatSelect.value,
-      parameters: collectParameters()
+      parameters
     })
   });
 
