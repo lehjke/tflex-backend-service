@@ -1102,7 +1102,9 @@
           "defaultValue": 30000,
           "submitDefault": false,
           "levelExpression": "level==1 ? 1 : -1",
-          "expression": "s01_level+TR*1000"
+          "expression": "s01_level_1+TR*1000",
+          "submitWhenDisabled": true,
+          "isReadOnly": true
         },
         {
           "name": "s_top_rear_1",
@@ -10009,7 +10011,9 @@
           "defaultValue": 30000,
           "submitDefault": false,
           "levelExpression": "level==1 ? 1 : -1",
-          "expression": "s01_level+TR*1000"
+          "expression": "s01_level_1+TR*1000",
+          "submitWhenDisabled": true,
+          "isReadOnly": true
         },
         {
           "name": "s_top_rear_1",
@@ -26258,8 +26262,9 @@
           "isRequired": false,
           "defaultValue": 20000,
           "levelExpression": "level==1 ? 1 : -1",
-          "expression": "s01_level+TR*1000",
+          "expression": "s01_level_1+TR*1000",
           "submitDefault": false,
+          "submitWhenDisabled": true,
           "isReadOnly": true
         },
         {

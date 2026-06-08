@@ -1066,9 +1066,10 @@ function synchronizeAutomaticStopState(stops) {
 }
 
 function getAutomaticStopLevel(index, stops) {
+  const bottomLevel = toNumber(getParameterValueByName("s01_level_1"));
   const travelHeight = toNumber(getParameterValueByName("TR")) * 1000;
   const total = travelHeight > 0 ? travelHeight : (stops - 1) * 6000;
-  return Math.round((total * (index - 1)) / Math.max(1, stops - 1));
+  return bottomLevel + Math.round((total * (index - 1)) / Math.max(1, stops - 1));
 }
 
 function createDisplayInput(value, parameterName = null) {
@@ -1085,11 +1086,17 @@ function createDisplayInput(value, parameterName = null) {
 }
 
 function bindInputChange(input, parameter) {
-  input.addEventListener("change", () => {
+  const handleInputChange = () => {
     const focusTarget = getInputFocusTarget(input);
     state.parameterValues[parameter.name] = readInputValue(input, parameter);
     renderParametersAfterInputChange(focusTarget);
-  });
+  };
+
+  if (input.type !== "checkbox" && input.type !== "radio") {
+    input.addEventListener("input", handleInputChange);
+  }
+
+  input.addEventListener("change", handleInputChange);
 }
 
 function createCompactInput(parameter, options = {}) {
@@ -1238,7 +1245,7 @@ function createStopsTable(context, options = {}) {
 
     const stopLevelParameterName = getStopLevelParameterName(index, stops);
     const levelCell = document.createElement("td");
-    levelCell.append(manualLevels
+    levelCell.append(manualLevels && rowKey !== "s_top"
       ? createStopCellControl(stopLevelParameterName)
       : createDisplayInput(getAutomaticStopLevel(index, stops), stopLevelParameterName));
     row.append(levelCell);
