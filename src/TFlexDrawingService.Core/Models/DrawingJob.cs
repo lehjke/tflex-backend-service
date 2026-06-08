@@ -12,6 +12,8 @@ public sealed class DrawingJob
 
     public string OutputFormat { get; set; } = "pdf";
 
+    public string OwnerUserName { get; set; } = "legacy";
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? StartedAt { get; set; }

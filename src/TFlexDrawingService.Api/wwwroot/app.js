@@ -6,9 +6,26 @@ const state = {
   activeJobId: null,
   pollTimer: null,
   pendingRenderFrame: null,
-  pendingFocusTarget: null
+  pendingFocusTarget: null,
+  currentUser: null,
+  projects: [],
+  configurations: []
 };
 
+const guestMain = document.querySelector("#guestMain");
+const appMain = document.querySelector("#appMain");
+const loginForm = document.querySelector("#loginForm");
+const loginUserName = document.querySelector("#loginUserName");
+const loginPassword = document.querySelector("#loginPassword");
+const registerForm = document.querySelector("#registerForm");
+const registerUserName = document.querySelector("#registerUserName");
+const registerDisplayName = document.querySelector("#registerDisplayName");
+const registerPassword = document.querySelector("#registerPassword");
+const registerStatus = document.querySelector("#registerStatus");
+const userPanel = document.querySelector("#userPanel");
+const currentUserName = document.querySelector("#currentUserName");
+const logoutButton = document.querySelector("#logoutButton");
+const createTopButton = document.querySelector("#createTopButton");
 const templateSelect = document.querySelector("#templateSelect");
 const formatSelect = document.querySelector("#formatSelect");
 const parametersForm = document.querySelector("#parametersForm");
@@ -16,6 +33,8 @@ const submitButton = document.querySelector("#submitButton");
 const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
 const validationPanel = document.querySelector("#validationPanel");
+const projectSelect = document.querySelector("#projectSelect");
+const saveConfigurationButton = document.querySelector("#saveConfigurationButton");
 
 const STOP_CONTROL_NAMES = new Set(["main", "name", "level", "main_floor"]);
 const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$ver"]);
@@ -71,6 +90,76 @@ const CATEGORY_DISPLAY_ORDER = [
   "Этажный указатель",
   "Отделка"
 ];
+
+function isAuthenticated() {
+  return Boolean(state.currentUser?.isAuthenticated);
+}
+
+function canCreateJobs() {
+  const roles = state.currentUser?.roles || [];
+  return roles.includes("Admin") || roles.includes("Operator");
+}
+
+function getTemplateLabel(templateId) {
+  const template = state.templates.find(item => item.id === templateId || item.code === templateId);
+  return template ? (template.name || template.code || template.id) : templateId;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function updateAuthView() {
+  const authenticated = isAuthenticated();
+  guestMain.hidden = authenticated;
+  loginForm.hidden = authenticated;
+  userPanel.hidden = !authenticated;
+  appMain.hidden = !authenticated;
+  createTopButton.hidden = !authenticated || !canCreateJobs();
+  submitButton.hidden = authenticated && !canCreateJobs();
+  saveConfigurationButton.hidden = !authenticated;
+
+  if (authenticated) {
+    currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
+  } else {
+    currentUserName.textContent = "";
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (method !== "GET" && method !== "HEAD") {
+    headers.set("X-TFlex-Requested-With", "fetch");
+  }
+
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+    headers
+  });
+
+  if (response.status === 401) {
+    state.currentUser = null;
+    updateAuthView();
+  }
+
+  return response;
+}
+
+async function readProblem(response, fallback) {
+  try {
+    const problem = await response.json();
+    return problem.errors?.request || [problem.detail || problem.title || fallback];
+  } catch {
+    return [fallback];
+  }
+}
 
 function formatDate(value) {
   if (!value) return "";
@@ -683,10 +772,11 @@ function buildLevelContext() {
 }
 
 function evaluateLevelExpression(expression, context) {
-  if (!expression) return 0;
+  if (!expression) return 1;
 
   const result = evaluateFormulaExpression(expression, context);
-  return Number(result || 0);
+  const numericResult = Number(result);
+  return Number.isFinite(numericResult) ? numericResult : -1;
 }
 
 function formatValidationValue(value) {
@@ -1523,18 +1613,18 @@ function appendFrontendHiddenParameters(parameters) {
 function renderJob(job) {
   const files = job.resultFiles || [];
   const downloadLinks = files.map(file =>
-    `<a href="${file.downloadUrl}">${file.fileName}</a>`
+    `<a href="${escapeHtml(file.downloadUrl)}">${escapeHtml(file.fileName)}</a>`
   ).join("");
 
   statusPanel.className = "job-status";
   statusPanel.innerHTML = `
-    <div class="status ${job.status.toLowerCase()}">${job.status}</div>
+    <div class="status ${escapeHtml(job.status.toLowerCase())}">${escapeHtml(job.status)}</div>
     <dl>
-      <dt>Задание</dt><dd>${job.id}</dd>
-      <dt>Шаблон</dt><dd>${job.templateId}</dd>
+      <dt>Задание</dt><dd>${escapeHtml(job.id)}</dd>
+      <dt>Шаблон</dt><dd>${escapeHtml(job.templateId)}</dd>
       <dt>Создано</dt><dd>${formatDate(job.createdAt)}</dd>
       <dt>Завершено</dt><dd>${formatDate(job.finishedAt)}</dd>
-      <dt>Ошибка</dt><dd>${job.errorMessage || ""}</dd>
+      <dt>Ошибка</dt><dd>${escapeHtml(job.errorMessage || "")}</dd>
       <dt>Результат</dt><dd>${downloadLinks || ""}</dd>
     </dl>
   `;
@@ -1555,7 +1645,7 @@ function renderStatusError(messages) {
 }
 
 async function refreshJob(jobId) {
-  const response = await fetch(`/api/jobs/${jobId}`);
+  const response = await apiFetch(`/api/jobs/${jobId}`);
   if (!response.ok) return;
   const job = await response.json();
   renderJob(job);
@@ -1568,7 +1658,8 @@ async function refreshJob(jobId) {
 }
 
 async function refreshJobs() {
-  const response = await fetch("/api/jobs?take=20");
+  const response = await apiFetch("/api/jobs?take=20");
+  if (!response.ok) return;
   const jobs = await response.json();
   jobsTableBody.replaceChildren();
 
@@ -1576,12 +1667,12 @@ async function refreshJobs() {
     const row = document.createElement("tr");
     const files = job.resultFiles || [];
     row.innerHTML = `
-      <td>${job.id.slice(0, 8)}</td>
-      <td>${job.templateId}</td>
-      <td><span class="status ${job.status.toLowerCase()}">${job.status}</span></td>
-      <td>${job.outputFormat.toUpperCase()}</td>
+      <td>${escapeHtml(job.id.slice(0, 8))}</td>
+      <td>${escapeHtml(job.templateId)}</td>
+      <td><span class="status ${escapeHtml(job.status.toLowerCase())}">${escapeHtml(job.status)}</span></td>
+      <td>${escapeHtml(job.outputFormat.toUpperCase())}</td>
       <td>${formatDate(job.createdAt)}</td>
-      <td>${files.map(file => `<a href="${file.downloadUrl}">скачать</a>`).join(" ")}</td>
+      <td>${files.map(file => `<a href="${escapeHtml(file.downloadUrl)}">скачать</a>`).join(" ")}</td>
     `;
     jobsTableBody.append(row);
   }
@@ -1590,6 +1681,10 @@ async function refreshJobs() {
 async function submitJob(event) {
   event.preventDefault();
   if (!state.selectedTemplate) return;
+  if (!canCreateJobs()) {
+    renderStatusError(["Недостаточно прав для создания задания."]);
+    return;
+  }
 
   rememberCurrentValues();
   const validationErrors = getCurrentValidationErrors();
@@ -1605,7 +1700,7 @@ async function submitJob(event) {
   statusPanel.className = "job-status";
   statusPanel.innerHTML = `<div class="status pending">Pending</div>`;
 
-  const response = await fetch("/api/jobs", {
+  const response = await apiFetch("/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1618,8 +1713,7 @@ async function submitJob(event) {
   submitButton.disabled = false;
 
   if (!response.ok) {
-    const problem = await response.json();
-    renderStatusError(problem.errors?.request || ["Ошибка валидации"]);
+    renderStatusError(await readProblem(response, "Ошибка создания задания"));
     return;
   }
 
@@ -1639,7 +1733,8 @@ function resetJobForm(event) {
 }
 
 async function loadTemplates() {
-  const response = await fetch("/api/templates");
+  const response = await apiFetch("/api/templates");
+  if (!response.ok) return;
   state.templates = await response.json();
 
   templateSelect.replaceChildren();
@@ -1653,9 +1748,205 @@ async function loadTemplates() {
   renderSelectedTemplate();
 }
 
+async function loadProjects(selectedProjectId = null) {
+  const response = await apiFetch("/api/projects");
+  if (!response.ok) return;
+
+  const previousValue = selectedProjectId || projectSelect.value;
+  state.projects = await response.json();
+  projectSelect.replaceChildren();
+
+  if (state.projects.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Создайте проект в ЛК";
+    projectSelect.append(option);
+    projectSelect.disabled = true;
+    saveConfigurationButton.disabled = true;
+    return;
+  }
+
+  for (const project of state.projects) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
+    projectSelect.append(option);
+  }
+
+  if (previousValue && state.projects.some(project => project.id === previousValue)) {
+    projectSelect.value = previousValue;
+  }
+
+  projectSelect.disabled = false;
+  saveConfigurationButton.disabled = false;
+}
+
+async function saveCurrentConfiguration() {
+  if (!state.selectedTemplate) return;
+  if (!projectSelect.value) {
+    renderStatusError(["Сначала создайте проект в личном кабинете."]);
+    return;
+  }
+
+  const name = state.selectedTemplate.name || state.selectedTemplate.code || state.selectedTemplate.id;
+  const response = await apiFetch(`/api/projects/${projectSelect.value}/configurations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      templateId: state.selectedTemplate.id,
+      outputFormat: formatSelect.value,
+      parameters: collectParameters()
+    })
+  });
+
+  if (!response.ok) {
+    renderStatusError(await readProblem(response, "Не удалось сохранить конфигурацию"));
+    return;
+  }
+
+  statusPanel.className = "empty";
+  statusPanel.textContent = "Конфигурация сохранена в проект";
+}
+
+function applyConfiguration(configuration) {
+  const template = state.templates.find(item => item.id === configuration.templateId);
+  if (!template) {
+    renderStatusError(["Шаблон этой конфигурации сейчас недоступен."]);
+    return;
+  }
+
+  templateSelect.value = template.id;
+  renderSelectedTemplate();
+  state.parameterValues = {
+    ...state.parameterValues,
+    ...(configuration.parameters || {})
+  };
+  if ([...formatSelect.options].some(option => option.value === configuration.outputFormat)) {
+    formatSelect.value = configuration.outputFormat;
+  }
+  renderParameters();
+  statusPanel.className = "empty";
+  statusPanel.textContent = "Конфигурация загружена";
+}
+
+async function loadConfigurationFromUrl() {
+  const configurationId = new URLSearchParams(window.location.search).get("configurationId");
+  if (!configurationId) return;
+
+  const response = await apiFetch(`/api/project-configurations/${encodeURIComponent(configurationId)}`);
+  if (!response.ok) {
+    renderStatusError(await readProblem(response, "Не удалось открыть конфигурацию"));
+    return;
+  }
+
+  const configuration = await response.json();
+  await loadProjects(configuration.projectId);
+  applyConfiguration(configuration);
+}
+
+async function loadCurrentUser() {
+  const response = await apiFetch("/api/auth/me");
+  if (!response.ok) {
+    state.currentUser = null;
+    updateAuthView();
+    return false;
+  }
+
+  state.currentUser = await response.json();
+  updateAuthView();
+  return isAuthenticated();
+}
+
+async function register(event) {
+  event.preventDefault();
+  registerStatus.hidden = true;
+  registerStatus.textContent = "";
+
+  const response = await apiFetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userName: registerUserName.value,
+      displayName: registerDisplayName.value,
+      password: registerPassword.value
+    })
+  });
+
+  if (!response.ok) {
+    const messages = await readProblem(response, "Не удалось отправить заявку");
+    registerStatus.hidden = false;
+    registerStatus.className = "error";
+    registerStatus.textContent = messages.join(" ");
+    return;
+  }
+
+  registerForm.reset();
+  registerStatus.hidden = false;
+  registerStatus.className = "empty";
+  registerStatus.textContent = "Заявка отправлена. Доступ появится после подтверждения администратором.";
+}
+
+async function login(event) {
+  event.preventDefault();
+  loginPassword.setCustomValidity("");
+
+  const response = await apiFetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userName: loginUserName.value,
+      password: loginPassword.value
+    })
+  });
+
+  if (!response.ok) {
+    loginPassword.setCustomValidity("Неверный логин или пароль");
+    loginPassword.reportValidity();
+    return;
+  }
+
+  state.currentUser = await response.json();
+  loginPassword.value = "";
+  updateAuthView();
+  await loadTemplates();
+  await loadProjects();
+  await refreshJobs();
+  await loadConfigurationFromUrl();
+}
+
+async function logout() {
+  await apiFetch("/api/auth/logout", { method: "POST" });
+  state.currentUser = null;
+  state.templates = [];
+  state.projects = [];
+  state.configurations = [];
+  state.selectedTemplate = null;
+  state.parameterValues = {};
+  jobsTableBody.replaceChildren();
+  parametersForm.replaceChildren();
+  projectSelect.replaceChildren();
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
+  updateAuthView();
+}
+
+async function boot() {
+  const authenticated = await loadCurrentUser();
+  if (!authenticated) return;
+
+  await loadTemplates();
+  await loadProjects();
+  await refreshJobs();
+  await loadConfigurationFromUrl();
+}
+
 templateSelect.addEventListener("change", renderSelectedTemplate);
 document.querySelector("#jobForm").addEventListener("submit", submitJob);
 document.querySelector("#jobForm").addEventListener("reset", resetJobForm);
+registerForm.addEventListener("submit", register);
+loginForm.addEventListener("submit", login);
+logoutButton.addEventListener("click", logout);
+saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
 
-await loadTemplates();
-await refreshJobs();
+await boot();
