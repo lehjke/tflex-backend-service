@@ -17,6 +17,21 @@ public sealed class TemplateCatalogOptions
 public sealed class DrawingQueueOptions
 {
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    public int MaxActiveJobs { get; set; } = 50;
+
+    public int MaxActiveJobsPerUser { get; set; } = 5;
+}
+
+public sealed class DrawingCleanupOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public int FinishedJobRetentionDays { get; set; } = 30;
+
+    public int BatchSize { get; set; } = 100;
+
+    public TimeSpan Interval { get; set; } = TimeSpan.FromHours(24);
 }
 
 public sealed class TFlexAutomationOptions

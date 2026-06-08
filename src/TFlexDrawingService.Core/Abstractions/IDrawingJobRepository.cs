@@ -10,7 +10,23 @@ public interface IDrawingJobRepository
 
     Task<DrawingJob?> GetAsync(string id, CancellationToken cancellationToken = default);
 
+    Task<DrawingJob?> GetAsync(string id, string ownerUserName, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<DrawingJob>> ListAsync(int take = 50, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DrawingJob>> ListAsync(
+        int take,
+        string ownerUserName,
+        CancellationToken cancellationToken = default);
+
+    Task<int> CountActiveAsync(string? ownerUserName = null, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DrawingJob>> ListFinishedBeforeAsync(
+        DateTimeOffset finishedBefore,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(string id, CancellationToken cancellationToken = default);
 
     Task<DrawingJob?> TryClaimNextPendingAsync(CancellationToken cancellationToken = default);
 

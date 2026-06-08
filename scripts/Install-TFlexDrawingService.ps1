@@ -11,13 +11,20 @@ param(
     [string]$Branch = "main",
     [string]$InstallRoot = "C:\Services\TFlexDrawingService",
     [string]$SourceRoot = "",
-    [string]$Urls = "http://0.0.0.0:5011",
+    [string]$Urls = "http://127.0.0.1:5011",
     [string]$TFlexCadProgramDir = "C:\Program Files\T-FLEX CAD 17\Program",
     [string]$TFlexAutomationCommandPath = "",
     [string]$ApiServiceName = "TFlexDrawingService.Api",
     [string]$WorkerServiceName = "TFlexDrawingService.Worker",
     [string]$ServiceUser = "",
     [string]$ServicePassword = "",
+    [string]$AdminUser = "admin",
+    [string]$AdminPassword = "",
+    [string]$AdminPasswordHash = "",
+    [bool]$RequireAuthentication = $true,
+    [int]$MaxActiveJobs = 50,
+    [int]$MaxActiveJobsPerUser = 5,
+    [int]$FinishedJobRetentionDays = 30,
     [switch]$SkipServiceInstall,
     [switch]$SkipFirewall,
     [switch]$SkipRunnerBuild
@@ -59,6 +66,120 @@ function Get-PlainTextPassword {
         if ($ptr -ne [IntPtr]::Zero) {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
         }
+    }
+}
+
+function New-RandomPassword {
+    $bytes = New-Object byte[] 24
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
+
+function New-PasswordHash {
+    param([string]$Password)
+
+    if ([string]::IsNullOrWhiteSpace($Password)) {
+        throw "Password cannot be empty."
+    }
+
+    $iterations = 210000
+    $salt = New-Object byte[] 16
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($salt)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    $passwordBytes = [Text.Encoding]::UTF8.GetBytes($Password)
+    $derive = [Security.Cryptography.Rfc2898DeriveBytes]::new(
+        $passwordBytes,
+        $salt,
+        $iterations,
+        [Security.Cryptography.HashAlgorithmName]::SHA256)
+    try {
+        $hash = $derive.GetBytes(32)
+    }
+    finally {
+        $derive.Dispose()
+    }
+
+    return @(
+        "pbkdf2-sha256",
+        $iterations,
+        [Convert]::ToBase64String($salt),
+        [Convert]::ToBase64String($hash)
+    ) -join '$'
+}
+
+function Get-ExistingAdminPasswordHash {
+    param(
+        [string]$ConfigPath,
+        [string]$UserName
+    )
+
+    if (-not (Test-Path -LiteralPath $ConfigPath)) {
+        return ""
+    }
+
+    try {
+        $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+        $users = @($config.Security.Users)
+        $user = $users |
+            Where-Object { $_.UserName -ieq $UserName -and -not [string]::IsNullOrWhiteSpace($_.PasswordHash) } |
+            Select-Object -First 1
+
+        if ($null -ne $user) {
+            return [string]$user.PasswordHash
+        }
+    }
+    catch {
+        Write-Warning "Could not reuse existing admin password hash from '$ConfigPath': $($_.Exception.Message)"
+    }
+
+    return ""
+}
+
+function Resolve-AdminPasswordHash {
+    param([string]$ExistingHash)
+
+    if (-not [string]::IsNullOrWhiteSpace($AdminPasswordHash)) {
+        return [pscustomobject]@{
+            Hash = $AdminPasswordHash
+            GeneratedPassword = ""
+            Reused = $false
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AdminPassword)) {
+        return [pscustomobject]@{
+            Hash = New-PasswordHash $AdminPassword
+            GeneratedPassword = ""
+            Reused = $false
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExistingHash)) {
+        return [pscustomobject]@{
+            Hash = $ExistingHash
+            GeneratedPassword = ""
+            Reused = $true
+        }
+    }
+
+    $password = New-RandomPassword
+    return [pscustomobject]@{
+        Hash = New-PasswordHash $password
+        GeneratedPassword = $password
+        Reused = $false
     }
 }
 
@@ -143,7 +264,8 @@ function Write-ProductionConfig {
     param(
         [string]$Directory,
         [string]$ProjectRoot,
-        [string]$RunnerPath
+        [string]$RunnerPath,
+        [object]$SecurityConfig
     )
 
     $config = [ordered]@{
@@ -159,6 +281,14 @@ function Write-ProductionConfig {
         }
         Queue = [ordered]@{
             PollIntervalSeconds = 1
+            MaxActiveJobs = $MaxActiveJobs
+            MaxActiveJobsPerUser = $MaxActiveJobsPerUser
+        }
+        Cleanup = [ordered]@{
+            Enabled = $true
+            FinishedJobRetentionDays = $FinishedJobRetentionDays
+            BatchSize = 100
+            IntervalHours = 24
         }
         TFlexAutomation = [ordered]@{
             Mode = "ExternalProcess"
@@ -174,6 +304,7 @@ function Write-ProductionConfig {
                 "Microsoft.Hosting.Lifetime" = "Information"
             }
         }
+        Security = $SecurityConfig
         AllowedHosts = "*"
     }
 
@@ -183,20 +314,57 @@ function Write-ProductionConfig {
 
 function Get-HealthUrl {
     param([string]$ServiceUrls)
-    if ($ServiceUrls -match "https?://[^:]+:(\d+)") {
-        return "http://localhost:$($Matches[1])/api/templates"
+
+    $uri = Get-FirstServiceUri $ServiceUrls
+    if ($null -ne $uri) {
+        $port = Get-ApiPort $ServiceUrls
+        return "http://127.0.0.1:$port/api/health"
     }
 
-    return "http://localhost:5011/api/templates"
+    return "http://127.0.0.1:5011/api/health"
 }
 
 function Get-ApiPort {
     param([string]$ServiceUrls)
-    if ($ServiceUrls -match "https?://[^:]+:(\d+)") {
-        return [int]$Matches[1]
+
+    $uri = Get-FirstServiceUri $ServiceUrls
+    if ($null -eq $uri) {
+        return 5011
     }
 
-    return 5011
+    if ($uri.IsDefaultPort) {
+        if ($uri.Scheme -ieq "https") {
+            return 443
+        }
+
+        return 80
+    }
+
+    return $uri.Port
+}
+
+function Get-FirstServiceUri {
+    param([string]$ServiceUrls)
+
+    $firstUrl = ($ServiceUrls -split ";")[0]
+    try {
+        return [Uri]$firstUrl
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-IsLoopbackUrl {
+    param([string]$ServiceUrls)
+
+    $uri = Get-FirstServiceUri $ServiceUrls
+    if ($null -eq $uri) {
+        return $false
+    }
+
+    $hostName = $uri.Host.ToLowerInvariant()
+    return $hostName -eq "localhost" -or $hostName -eq "127.0.0.1" -or $hostName -eq "::1"
 }
 
 if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
@@ -228,6 +396,32 @@ if ([string]::IsNullOrWhiteSpace($TFlexAutomationCommandPath)) {
     $TFlexAutomationCommandPath = Join-Path $runnerDir "TFlexAutomationRunner.exe"
 }
 $TFlexAutomationCommandPath = Resolve-FullPath $TFlexAutomationCommandPath
+
+$existingApiConfigPath = Join-Path $apiDir "appsettings.Production.json"
+$existingAdminHash = Get-ExistingAdminPasswordHash $existingApiConfigPath $AdminUser
+$adminCredential = Resolve-AdminPasswordHash $existingAdminHash
+$securityConfig = [ordered]@{
+    RequireAuthentication = $RequireAuthentication
+    CookieName = "TFlexDrawingService.Auth"
+    SessionMinutes = 480
+    MaxRequestBodyBytes = 1048576
+    RequireCsrfHeader = $true
+    RedactJobErrors = $true
+    ExposeWorkingDirectory = $false
+    LoginRateLimitPermitLimit = 10
+    LoginRateLimitWindowSeconds = 60
+    JobCreateRateLimitPermitLimit = 10
+    JobCreateRateLimitWindowSeconds = 60
+    Users = @(
+        [ordered]@{
+            UserName = $AdminUser
+            DisplayName = $AdminUser
+            PasswordHash = $adminCredential.Hash
+            Enabled = $true
+            Roles = @("Admin", "Operator", "Viewer")
+        }
+    )
+}
 
 Write-Step "Preparing directories"
 New-Item -ItemType Directory -Path $InstallRoot, $storageDir -Force | Out-Null
@@ -298,20 +492,25 @@ Write-Step "Copying templates"
 Copy-Directory (Join-Path $SourceRoot "templates") $templatesDir
 
 Write-Step "Writing production configuration"
-Write-ProductionConfig $apiDir $InstallRoot $TFlexAutomationCommandPath
-Write-ProductionConfig $workerDir $InstallRoot $TFlexAutomationCommandPath
+Write-ProductionConfig $apiDir $InstallRoot $TFlexAutomationCommandPath $securityConfig
+Write-ProductionConfig $workerDir $InstallRoot $TFlexAutomationCommandPath $securityConfig
 
 if (-not $SkipFirewall) {
     Write-Step "Configuring firewall"
-    $apiPort = Get-ApiPort $Urls
-    $firewallRuleName = "TFlex Drawing API $apiPort"
-    if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule `
-            -DisplayName $firewallRuleName `
-            -Direction Inbound `
-            -Protocol TCP `
-            -LocalPort $apiPort `
-            -Action Allow | Out-Null
+    if (Test-IsLoopbackUrl $Urls) {
+        Write-Host "Skipping API firewall rule because API is bound to loopback only: $Urls" -ForegroundColor DarkGray
+    }
+    else {
+        $apiPort = Get-ApiPort $Urls
+        $firewallRuleName = "TFlex Drawing API $apiPort"
+        if (-not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
+            New-NetFirewallRule `
+                -DisplayName $firewallRuleName `
+                -Direction Inbound `
+                -Protocol TCP `
+                -LocalPort $apiPort `
+                -Action Allow | Out-Null
+        }
     }
 }
 
@@ -353,3 +552,11 @@ Write-Host ""
 Write-Host "Installed to: $InstallRoot" -ForegroundColor Green
 Write-Host "API URL: $Urls" -ForegroundColor Green
 Write-Host "Runner: $TFlexAutomationCommandPath" -ForegroundColor Green
+Write-Host "Bootstrap admin user: $AdminUser" -ForegroundColor Green
+if (-not [string]::IsNullOrWhiteSpace($adminCredential.GeneratedPassword)) {
+    Write-Host "Generated bootstrap admin password: $($adminCredential.GeneratedPassword)" -ForegroundColor Yellow
+    Write-Host "This password is used only if the admin user does not already exist in storage\drawings.db." -ForegroundColor Yellow
+}
+elseif ($adminCredential.Reused) {
+    Write-Host "Bootstrap admin password hash was reused from the previous production config." -ForegroundColor Green
+}

@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\TFlexDrawingService.Api\TFlexDrawingService.Api.csproj" />
     <ProjectReference Include="..\..\src\TFlexDrawingService.Core\TFlexDrawingService.Core.csproj" />
     <ProjectReference Include="..\..\src\TFlexDrawingService.Infrastructure\TFlexDrawingService.Infrastructure.csproj" />
   </ItemGroup>

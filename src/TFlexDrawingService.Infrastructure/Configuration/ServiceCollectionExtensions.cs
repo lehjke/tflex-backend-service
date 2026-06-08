@@ -37,6 +37,44 @@ public static class ServiceCollectionExtensions
             {
                 options.PollInterval = TimeSpan.FromSeconds(seconds);
             }
+
+            if (int.TryParse(configuration["Queue:MaxActiveJobs"], out var maxActiveJobs)
+                && maxActiveJobs > 0)
+            {
+                options.MaxActiveJobs = maxActiveJobs;
+            }
+
+            if (int.TryParse(configuration["Queue:MaxActiveJobsPerUser"], out var maxActiveJobsPerUser)
+                && maxActiveJobsPerUser > 0)
+            {
+                options.MaxActiveJobsPerUser = maxActiveJobsPerUser;
+            }
+        });
+
+        services.Configure<DrawingCleanupOptions>(options =>
+        {
+            if (bool.TryParse(configuration["Cleanup:Enabled"], out var enabled))
+            {
+                options.Enabled = enabled;
+            }
+
+            if (int.TryParse(configuration["Cleanup:FinishedJobRetentionDays"], out var retentionDays)
+                && retentionDays > 0)
+            {
+                options.FinishedJobRetentionDays = retentionDays;
+            }
+
+            if (int.TryParse(configuration["Cleanup:BatchSize"], out var batchSize)
+                && batchSize > 0)
+            {
+                options.BatchSize = batchSize;
+            }
+
+            if (double.TryParse(configuration["Cleanup:IntervalHours"], out var intervalHours)
+                && intervalHours > 0)
+            {
+                options.Interval = TimeSpan.FromHours(intervalHours);
+            }
         });
 
         services.Configure<TFlexAutomationOptions>(options =>
@@ -83,6 +121,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<DrawingJobProcessor>();
         services.AddHostedService<DrawingGenerationBackgroundService>();
+        services.AddHostedService<StorageCleanupHostedService>();
         return services;
     }
 

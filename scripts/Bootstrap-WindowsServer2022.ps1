@@ -23,11 +23,18 @@ param(
     [string]$Branch = "main",
     [string]$InstallRoot = "C:\Services\TFlexDrawingService",
     [string]$SourceRoot = "",
-    [string]$Urls = "http://0.0.0.0:5011",
+    [string]$Urls = "http://127.0.0.1:5011",
     [string]$TFlexCadProgramDir = "C:\Program Files\T-FLEX CAD 17\Program",
     [string]$TFlexAutomationCommandPath = "",
     [string]$ServiceUser = "",
     [string]$ServicePassword = "",
+    [string]$AdminUser = "admin",
+    [string]$AdminPassword = "",
+    [string]$AdminPasswordHash = "",
+    [bool]$RequireAuthentication = $true,
+    [int]$MaxActiveJobs = 50,
+    [int]$MaxActiveJobsPerUser = 5,
+    [int]$FinishedJobRetentionDays = 30,
     [string]$DotNetChannel = "10.0",
     [string]$DotNetQuality = "GA",
     [string]$DotNetInstallDir = "$env:ProgramFiles\dotnet",
@@ -288,7 +295,12 @@ function Invoke-ServiceInstaller {
         "-Branch", $Branch,
         "-InstallRoot", $InstallRoot,
         "-Urls", $Urls,
-        "-TFlexCadProgramDir", $TFlexCadProgramDir
+        "-TFlexCadProgramDir", $TFlexCadProgramDir,
+        "-AdminUser", $AdminUser,
+        "-RequireAuthentication", $RequireAuthentication.ToString(),
+        "-MaxActiveJobs", $MaxActiveJobs.ToString(),
+        "-MaxActiveJobsPerUser", $MaxActiveJobsPerUser.ToString(),
+        "-FinishedJobRetentionDays", $FinishedJobRetentionDays.ToString()
     )
 
     if (-not [string]::IsNullOrWhiteSpace($SourceRoot)) {
@@ -305,6 +317,14 @@ function Invoke-ServiceInstaller {
 
     if (-not [string]::IsNullOrWhiteSpace($ServicePassword)) {
         $arguments += @("-ServicePassword", $ServicePassword)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AdminPassword)) {
+        $arguments += @("-AdminPassword", $AdminPassword)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AdminPasswordHash)) {
+        $arguments += @("-AdminPasswordHash", $AdminPasswordHash)
     }
 
     if ($SkipRunnerBuild) {
@@ -365,9 +385,9 @@ Write-Step "Installing TFlexDrawingService"
 Invoke-ServiceInstaller
 
 Write-Step "Final health check"
-$healthUri = "http://localhost:5011/api/templates"
+$healthUri = "http://127.0.0.1:5011/api/health"
 if ($Urls -match "https?://[^:]+:(\d+)") {
-    $healthUri = "http://localhost:$($Matches[1])/api/templates"
+    $healthUri = "http://127.0.0.1:$($Matches[1])/api/health"
 }
 
 try {

@@ -292,7 +292,7 @@ Write-Step "Starting Caddy"
 Start-Service -Name $ServiceName
 Start-Sleep -Seconds 5
 
-$publicHealthUrl = "https://$Domain/api/templates"
+$publicHealthUrl = "https://$Domain/api/health"
 Write-Step "Checking HTTPS endpoint"
 $healthOk = $false
 for ($i = 1; $i -le 12; $i++) {

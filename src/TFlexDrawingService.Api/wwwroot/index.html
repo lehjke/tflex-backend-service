@@ -4,25 +4,67 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>T-FLEX Drawing Service</title>
-  <link rel="stylesheet" href="/styles.css?v=20260604-pit-near-shaft">
+  <link rel="stylesheet" href="/styles.css?v=20260608-project-select-fix">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#jobForm" aria-label="T-FLEX Drawing Service">
+    <a class="brand" href="/" aria-label="T-FLEX Drawing Service">
       <span class="brand__name">T-FLEX</span>
       <span class="brand__suffix">Drawing Service</span>
     </a>
 
     <nav class="topbar__nav" aria-label="Разделы">
-      <a href="#jobForm">Конфигуратор</a>
+      <a href="/">Редактор</a>
+      <a href="/account.html">ЛК</a>
       <a href="#statusPanel">Статус</a>
       <a href="#jobsPanel">История</a>
     </nav>
 
-    <button class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
+    <div class="topbar__auth">
+      <form id="loginForm" class="login-form" hidden>
+        <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+        <button class="topbar__button" type="submit">Войти</button>
+      </form>
+
+      <div id="userPanel" class="user-panel" hidden>
+        <span id="currentUserName"></span>
+        <button id="logoutButton" class="secondary" type="button">Выйти</button>
+      </div>
+
+      <button id="createTopButton" class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
+    </div>
   </header>
 
-  <main class="layout">
+  <main id="guestMain" class="layout layout--auth">
+    <section class="panel panel--wide">
+      <div class="panel__header">
+        <h2>Заявка на доступ</h2>
+      </div>
+
+      <form id="registerForm" class="auth-card">
+        <label class="field">
+          <span class="field__label">Логин</span>
+          <input id="registerUserName" name="userName" autocomplete="username" required>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Имя</span>
+          <input id="registerDisplayName" name="displayName" autocomplete="name">
+        </label>
+
+        <label class="field">
+          <span class="field__label">Пароль</span>
+          <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
+        </label>
+
+        <button class="primary" type="submit">Отправить заявку</button>
+        <div id="registerStatus" class="empty" hidden></div>
+      </form>
+    </section>
+  </main>
+
+  <main id="appMain" class="layout" hidden>
     <nav class="breadcrumbs" aria-label="Навигация">
       <span>Главная страница</span>
       <span aria-hidden="true">→</span>
@@ -43,7 +85,7 @@
       </div>
 
       <form id="jobForm">
-        <div class="form-grid">
+        <div class="form-grid form-grid--editor">
           <label class="field">
             <span class="field__label">Шаблон</span>
             <select id="templateSelect" name="templateId"></select>
@@ -53,13 +95,21 @@
             <span class="field__label">Формат</span>
             <select id="formatSelect" name="outputFormat"></select>
           </label>
+
+          <label class="field">
+            <span class="field__label">Проект</span>
+            <select id="projectSelect"></select>
+          </label>
         </div>
 
         <div id="parametersForm" class="parameters"></div>
 
         <div id="validationPanel" class="validation-panel" hidden></div>
 
-        <button id="submitButton" class="primary" type="submit">Создать задание</button>
+        <div class="form-actions">
+          <button id="submitButton" class="primary" type="submit">Создать задание</button>
+          <button id="saveConfigurationButton" class="secondary" type="button">Сохранить конфигурацию</button>
+        </div>
       </form>
     </section>
 
@@ -90,8 +140,9 @@
         </table>
       </div>
     </section>
+
   </main>
 
-  <script type="module" src="/app.js?v=20260604-pit-near-shaft"></script>
+  <script type="module" src="/app.js?v=20260608-stop-top-level-input"></script>
 </body>
 </html>

@@ -31,6 +31,7 @@ public sealed class SqliteDrawingJobRepository(
                 Status TEXT NOT NULL,
                 InputParametersJson TEXT NOT NULL,
                 OutputFormat TEXT NOT NULL,
+                OwnerUserName TEXT NOT NULL DEFAULT 'legacy',
                 CreatedAt TEXT NOT NULL,
                 StartedAt TEXT NULL,
                 FinishedAt TEXT NULL,
@@ -54,6 +55,22 @@ public sealed class SqliteDrawingJobRepository(
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await EnsureColumnExistsAsync(
+            connection,
+            "DrawingJobs",
+            "OwnerUserName",
+            "TEXT NOT NULL DEFAULT 'legacy'",
+            cancellationToken);
+
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS IX_DrawingJobs_OwnerUserName_CreatedAt
+                ON DrawingJobs(OwnerUserName, CreatedAt);
+            """,
+            cancellationToken);
+
         logger.LogInformation("SQLite storage initialized at {DatabasePath}", _options.DatabasePath);
     }
 
@@ -65,11 +82,11 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO DrawingJobs (
-                Id, TemplateId, Status, InputParametersJson, OutputFormat, CreatedAt,
+                Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
                 StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
             )
             VALUES (
-                $id, $templateId, $status, $inputParametersJson, $outputFormat, $createdAt,
+                $id, $templateId, $status, $inputParametersJson, $outputFormat, $ownerUserName, $createdAt,
                 $startedAt, $finishedAt, $errorMessage, $workingDirectory
             );
             """;
@@ -92,6 +109,23 @@ public sealed class SqliteDrawingJobRepository(
         return job;
     }
 
+    public async Task<DrawingJob?> GetAsync(
+        string id,
+        string ownerUserName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var job = await GetJobCoreAsync(connection, id, ownerUserName, cancellationToken);
+        if (job is not null)
+        {
+            job.ResultFiles = [.. await LoadFilesAsync(connection, job.Id, cancellationToken)];
+        }
+
+        return job;
+    }
+
     public async Task<IReadOnlyList<DrawingJob>> ListAsync(int take = 50, CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -99,7 +133,7 @@ public sealed class SqliteDrawingJobRepository(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
             FROM DrawingJobs
             ORDER BY CreatedAt DESC
@@ -122,6 +156,138 @@ public sealed class SqliteDrawingJobRepository(
         return jobs;
     }
 
+    public async Task<IReadOnlyList<DrawingJob>> ListAsync(
+        int take,
+        string ownerUserName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+            FROM DrawingJobs
+            WHERE OwnerUserName = $ownerUserName
+            ORDER BY CreatedAt DESC
+            LIMIT $take;
+            """;
+        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        command.Parameters.AddWithValue("$take", Math.Clamp(take, 1, 200));
+
+        var jobs = new List<DrawingJob>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            jobs.Add(MapJob(reader));
+        }
+
+        foreach (var job in jobs)
+        {
+            job.ResultFiles = [.. await LoadFilesAsync(connection, job.Id, cancellationToken)];
+        }
+
+        return jobs;
+    }
+
+    public async Task<int> CountActiveAsync(
+        string? ownerUserName = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = string.IsNullOrWhiteSpace(ownerUserName)
+            ? """
+              SELECT COUNT(*)
+              FROM DrawingJobs
+              WHERE Status IN ($pending, $running);
+              """
+            : """
+              SELECT COUNT(*)
+              FROM DrawingJobs
+              WHERE Status IN ($pending, $running)
+                AND OwnerUserName = $ownerUserName;
+              """;
+
+        command.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+        command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+        if (!string.IsNullOrWhiteSpace(ownerUserName))
+        {
+            command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        }
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    public async Task<IReadOnlyList<DrawingJob>> ListFinishedBeforeAsync(
+        DateTimeOffset finishedBefore,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+            FROM DrawingJobs
+            WHERE Status IN ($completed, $failed, $cancelled)
+              AND FinishedAt IS NOT NULL
+              AND FinishedAt < $finishedBefore
+            ORDER BY FinishedAt
+            LIMIT $take;
+            """;
+        command.Parameters.AddWithValue("$completed", DrawingJobStatus.Completed.ToString());
+        command.Parameters.AddWithValue("$failed", DrawingJobStatus.Failed.ToString());
+        command.Parameters.AddWithValue("$cancelled", DrawingJobStatus.Cancelled.ToString());
+        command.Parameters.AddWithValue("$finishedBefore", FormatDate(finishedBefore));
+        command.Parameters.AddWithValue("$take", Math.Clamp(take, 1, 500));
+
+        var jobs = new List<DrawingJob>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            jobs.Add(MapJob(reader));
+        }
+
+        foreach (var job in jobs)
+        {
+            job.ResultFiles = [.. await LoadFilesAsync(connection, job.Id, cancellationToken)];
+        }
+
+        return jobs;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var filesCommand = connection.CreateCommand())
+        {
+            filesCommand.Transaction = transaction;
+            filesCommand.CommandText = "DELETE FROM GeneratedFiles WHERE JobId = $id;";
+            filesCommand.Parameters.AddWithValue("$id", id);
+            await filesCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var jobCommand = connection.CreateCommand())
+        {
+            jobCommand.Transaction = transaction;
+            jobCommand.CommandText = "DELETE FROM DrawingJobs WHERE Id = $id;";
+            jobCommand.Parameters.AddWithValue("$id", id);
+            await jobCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<DrawingJob?> TryClaimNextPendingAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -139,7 +305,7 @@ public sealed class SqliteDrawingJobRepository(
                 ORDER BY CreatedAt
                 LIMIT 1
             )
-            RETURNING Id, TemplateId, Status, InputParametersJson, OutputFormat, CreatedAt,
+            RETURNING Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
                       StartedAt, FinishedAt, ErrorMessage, WorkingDirectory;
             """;
         command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
@@ -268,12 +434,32 @@ public sealed class SqliteDrawingJobRepository(
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
             FROM DrawingJobs
             WHERE Id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? MapJob(reader) : null;
+    }
+
+    private async Task<DrawingJob?> GetJobCoreAsync(
+        SqliteConnection connection,
+        string id,
+        string ownerUserName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+            FROM DrawingJobs
+            WHERE Id = $id AND OwnerUserName = $ownerUserName;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapJob(reader) : null;
@@ -316,6 +502,43 @@ public sealed class SqliteDrawingJobRepository(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task ExecuteAsync(
+        SqliteConnection connection,
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureColumnExistsAsync(
+        SqliteConnection connection,
+        string tableName,
+        string columnName,
+        string columnDefinition,
+        CancellationToken cancellationToken)
+    {
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"PRAGMA table_info({tableName});";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        await using (var alterCommand = connection.CreateCommand())
+        {
+            alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
+            await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
     private static void AddJobParameters(SqliteCommand command, DrawingJob job)
     {
         command.Parameters.AddWithValue("$id", job.Id);
@@ -323,6 +546,7 @@ public sealed class SqliteDrawingJobRepository(
         command.Parameters.AddWithValue("$status", job.Status.ToString());
         command.Parameters.AddWithValue("$inputParametersJson", job.InputParametersJson);
         command.Parameters.AddWithValue("$outputFormat", job.OutputFormat);
+        command.Parameters.AddWithValue("$ownerUserName", job.OwnerUserName);
         command.Parameters.AddWithValue("$createdAt", FormatDate(job.CreatedAt));
         command.Parameters.AddWithValue("$startedAt", ToDbValue(job.StartedAt));
         command.Parameters.AddWithValue("$finishedAt", ToDbValue(job.FinishedAt));
@@ -339,11 +563,12 @@ public sealed class SqliteDrawingJobRepository(
             Status = Enum.Parse<DrawingJobStatus>(reader.GetString(2)),
             InputParametersJson = reader.GetString(3),
             OutputFormat = reader.GetString(4),
-            CreatedAt = ParseDate(reader.GetString(5)),
-            StartedAt = ReadNullableDate(reader, 6),
-            FinishedAt = ReadNullableDate(reader, 7),
-            ErrorMessage = reader.IsDBNull(8) ? null : reader.GetString(8),
-            WorkingDirectory = reader.IsDBNull(9) ? null : reader.GetString(9)
+            OwnerUserName = reader.GetString(5),
+            CreatedAt = ParseDate(reader.GetString(6)),
+            StartedAt = ReadNullableDate(reader, 7),
+            FinishedAt = ReadNullableDate(reader, 8),
+            ErrorMessage = reader.IsDBNull(9) ? null : reader.GetString(9),
+            WorkingDirectory = reader.IsDBNull(10) ? null : reader.GetString(10)
         };
     }
 
