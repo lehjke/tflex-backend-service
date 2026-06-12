@@ -9,7 +9,8 @@ const state = {
   pendingFocusTarget: null,
   currentUser: null,
   projects: [],
-  configurations: []
+  configurations: [],
+  editingConfigurationId: null
 };
 
 const guestMain = document.querySelector("#guestMain");
@@ -1752,6 +1753,7 @@ async function submitJob(event) {
 
 function resetJobForm(event) {
   event.preventDefault();
+  state.editingConfigurationId = null;
   initializeParameterValues();
   renderParameters();
 }
@@ -1814,8 +1816,12 @@ async function saveCurrentConfiguration() {
 
   const parameters = collectParameters();
   const name = getConfigurationName(parameters);
-  const response = await apiFetch(`/api/projects/${projectSelect.value}/configurations`, {
-    method: "POST",
+  const editingConfigurationId = state.editingConfigurationId;
+  const url = editingConfigurationId
+    ? `/api/project-configurations/${encodeURIComponent(editingConfigurationId)}`
+    : `/api/projects/${projectSelect.value}/configurations`;
+  const response = await apiFetch(url, {
+    method: editingConfigurationId ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name,
@@ -1830,8 +1836,12 @@ async function saveCurrentConfiguration() {
     return;
   }
 
+  const savedConfiguration = await response.json();
+  state.editingConfigurationId = savedConfiguration.id || editingConfigurationId;
   statusPanel.className = "empty";
-  statusPanel.textContent = "Конфигурация сохранена в проект";
+  statusPanel.textContent = editingConfigurationId
+    ? "Конфигурация обновлена"
+    : "Конфигурация сохранена в проект";
 }
 
 function applyConfiguration(configuration) {
@@ -1841,6 +1851,7 @@ function applyConfiguration(configuration) {
     return;
   }
 
+  state.editingConfigurationId = configuration.id;
   templateSelect.value = template.id;
   renderSelectedTemplate();
   state.parameterValues = {

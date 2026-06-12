@@ -70,6 +70,24 @@ public sealed class SecurityAndAccountStoreTests
         Assert.Single(configurations);
         Assert.Equal("PDF configuration", configurations[0].Name);
         Assert.Contains("\"WIDTH\":1200", configurations[0].ParametersJson, StringComparison.Ordinal);
+
+        var updatedParameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """{"WIDTH":1400,"MATERIAL":"Сталь"}""")!;
+        var updatedConfiguration = await freshStore.UpdateConfigurationAsync(
+            "operator",
+            configuration.Id,
+            "L1",
+            "template-a",
+            "pdf",
+            updatedParameters);
+
+        Assert.NotNull(updatedConfiguration);
+
+        var updatedConfigurations = await freshStore.ListConfigurationsAsync(project.Id, "operator");
+        Assert.Single(updatedConfigurations);
+        Assert.Equal(configuration.Id, updatedConfigurations[0].Id);
+        Assert.Equal("L1", updatedConfigurations[0].Name);
+        Assert.Contains("\"WIDTH\":1400", updatedConfigurations[0].ParametersJson, StringComparison.Ordinal);
     }
 
     [Fact]

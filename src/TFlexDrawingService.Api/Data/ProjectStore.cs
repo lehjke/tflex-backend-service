@@ -273,6 +273,65 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         return configuration;
     }
 
+    public async Task<ProjectConfiguration?> UpdateConfigurationAsync(
+        string ownerUserName,
+        string configurationId,
+        string name,
+        string templateId,
+        string outputFormat,
+        IReadOnlyDictionary<string, JsonElement> parameters,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await GetConfigurationAsync(configurationId, ownerUserName, cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var configuration = existing with
+        {
+            Name = NormalizeName(name, "Конфигурация"),
+            TemplateId = templateId,
+            OutputFormat = outputFormat,
+            ParametersJson = JsonSerializer.Serialize(parameters, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            UpdatedAt = now
+        };
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ProjectConfigurations
+            SET Name = $name,
+                TemplateId = $templateId,
+                OutputFormat = $outputFormat,
+                ParametersJson = $parametersJson,
+                UpdatedAt = $updatedAt
+            WHERE Id = $configurationId
+              AND ProjectId IN (
+                SELECT Id FROM UserProjects WHERE OwnerUserName = $ownerUserName
+              );
+
+            UPDATE UserProjects
+            SET UpdatedAt = $updatedAt
+            WHERE Id = $projectId;
+            """;
+        command.Parameters.AddWithValue("$configurationId", configuration.Id);
+        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        command.Parameters.AddWithValue("$projectId", configuration.ProjectId);
+        command.Parameters.AddWithValue("$name", configuration.Name);
+        command.Parameters.AddWithValue("$templateId", configuration.TemplateId);
+        command.Parameters.AddWithValue("$outputFormat", configuration.OutputFormat);
+        command.Parameters.AddWithValue("$parametersJson", configuration.ParametersJson);
+        command.Parameters.AddWithValue("$updatedAt", FormatDate(configuration.UpdatedAt));
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0
+            ? configuration
+            : null;
+    }
+
     public async Task<bool> DeleteConfigurationAsync(
         string configurationId,
         string ownerUserName,

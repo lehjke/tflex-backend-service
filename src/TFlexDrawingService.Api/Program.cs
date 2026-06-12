@@ -754,6 +754,57 @@ var saveConfigurationEndpoint = app.MapPost("/api/projects/{projectId}/configura
 });
 RequirePolicy(saveConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
+var updateConfigurationEndpoint = app.MapPut("/api/project-configurations/{configurationId}", async (
+    string configurationId,
+    ProjectConfigurationSaveRequest request,
+    ProjectStore projects,
+    ITemplateCatalog catalog,
+    TemplateAccessStore templateAccess,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var template = await catalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
+    if (template is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["templateId"] = ["Template was not found."]
+        });
+    }
+
+    if (!template.OutputFormats.Contains(request.OutputFormat, StringComparer.OrdinalIgnoreCase))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["outputFormat"] = ["Output format is not available for this template."]
+        });
+    }
+
+    if (securityOptions.RequireAuthentication
+        && !context.User.IsInRole("Admin")
+        && !await templateAccess.IsEnabledAsync(template.Id, cancellationToken))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["templateId"] = ["Template is disabled."]
+        });
+    }
+
+    var configuration = await projects.UpdateConfigurationAsync(
+        GetEffectiveUserName(context.User, securityOptions),
+        configurationId,
+        request.Name,
+        template.Id,
+        request.OutputFormat,
+        request.Parameters ?? new Dictionary<string, JsonElement>(),
+        cancellationToken);
+
+    return configuration is null
+        ? Results.NotFound()
+        : Results.Ok(ToProjectConfigurationDto(configuration));
+});
+RequirePolicy(updateConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
 var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{configurationId}", async (
     string configurationId,
     ProjectStore projects,
