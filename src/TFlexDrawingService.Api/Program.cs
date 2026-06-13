@@ -1,9 +1,11 @@
+using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Api.Data;
@@ -38,6 +40,15 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+    options.KnownProxies.Add(IPAddress.Loopback);
+    options.KnownProxies.Add(IPAddress.IPv6Loopback);
+});
 builder.Services.AddSingleton<ConfiguredUserStore>();
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<TemplateAccessStore>();
@@ -153,6 +164,8 @@ using (var scope = app.Services.CreateScope())
             "Security:RequireAuthentication is enabled, but no users exist in the security database. Configure Security:Users for the first bootstrap user.");
     }
 }
+
+app.UseForwardedHeaders();
 
 app.Use(async (context, next) =>
 {
@@ -1026,14 +1039,6 @@ static string GetUserPartitionKey(HttpContext context)
 
 static string GetClientPartitionKey(HttpContext context)
 {
-    var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-    if (!string.IsNullOrWhiteSpace(forwardedFor))
-    {
-        return forwardedFor.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault()
-            ?? "unknown";
-    }
-
     return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }
 

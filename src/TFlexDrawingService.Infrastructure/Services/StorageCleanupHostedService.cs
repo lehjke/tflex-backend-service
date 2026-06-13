@@ -9,6 +9,7 @@ namespace TFlexDrawingService.Infrastructure.Services;
 public sealed class StorageCleanupHostedService(
     IDrawingJobRepository repository,
     IOptions<DrawingCleanupOptions> cleanupOptions,
+    IOptions<DrawingStorageOptions> storageOptions,
     ILogger<StorageCleanupHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,6 +37,8 @@ public sealed class StorageCleanupHostedService(
         try
         {
             var cutoff = DateTimeOffset.UtcNow.AddDays(-options.FinishedJobRetentionDays);
+            var generatedRoot = GetStorageSubdirectory("generated");
+            var jobsRoot = GetStorageSubdirectory("jobs");
             var jobs = await repository.ListFinishedBeforeAsync(
                 cutoff,
                 options.BatchSize,
@@ -45,11 +48,11 @@ public sealed class StorageCleanupHostedService(
             {
                 foreach (var file in job.ResultFiles)
                 {
-                    DeleteFileIfExists(file.Path);
-                    DeleteDirectoryIfEmpty(Path.GetDirectoryName(file.Path));
+                    DeleteFileIfExistsUnderRoot(file.Path, generatedRoot);
+                    DeleteDirectoryIfEmptyUnderRoot(Path.GetDirectoryName(file.Path), generatedRoot);
                 }
 
-                DeleteDirectoryIfExists(job.WorkingDirectory);
+                DeleteDirectoryIfExistsUnderRoot(job.WorkingDirectory, jobsRoot);
                 await repository.DeleteAsync(job.Id, cancellationToken);
             }
 
@@ -68,30 +71,53 @@ public sealed class StorageCleanupHostedService(
         }
     }
 
-    private static void DeleteFileIfExists(string? path)
+    private string GetStorageSubdirectory(string directoryName)
+    {
+        return Path.GetFullPath(Path.Combine(storageOptions.Value.RootPath, directoryName));
+    }
+
+    private void DeleteFileIfExistsUnderRoot(string? path, string root)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
             return;
         }
 
+        if (!IsPathUnderRoot(path, root))
+        {
+            logger.LogWarning("Skipped cleanup of file outside storage root: {Path}", path);
+            return;
+        }
+
         File.Delete(path);
     }
 
-    private static void DeleteDirectoryIfExists(string? path)
+    private void DeleteDirectoryIfExistsUnderRoot(string? path, string root)
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
         {
             return;
         }
 
+        if (!IsPathUnderRoot(path, root))
+        {
+            logger.LogWarning("Skipped cleanup of directory outside storage root: {Path}", path);
+            return;
+        }
+
         Directory.Delete(path, recursive: true);
     }
 
-    private static void DeleteDirectoryIfEmpty(string? path)
+    private void DeleteDirectoryIfEmptyUnderRoot(string? path, string root)
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
         {
+            return;
+        }
+
+        if (!IsPathUnderRoot(path, root))
+        {
+            logger.LogWarning("Skipped cleanup of directory outside storage root: {Path}", path);
             return;
         }
 
@@ -99,5 +125,19 @@ public sealed class StorageCleanupHostedService(
         {
             Directory.Delete(path, recursive: false);
         }
+    }
+
+    private static bool IsPathUnderRoot(string path, string root)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var normalizedRoot = Path.GetFullPath(root);
+        if (!normalizedRoot.EndsWith(Path.DirectorySeparatorChar))
+        {
+            normalizedRoot += Path.DirectorySeparatorChar;
+        }
+
+        return Path.GetFullPath(path).StartsWith(normalizedRoot, comparison);
     }
 }

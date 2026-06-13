@@ -226,7 +226,27 @@ public sealed class ExternalProcessTFlexAutomationClient(
             throw new InvalidOperationException("External T-FLEX automation response contains an empty file path.");
         }
 
-        return Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(resultDirectory, path));
+        var resolvedPath = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(resultDirectory, path));
+        if (!IsPathUnderDirectory(resolvedPath, resultDirectory))
+        {
+            throw new InvalidOperationException("External T-FLEX automation response contains a file path outside the result directory.");
+        }
+
+        return resolvedPath;
+    }
+
+    private static bool IsPathUnderDirectory(string path, string directory)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var normalizedDirectory = Path.GetFullPath(directory);
+        if (!normalizedDirectory.EndsWith(Path.DirectorySeparatorChar))
+        {
+            normalizedDirectory += Path.DirectorySeparatorChar;
+        }
+
+        return Path.GetFullPath(path).StartsWith(normalizedDirectory, comparison);
     }
 
     private static GeneratedFile ToGeneratedFile(string jobId, string path, string? fileName, string? format)
