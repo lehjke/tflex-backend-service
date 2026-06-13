@@ -7,6 +7,9 @@ const state = {
   pollTimer: null,
   pendingRenderFrame: null,
   pendingFocusTarget: null,
+  activeParameterCategory: null,
+  showAllParameters: false,
+  activePreviewTab: "pdf",
   currentUser: null,
   projects: [],
   configurations: [],
@@ -34,8 +37,13 @@ const submitButton = document.querySelector("#submitButton");
 const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
 const validationPanel = document.querySelector("#validationPanel");
+const parameterTabs = document.querySelector("#parameterTabs");
+const showAllParametersToggle = document.querySelector("#showAllParametersToggle");
+const parameterReadyBanner = document.querySelector("#parameterReadyBanner");
+const previewTabs = document.querySelector("#previewTabs");
 const projectSelect = document.querySelector("#projectSelect");
 const saveConfigurationButton = document.querySelector("#saveConfigurationButton");
+const configurationNamePreview = document.querySelector("#configurationNamePreview");
 
 const STOP_CONTROL_NAMES = new Set(["main", "name", "level", "main_floor"]);
 const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$ver"]);
@@ -92,6 +100,13 @@ const CATEGORY_DISPLAY_ORDER = [
   "Этажный указатель",
   "Отделка"
 ];
+const PRIMARY_PARAMETER_TABS = [
+  "Кабина",
+  "Двери",
+  "Шахта",
+  "Приямок",
+  STOP_GROUP_LABEL
+];
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -121,6 +136,22 @@ function getConfigurationName(parameters) {
   }
 
   return state.selectedTemplate?.name || state.selectedTemplate?.code || state.selectedTemplate?.id || "Конфигурация";
+}
+
+function updateConfigurationNamePreview(parameters = state.parameterValues) {
+  if (!configurationNamePreview) return;
+  if (!state.selectedTemplate) {
+    configurationNamePreview.value = "-";
+    return;
+  }
+
+  const oboznach = parameters?.$Oboznach ?? getParameterValueByName("$Oboznach");
+  if (hasValue(oboznach) && String(oboznach).trim()) {
+    configurationNamePreview.value = `$Oboznach: ${String(oboznach).trim()}`;
+    return;
+  }
+
+  configurationNamePreview.value = getConfigurationName(parameters);
 }
 
 function escapeHtml(value) {
@@ -1318,7 +1349,7 @@ function getParameterDisplayParts(parameter) {
 
 function getFieldLabelText(parameter) {
   const parts = getParameterDisplayParts(parameter);
-  return parameter.unit ? `${parts.label}, ${parameter.unit}` : parts.label;
+  return parts.label;
 }
 
 function createParameterGroup(category) {
@@ -1360,12 +1391,91 @@ function getCategoryDisplayOrder(category, fallbackIndex) {
 function reorderParameterGroups(groups) {
   [...groups.entries()]
     .map(([category, group], index) => ({
+      category,
       group,
       index,
       order: getCategoryDisplayOrder(category, index)
     }))
     .sort((left, right) => left.order - right.order || left.index - right.index)
     .forEach(({ group }) => parametersForm.append(group));
+}
+
+function getRenderedParameterCategories() {
+  return [...parametersForm.querySelectorAll(".parameter-group")]
+    .map(group => group.dataset.category)
+    .filter(Boolean);
+}
+
+function applyParameterTabVisibility() {
+  const categories = getRenderedParameterCategories();
+  if (!categories.length) {
+    if (parameterTabs) parameterTabs.replaceChildren();
+    state.activeParameterCategory = null;
+    return;
+  }
+
+  if (!state.activeParameterCategory || !categories.includes(state.activeParameterCategory)) {
+    state.activeParameterCategory = categories[0];
+  }
+
+  for (const group of parametersForm.querySelectorAll(".parameter-group")) {
+    group.hidden = !state.showAllParameters && group.dataset.category !== state.activeParameterCategory;
+  }
+
+  for (const button of parameterTabs?.querySelectorAll("button[data-category]") || []) {
+    const active = button.dataset.category === state.activeParameterCategory;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  if (showAllParametersToggle) {
+    showAllParametersToggle.checked = state.showAllParameters;
+  }
+}
+
+function renderParameterTabs() {
+  if (!parameterTabs) return;
+
+  const categories = getRenderedParameterCategories();
+  const primaryCategories = PRIMARY_PARAMETER_TABS.filter(category => categories.includes(category));
+  const visibleCategories = primaryCategories.length > 0
+    ? primaryCategories
+    : categories.slice(0, 5);
+
+  if (state.activeParameterCategory && !visibleCategories.includes(state.activeParameterCategory)) {
+    state.activeParameterCategory = visibleCategories[0] || categories[0] || null;
+  }
+
+  parameterTabs.replaceChildren();
+  for (const category of visibleCategories) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.category = category;
+    button.textContent = category;
+    button.addEventListener("click", () => {
+      state.activeParameterCategory = category;
+      applyParameterTabVisibility();
+    });
+    parameterTabs.append(button);
+  }
+
+  applyParameterTabVisibility();
+}
+
+function setPreviewTab(tabName) {
+  state.activePreviewTab = tabName;
+
+  for (const button of previewTabs?.querySelectorAll("button[data-preview-tab]") || []) {
+    const active = button.dataset.previewTab === tabName;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  for (const panel of document.querySelectorAll("[data-preview-panel]")) {
+    panel.hidden = tabName === "pdf"
+      ? panel.dataset.previewPanel !== "pdf" && panel.dataset.previewPanel !== "shaft"
+      : panel.dataset.previewPanel !== tabName;
+  }
 }
 
 function getCurrentParameterInputValue(parameter, context) {
@@ -1445,7 +1555,19 @@ function createParameterInput(parameter, context) {
     input.setAttribute("aria-invalid", "true");
   }
 
-  field.append(label, input);
+  const shouldShowUnit = parameter.unit && input.tagName !== "SELECT" && input.type !== "checkbox" && input.type !== "radio";
+  if (shouldShowUnit) {
+    const control = document.createElement("div");
+    control.className = "field__control";
+    const suffix = document.createElement("span");
+    suffix.className = "field__suffix";
+    suffix.textContent = parameter.unit;
+    control.append(input, suffix);
+    field.append(label, control);
+  } else {
+    field.append(label, input);
+  }
+
   if (parameter.multiline || parameter.name === "$Address" || input.tagName === "TEXTAREA") {
     field.classList.add("field--wide");
   }
@@ -1521,6 +1643,7 @@ function renderParameters(options = {}) {
   if (!state.selectedTemplate) {
     state.validationFieldNames = new Set();
     updateValidationPanel();
+    if (parameterReadyBanner) parameterReadyBanner.hidden = true;
     restoreViewport(options, scrollPosition, focusTarget);
     return;
   }
@@ -1551,7 +1674,12 @@ function renderParameters(options = {}) {
   }
 
   reorderParameterGroups(groups);
+  renderParameterTabs();
   updateValidationPanel(validationErrors);
+  if (parameterReadyBanner) {
+    parameterReadyBanner.hidden = validationErrors.length > 0;
+  }
+  updateConfigurationNamePreview();
   restoreViewport(options, scrollPosition, focusTarget);
 }
 
@@ -1560,7 +1688,9 @@ function renderSelectedTemplate() {
   formatSelect.replaceChildren();
   parametersForm.replaceChildren();
   state.validationFieldNames = new Set();
+  state.activeParameterCategory = null;
   updateValidationPanel();
+  updateConfigurationNamePreview();
   initializeParameterValues();
 
   if (!state.selectedTemplate) return;
@@ -1838,6 +1968,7 @@ async function saveCurrentConfiguration() {
 
   const savedConfiguration = await response.json();
   state.editingConfigurationId = savedConfiguration.id || editingConfigurationId;
+  updateConfigurationNamePreview(parameters);
   statusPanel.className = "empty";
   statusPanel.textContent = editingConfigurationId
     ? "Конфигурация обновлена"
@@ -1962,6 +2093,7 @@ async function logout() {
   jobsTableBody.replaceChildren();
   parametersForm.replaceChildren();
   projectSelect.replaceChildren();
+  updateConfigurationNamePreview();
   clearInterval(state.pollTimer);
   state.pollTimer = null;
   updateAuthView();
@@ -1984,5 +2116,15 @@ registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
 saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
+showAllParametersToggle?.addEventListener("change", event => {
+  state.showAllParameters = event.currentTarget.checked;
+  applyParameterTabVisibility();
+});
+previewTabs?.addEventListener("click", event => {
+  const button = event.target.closest("button[data-preview-tab]");
+  if (!button) return;
+  setPreviewTab(button.dataset.previewTab);
+});
 
+setPreviewTab(state.activePreviewTab);
 await boot();

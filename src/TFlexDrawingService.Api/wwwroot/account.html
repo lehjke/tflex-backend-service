@@ -3,136 +3,260 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Личный кабинет — T-FLEX Drawing Service</title>
-  <link rel="stylesheet" href="/styles.css?v=20260608-project-select-fix">
+  <title>Личный кабинет — METEOR Engineering Center</title>
+  <link rel="stylesheet" href="/styles.css?v=20260613-meteor-shell-11">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="T-FLEX Drawing Service">
-      <span class="brand__name">T-FLEX</span>
-      <span class="brand__suffix">Drawing Service</span>
-    </a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="METEOR Engineering Center">
+      <a class="brand" href="/" aria-label="METEOR Engineering Center">
+        <img src="/assets/meteor-logo-eng-light.svg" alt="METEOR LIFT">
+      </a>
+      <div class="sidebar__subtitle">Engineering Center</div>
 
-    <nav class="topbar__nav" aria-label="Разделы">
-      <a href="/">Редактор</a>
-      <a href="/account.html">ЛК</a>
-      <a id="adminNavLink" href="#adminPanel" hidden>Админ</a>
-    </nav>
+      <nav class="sidebar__nav" aria-label="Разделы">
+        <a href="/"><span>Создание</span><small>Drawings</small></a>
+        <a class="is-active" href="/account.html"><span>Проекты</span><small>Projects</small></a>
+        <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
+        <a href="/#jobsPanel"><span>История</span><small>History</small></a>
+        <a id="adminNavLink" href="#adminPanel" hidden><span>Шаблоны</span><small>Admin</small></a>
+        <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
+      </nav>
 
-    <div class="topbar__auth">
-      <form id="loginForm" class="login-form" hidden>
-        <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
-        <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
-        <button class="topbar__button" type="submit">Войти</button>
-      </form>
-
-      <div id="userPanel" class="user-panel" hidden>
-        <span id="currentUserName"></span>
-        <button id="logoutButton" class="secondary" type="button">Выйти</button>
+      <div class="sidebar__help">
+        <strong>Поддержка инженера</strong>
+        <span>Нужна проверка нестандартной шахты?</span>
+        <a class="sidebar__help-button" href="mailto:support@meteor-lift.local">Запросить</a>
       </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs" aria-label="Навигация">
+          <span>Главная</span>
+          <span aria-hidden="true">/</span>
+          <span>Личный кабинет</span>
+        </div>
+
+        <label class="global-search">
+          <span class="sr-only">Поиск</span>
+          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+        </label>
+
+        <div class="topbar__actions">
+          <div class="language-switch" aria-label="Language">
+            <span class="is-active">RU</span>
+            <span>EN</span>
+          </div>
+
+          <form id="loginForm" class="login-form" hidden>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <button class="topbar__button" type="submit">Войти</button>
+          </form>
+
+          <div id="userPanel" class="user-panel" hidden>
+            <span class="user-avatar" aria-hidden="true">ME</span>
+            <span class="user-panel__meta">
+              <span id="currentUserName"></span>
+              <small>Admin</small>
+            </span>
+            <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="guestMain" class="layout layout--auth">
+        <section class="panel panel--wide auth-panel">
+          <div class="panel__header">
+            <h2>Заявка на доступ</h2>
+          </div>
+
+          <form id="registerForm" class="auth-card">
+            <label class="field">
+              <span class="field__label">Логин</span>
+              <input id="registerUserName" name="userName" autocomplete="username" required>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Имя</span>
+              <input id="registerDisplayName" name="displayName" autocomplete="name">
+            </label>
+
+            <label class="field">
+              <span class="field__label">Пароль</span>
+              <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
+            </label>
+
+            <button class="primary" type="submit">Отправить заявку</button>
+            <div id="registerStatus" class="empty" hidden></div>
+          </form>
+        </section>
+      </main>
+
+      <main id="accountMain" class="layout layout--account" hidden>
+        <section class="intro intro--account">
+          <h1>Личный кабинет</h1>
+          <p>Проекты, сохраненные конфигурации, история выпуска и доступные действия для продавца, инженера и администратора.</p>
+        </section>
+
+        <section class="metrics-row" aria-label="Сводка">
+          <article>
+            <strong id="projectsMetric">0</strong>
+            <span>Проектов</span>
+          </article>
+          <article>
+            <strong id="configurationsMetric">0</strong>
+            <span>Конфигурации</span>
+          </article>
+          <article>
+            <strong id="readyFilesMetric">0</strong>
+            <span>Готовых файлов</span>
+          </article>
+          <article>
+            <strong id="pendingMetric">0</strong>
+            <span>Ожидают обработки</span>
+          </article>
+        </section>
+
+        <div class="account-columns">
+          <section class="panel account-projects-panel">
+            <div class="panel__header">
+              <h2>Проекты</h2>
+            </div>
+
+            <div class="account-toolbar">
+              <label class="field field--search">
+                <span class="sr-only">Поиск</span>
+                <input id="projectSearchInput" type="search" placeholder="Поиск по проектам, адресу, номеру лифта">
+              </label>
+            </div>
+
+            <div id="accountStatus" class="empty" hidden></div>
+            <div id="projectsList" class="project-list"></div>
+
+            <div class="form-grid form-grid--compact account-create">
+              <label class="field">
+                <span class="field__label">Новый проект</span>
+                <input id="projectNameInput" placeholder="Название">
+              </label>
+
+              <button id="createProjectButton" class="primary primary--compact" type="button">Новый проект</button>
+            </div>
+          </section>
+
+          <section class="panel saved-configurations-panel">
+            <div class="panel__header">
+              <h2>Сохраненные конфигурации</h2>
+            </div>
+            <div id="savedConfigurationsList" class="saved-configurations-list"></div>
+          </section>
+        </div>
+
+        <section id="adminAccessCard" class="admin-access-card" hidden>
+          <div>
+            <h2>Администратор</h2>
+            <p>Пользователи, шаблоны, доступность форматов и обработчик новых T-FLEX шаблонов.</p>
+          </div>
+          <a class="admin-access-card__button" href="#adminPanel">Открыть</a>
+        </section>
+
+        <section id="adminPanel" class="admin-panel" hidden>
+          <section class="intro admin-intro">
+            <h1>Центр шаблонов</h1>
+            <p>Admin-only обработчик: загрузка шаблона, извлечение зависимостей, переменных, ограничений и публикация для пользователей.</p>
+          </section>
+
+          <div class="template-center-grid">
+            <section class="template-step">
+              <h2>1. Загрузка</h2>
+              <div class="template-upload">
+                <strong>Перетащите .grb или ZIP с фрагментами</strong>
+                <span>Главный файл + одноименная папка фрагментов. Поддержка PDF/DWG/DXF.</span>
+                <label class="topbar__button file-upload-button" for="templateUploadInput">Выбрать файл</label>
+                <input id="templateUploadInput" class="sr-only" type="file" accept=".grb,.zip,.pdf,.dwg,.dxf">
+                <small id="templateUploadStatus">Файл не выбран</small>
+              </div>
+              <ul class="template-checklist">
+                <li>Проверка структуры</li>
+                <li>Поиск связанных фрагментов</li>
+                <li>Чтение T-FLEX переменных</li>
+                <li>Выявление формул, lookup-таблиц и ограничений</li>
+              </ul>
+            </section>
+
+            <section class="template-step">
+              <h2>2. Результат обработки</h2>
+              <div class="template-result-metrics">
+                <article><strong>316</strong><span>Параметры</span></article>
+                <article><strong>28</strong><span>Правила</span></article>
+                <article><strong>14</strong><span>Lookup</span></article>
+                <article><strong>92</strong><span>Фрагменты</span></article>
+              </div>
+              <div class="template-result-grid">
+                <div>
+                  <h3>Зависимости</h3>
+                  <p>LEHY-L-PRO.grb</p>
+                  <span>-/0. TH.xlsx</span>
+                  <span>-/2. Кабина.grb</span>
+                  <span>-/3. Шахта.grb</span>
+                  <span>-/5. Дверной проем.grb</span>
+                </div>
+                <div>
+                  <h3>Ограничения</h3>
+                  <div class="constraint-tags">
+                    <span class="is-warning">TR &lt;= 98000</span>
+                    <span>OH &gt;= 4200</span>
+                    <span>PD &gt;= 1300</span>
+                    <span>AA by car_type</span>
+                    <span>Door fire rating EI</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel panel--wide template-catalog">
+            <div class="panel__header">
+              <h2>Каталог шаблонов</h2>
+            </div>
+            <div class="table-wrap table-wrap--compact">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Шаблон</th>
+                    <th>Форматы</th>
+                    <th>Доступен</th>
+                  </tr>
+                </thead>
+                <tbody id="adminTemplatesTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel panel--wide admin-users-section">
+            <div class="panel__header">
+              <h2>Пользователи</h2>
+            </div>
+            <div class="table-wrap table-wrap--compact">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Логин</th>
+                    <th>Статус</th>
+                    <th>Роли</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="adminUsersTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
     </div>
-  </header>
+  </div>
 
-  <main id="guestMain" class="layout layout--auth">
-    <section class="panel panel--wide">
-      <div class="panel__header">
-        <h2>Заявка на доступ</h2>
-      </div>
-
-      <form id="registerForm" class="auth-card">
-        <label class="field">
-          <span class="field__label">Логин</span>
-          <input id="registerUserName" name="userName" autocomplete="username" required>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Имя</span>
-          <input id="registerDisplayName" name="displayName" autocomplete="name">
-        </label>
-
-        <label class="field">
-          <span class="field__label">Пароль</span>
-          <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
-        </label>
-
-        <button class="primary" type="submit">Отправить заявку</button>
-        <div id="registerStatus" class="empty" hidden></div>
-      </form>
-    </section>
-  </main>
-
-  <main id="accountMain" class="layout layout--account" hidden>
-    <nav class="breadcrumbs" aria-label="Навигация">
-      <span>Главная страница</span>
-      <span aria-hidden="true">→</span>
-      <span>Личный кабинет</span>
-    </nav>
-
-    <section class="intro intro--account">
-      <h1>Личный кабинет</h1>
-      <p>Проекты, сохраненные конфигурации и управление доступом.</p>
-    </section>
-
-    <section class="panel panel--wide">
-      <div class="panel__header">
-        <h2>Проекты</h2>
-      </div>
-
-      <div class="form-grid form-grid--compact account-create">
-        <label class="field">
-          <span class="field__label">Новый проект</span>
-          <input id="projectNameInput" placeholder="Название">
-        </label>
-
-        <button id="createProjectButton" class="secondary" type="button">Создать проект</button>
-      </div>
-
-      <div id="accountStatus" class="empty" hidden></div>
-      <div id="projectsList" class="project-list"></div>
-    </section>
-
-    <section id="adminPanel" class="panel panel--wide" hidden>
-      <div class="panel__header">
-        <h2>Админ-панель</h2>
-      </div>
-
-      <div class="admin-grid">
-        <div>
-          <h3>Пользователи</h3>
-          <div class="table-wrap table-wrap--compact">
-            <table>
-              <thead>
-                <tr>
-                  <th>Логин</th>
-                  <th>Статус</th>
-                  <th>Роли</th>
-                  <th>Действия</th>
-                </tr>
-              </thead>
-              <tbody id="adminUsersTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div>
-          <h3>Шаблоны</h3>
-          <div class="table-wrap table-wrap--compact">
-            <table>
-              <thead>
-                <tr>
-                  <th>Шаблон</th>
-                  <th>Форматы</th>
-                  <th>Доступен</th>
-                </tr>
-              </thead>
-              <tbody id="adminTemplatesTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <script type="module" src="/account.js?v=20260608-configuration-title"></script>
+  <script type="module" src="/account.js?v=20260613-meteor-shell-7"></script>
 </body>
 </html>

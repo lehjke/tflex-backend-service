@@ -3,6 +3,7 @@ const state = {
   projects: [],
   configurationsByProjectId: new Map(),
   templates: [],
+  jobs: [],
   adminUsers: [],
   adminTemplates: []
 };
@@ -24,6 +25,15 @@ const projectNameInput = document.querySelector("#projectNameInput");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectsList = document.querySelector("#projectsList");
 const accountStatus = document.querySelector("#accountStatus");
+const projectSearchInput = document.querySelector("#projectSearchInput");
+const projectsMetric = document.querySelector("#projectsMetric");
+const configurationsMetric = document.querySelector("#configurationsMetric");
+const readyFilesMetric = document.querySelector("#readyFilesMetric");
+const pendingMetric = document.querySelector("#pendingMetric");
+const savedConfigurationsList = document.querySelector("#savedConfigurationsList");
+const adminAccessCard = document.querySelector("#adminAccessCard");
+const templateUploadInput = document.querySelector("#templateUploadInput");
+const templateUploadStatus = document.querySelector("#templateUploadStatus");
 const adminNavLink = document.querySelector("#adminNavLink");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
@@ -41,6 +51,10 @@ function canCreateJobs() {
 
 function canAdmin() {
   return (state.currentUser?.roles || []).includes("Admin");
+}
+
+function isAdminPanelRoute() {
+  return window.location.hash === "#adminPanel";
 }
 
 function escapeHtml(value) {
@@ -113,8 +127,49 @@ function getTemplateFormats(configuration) {
 }
 
 function findConfigurationFormatSelect(configurationId) {
-  return [...projectsList.querySelectorAll("select[data-format-for]")]
+  return [...document.querySelectorAll("select[data-format-for]")]
     .find(select => select.dataset.formatFor === configurationId) || null;
+}
+
+function getAllConfigurations() {
+  return state.projects.flatMap(project => {
+    const configurations = state.configurationsByProjectId.get(project.id) || [];
+    return configurations.map(configuration => ({ project, configuration }));
+  });
+}
+
+function normalizeSearch(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function matchesProjectSearch(project, configurations, query) {
+  if (!query) return true;
+  const values = [
+    project.name,
+    project.description,
+    ...configurations.flatMap(configuration => [
+      getConfigurationName(configuration),
+      getTemplateLabel(configuration.templateId),
+      configuration.outputFormat,
+      Object.values(configuration.parameters || {}).join(" ")
+    ])
+  ];
+  return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function updateMetrics() {
+  const allConfigurations = getAllConfigurations();
+  const completedJobs = state.jobs.filter(job => String(job.status).toLowerCase() === "completed");
+  const pendingJobs = state.jobs.filter(job => {
+    const status = String(job.status).toLowerCase();
+    return status === "pending" || status === "running";
+  });
+  const resultFilesCount = completedJobs.reduce((total, job) => total + Math.max(1, (job.resultFiles || []).length), 0);
+
+  if (projectsMetric) projectsMetric.textContent = String(state.projects.length);
+  if (configurationsMetric) configurationsMetric.textContent = String(allConfigurations.length);
+  if (readyFilesMetric) readyFilesMetric.textContent = String(resultFilesCount);
+  if (pendingMetric) pendingMetric.textContent = String(pendingJobs.length);
 }
 
 function updateAuthView() {
@@ -123,8 +178,19 @@ function updateAuthView() {
   loginForm.hidden = authenticated;
   userPanel.hidden = !authenticated;
   accountMain.hidden = !authenticated;
-  adminPanel.hidden = !authenticated || !canAdmin();
+  const showAdminPanel = authenticated && canAdmin() && isAdminPanelRoute();
+  accountMain.classList.toggle("is-admin-route", showAdminPanel);
+  adminPanel.hidden = !showAdminPanel;
+  adminPanel.classList.toggle("is-open", showAdminPanel);
   adminNavLink.hidden = !authenticated || !canAdmin();
+  if (adminAccessCard) adminAccessCard.hidden = !authenticated || !canAdmin();
+
+  if (showAdminPanel) {
+    requestAnimationFrame(() => {
+      const desktopOffset = window.matchMedia("(min-width: 901px)").matches ? 42 : 0;
+      window.scrollTo({ top: desktopOffset, left: 0, behavior: "auto" });
+    });
+  }
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
@@ -195,7 +261,20 @@ async function loadProjects() {
       configurationsResponse.ok ? await configurationsResponse.json() : []);
   }));
 
+  renderAccountData();
+}
+
+async function loadAccountJobs() {
+  const response = await apiFetch("/api/jobs?take=100");
+  if (!response.ok) return;
+  state.jobs = await response.json();
+  updateMetrics();
+}
+
+function renderAccountData() {
   renderProjects();
+  renderSavedConfigurations();
+  updateMetrics();
 }
 
 function renderProjects() {
@@ -209,7 +288,19 @@ function renderProjects() {
     return;
   }
 
-  for (const project of state.projects) {
+  const query = normalizeSearch(projectSearchInput?.value);
+  const filteredProjects = state.projects.filter(project =>
+    matchesProjectSearch(project, state.configurationsByProjectId.get(project.id) || [], query));
+
+  if (filteredProjects.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "По этому запросу проекты не найдены.";
+    projectsList.append(empty);
+    return;
+  }
+
+  for (const project of filteredProjects) {
     const configurations = state.configurationsByProjectId.get(project.id) || [];
     const details = document.createElement("details");
     details.className = "project-item";
@@ -236,6 +327,46 @@ function renderProjects() {
 
     details.append(body);
     projectsList.append(details);
+  }
+}
+
+function renderSavedConfigurations() {
+  if (!savedConfigurationsList) return;
+
+  savedConfigurationsList.replaceChildren();
+  const entries = getAllConfigurations()
+    .sort((left, right) => new Date(right.configuration.updatedAt || 0) - new Date(left.configuration.updatedAt || 0));
+
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Пока нет сохраненных конфигураций.";
+    savedConfigurationsList.append(empty);
+    return;
+  }
+
+  for (const { project, configuration } of entries) {
+    const formats = getTemplateFormats(configuration);
+    const formatOptions = formats
+      .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
+      .join("");
+    const item = document.createElement("article");
+    item.className = "saved-configuration-item";
+    item.innerHTML = `
+      <div>
+        <strong>${escapeHtml(getConfigurationName(configuration))}</strong>
+        <span>${escapeHtml(getTemplateLabel(configuration.templateId))}</span>
+        <small>${escapeHtml(project.name)} · ${formatDate(configuration.updatedAt)}</small>
+      </div>
+      <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
+        ${formatOptions}
+      </select>
+      <div class="inline-actions">
+        <a class="secondary button-link" href="/?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
+        <button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">PDF</button>
+      </div>
+    `;
+    savedConfigurationsList.append(item);
   }
 }
 
@@ -557,7 +688,9 @@ async function login(event) {
   updateAuthView();
   await loadTemplates();
   await loadProjects();
+  await loadAccountJobs();
   await loadAdminData();
+  updateAuthView();
 }
 
 async function logout() {
@@ -565,12 +698,15 @@ async function logout() {
   state.currentUser = null;
   state.projects = [];
   state.configurationsByProjectId = new Map();
+  state.jobs = [];
   state.adminUsers = [];
   state.adminTemplates = [];
   projectsList.replaceChildren();
+  savedConfigurationsList?.replaceChildren();
   adminUsersTableBody.replaceChildren();
   adminTemplatesTableBody.replaceChildren();
   hideAccountStatus();
+  updateMetrics();
   updateAuthView();
 }
 
@@ -580,13 +716,17 @@ async function boot() {
 
   await loadTemplates();
   await loadProjects();
+  await loadAccountJobs();
   await loadAdminData();
+  updateAuthView();
 }
 
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
 createProjectButton.addEventListener("click", createProject);
+projectSearchInput?.addEventListener("input", renderProjects);
+window.addEventListener("hashchange", updateAuthView);
 projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -594,6 +734,15 @@ projectsList.addEventListener("click", event => {
   if (button.dataset.action === "delete") {
     deleteConfiguration(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "download") {
+    const select = findConfigurationFormatSelect(button.dataset.id);
+    downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+  }
+});
+savedConfigurationsList?.addEventListener("click", event => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+
+  if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id);
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
   }
@@ -607,6 +756,12 @@ adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");
   if (!input) return;
   setTemplateEnabled(input.dataset.templateId, input.checked);
+});
+templateUploadInput?.addEventListener("change", event => {
+  const file = event.currentTarget.files?.[0];
+  if (templateUploadStatus) {
+    templateUploadStatus.textContent = file ? file.name : "Файл не выбран";
+  }
 });
 
 await boot();
