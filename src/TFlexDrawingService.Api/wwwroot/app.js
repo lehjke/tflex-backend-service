@@ -9,7 +9,6 @@ const state = {
   pendingFocusTarget: null,
   activeParameterCategory: null,
   showAllParameters: false,
-  activePreviewTab: "pdf",
   currentUser: null,
   projects: [],
   configurations: [],
@@ -40,7 +39,11 @@ const validationPanel = document.querySelector("#validationPanel");
 const parameterTabs = document.querySelector("#parameterTabs");
 const showAllParametersToggle = document.querySelector("#showAllParametersToggle");
 const parameterReadyBanner = document.querySelector("#parameterReadyBanner");
-const previewTabs = document.querySelector("#previewTabs");
+const shaftPreviewSubtitle = document.querySelector("#shaftPreviewSubtitle");
+const shaftPreviewUnavailable = document.querySelector("#shaftPreviewUnavailable");
+const shaftPreviewContent = document.querySelector("#shaftPreviewContent");
+const shaftPreviewCanvas = document.querySelector("#shaftPreviewCanvas");
+const shaftPreviewMetrics = document.querySelector("#shaftPreviewMetrics");
 const projectSelect = document.querySelector("#projectSelect");
 const saveConfigurationButton = document.querySelector("#saveConfigurationButton");
 const configurationNamePreview = document.querySelector("#configurationNamePreview");
@@ -106,6 +109,10 @@ const PRIMARY_PARAMETER_TABS = [
   "Шахта",
   "Приямок",
   STOP_GROUP_LABEL
+];
+const SHAFT_PREVIEW_SUPPORTED_TEMPLATE_PREFIXES = [
+  "lehy_l_pro",
+  "lehy_pro"
 ];
 
 function isAuthenticated() {
@@ -820,6 +827,290 @@ function buildLevelContext() {
   return context;
 }
 
+function isShaftPreviewSupportedTemplate(template = state.selectedTemplate) {
+  if (!template) return false;
+  const markers = [
+    template.id,
+    template.code,
+    template.name
+  ].filter(Boolean).map(value => String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, ""));
+
+  return markers.some(marker =>
+    SHAFT_PREVIEW_SUPPORTED_TEMPLATE_PREFIXES.some(prefix =>
+      marker === prefix || marker.startsWith(`${prefix}_`)));
+}
+
+function getPreviewNumber(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  const number = toNumber(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function getPreviewSignedNumber(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getPreviewFlag(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  return toFlagNumber(value);
+}
+
+function clampPreviewNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatPreviewNumber(value) {
+  if (!Number.isFinite(value)) return "-";
+  return String(Math.round(value));
+}
+
+function showShaftPreviewUnavailable(message) {
+  if (shaftPreviewSubtitle) shaftPreviewSubtitle.textContent = "Preview недоступен";
+  if (shaftPreviewUnavailable) {
+    shaftPreviewUnavailable.hidden = false;
+    shaftPreviewUnavailable.textContent = message;
+  }
+  if (shaftPreviewContent) shaftPreviewContent.hidden = true;
+}
+
+function updateShaftPreview(context = null) {
+  if (!shaftPreviewContent || !shaftPreviewCanvas || !shaftPreviewMetrics) return;
+
+  if (!state.selectedTemplate) {
+    showShaftPreviewUnavailable("Выберите шаблон, чтобы увидеть план шахты.");
+    return;
+  }
+
+  if (!isShaftPreviewSupportedTemplate()) {
+    showShaftPreviewUnavailable("Предпросмотр плана шахты доступен для шаблонов LEHY-L-PRO и LEHY-PRO.");
+    return;
+  }
+
+  const previewContext = context || buildLevelContext();
+  const ah = getPreviewNumber(previewContext, "AH");
+  const bh = getPreviewNumber(previewContext, "BH");
+  const aa = getPreviewNumber(previewContext, "AA");
+  const bb = getPreviewNumber(previewContext, "BB");
+  const jj = getPreviewNumber(previewContext, "JJ");
+  const ee = getPreviewNumber(previewContext, "EE");
+  const ww = getPreviewNumber(previewContext, "WW") || getPreviewNumber(previewContext, "WW_1");
+  const wg = getPreviewNumber(previewContext, "WG") || getPreviewNumber(previewContext, "WG_1");
+  const a1 = getPreviewNumber(previewContext, "A1");
+  const a2 = getPreviewNumber(previewContext, "A2");
+  const bw = getPreviewNumber(previewContext, "BW");
+  const ca = getPreviewNumber(previewContext, "CA");
+  const cb = getPreviewNumber(previewContext, "CB");
+  const as = getPreviewNumber(previewContext, "AS") || (aa ? aa + 62 : null);
+  const a6 = getPreviewNumber(previewContext, "A6");
+  const b1 = getPreviewNumber(previewContext, "B1");
+  const bs = getPreviewNumber(previewContext, "BS");
+  const dk = getPreviewNumber(previewContext, "DK");
+  const bottomGap = getPreviewNumber(previewContext, "bb");
+  const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
+  const carCenterX = a1 && a2
+    ? a1 + a2
+    : (lehyProSideCwt && cb ? cb : (ca || (ah ? ah / 2 : null)));
+  const rearCwt = lehyProSideCwt
+    && getPreviewFlag(previewContext, "CWT_SG") === 1;
+  const sideCwtCenterX = a1
+    ?? (lehyProSideCwt && ca && carCenterX ? carCenterX + ca : null)
+    ?? (bw && ah ? ah - bw : null);
+  const sideCwtX = sideCwtCenterX && ww ? sideCwtCenterX - ww / 2 : null;
+  const rearCwtX = carCenterX && wg ? carCenterX - wg / 2 : null;
+  const cwtX = rearCwt ? rearCwtX : sideCwtX;
+  const cwtMetricName = rearCwt
+    ? "WG"
+    : (a1 ? "A1" : (lehyProSideCwt && ca ? "CA" : (bw ? "AH-BW" : "CWT X")));
+  const cwtMetricValue = rearCwt
+    ? wg
+    : (a1 ?? (lehyProSideCwt && ca ? ca : sideCwtCenterX));
+  const cwtDepth = ee
+    ? ee + 150
+    : (rearCwt
+      ? (b1 ? Math.max(0, b1 - 15) : Math.max(0, (a6 || 138) - 33))
+      : (bh && wg ? Math.max(0, (bh - wg) / 2) : null));
+  const cwtY = ee && bh && wg && !rearCwt
+    ? bh - cwtDepth - wg
+    : cwtDepth;
+  const dimensions = {
+    ah,
+    bh,
+    aa,
+    bb,
+    as,
+    jj,
+    doorWidth: jj,
+    a4: getPreviewSignedNumber(previewContext, "A4"),
+    a1,
+    a2,
+    a6,
+    bw,
+    ca,
+    cb,
+    carCenterX,
+    ee,
+    cwtX,
+    cwtMetricName,
+    cwtMetricValue,
+    cwtDepth,
+    cwtY,
+    cwtDepthLabel: rearCwt ? "CWD" : (ee ? "EE+150" : "CWT Y"),
+    rearCwt,
+    bs,
+    dk,
+    bottomGap,
+    ww,
+    wg
+  };
+
+  if (!dimensions.ah || !dimensions.bh || !dimensions.aa || !dimensions.bb) {
+    showShaftPreviewUnavailable("Недостаточно размеров AH, BH, AA и BB для построения плана.");
+    return;
+  }
+
+  if (shaftPreviewSubtitle) shaftPreviewSubtitle.textContent = "Live preview по текущим параметрам";
+  if (shaftPreviewUnavailable) shaftPreviewUnavailable.hidden = true;
+  shaftPreviewContent.hidden = false;
+
+  shaftPreviewCanvas.innerHTML = renderShaftPreviewSvg(dimensions);
+  shaftPreviewMetrics.innerHTML = renderShaftPreviewMetrics(dimensions);
+}
+
+function renderShaftPreviewSvg(dimensions) {
+  const svgWidth = 380;
+  const svgHeight = 286;
+  const paddingX = 34;
+  const paddingY = 30;
+  const drawingWidth = svgWidth - paddingX * 2;
+  const drawingHeight = svgHeight - paddingY * 2;
+
+  const shaftRect = { x: 0, y: 0, width: dimensions.ah, height: dimensions.bh };
+  const cabinX = dimensions.carCenterX
+    ? dimensions.carCenterX - dimensions.aa / 2
+    : (dimensions.ah - dimensions.aa) / 2;
+  const cabinBottomClearance = dimensions.bs
+    ? Math.max(0, dimensions.bs - dimensions.bb)
+    : ((dimensions.dk || 0) + (dimensions.bottomGap || 0));
+  const cabinY = dimensions.rearCwt && dimensions.ww && Number.isFinite(dimensions.cwtDepth)
+    ? clampPreviewNumber(dimensions.cwtDepth + dimensions.ww + 30, 0, Math.max(0, dimensions.bh - dimensions.bb))
+    : (dimensions.bh - dimensions.bb - cabinBottomClearance);
+  const cabinRect = {
+    x: cabinX,
+    y: cabinY,
+    width: dimensions.aa,
+    height: dimensions.bb
+  };
+  const doorWidthMm = dimensions.doorWidth || dimensions.aa * 0.55;
+  const doorRect = {
+    x: cabinRect.x + cabinRect.width / 2 + dimensions.a4 - doorWidthMm / 2,
+    y: cabinRect.y + cabinRect.height - 70,
+    width: doorWidthMm,
+    height: 50
+  };
+  const cwtRect = dimensions.ww
+    && dimensions.wg
+    && Number.isFinite(dimensions.cwtX)
+    && Number.isFinite(dimensions.cwtY)
+    ? {
+        x: dimensions.cwtX,
+        y: dimensions.cwtY,
+        width: dimensions.rearCwt ? dimensions.wg : dimensions.ww,
+        height: dimensions.rearCwt ? dimensions.ww : dimensions.wg
+      }
+    : null;
+  const railInset = 85;
+  const railLeft = {
+    x1: cabinRect.x + railInset,
+    y1: cabinRect.y - 80,
+    x2: cabinRect.x + railInset,
+    y2: cabinRect.y + cabinRect.height + 80
+  };
+  const railRight = {
+    x1: cabinRect.x + cabinRect.width - railInset,
+    y1: cabinRect.y - 80,
+    x2: cabinRect.x + cabinRect.width - railInset,
+    y2: cabinRect.y + cabinRect.height + 80
+  };
+  const rects = [shaftRect, cabinRect, doorRect, ...(cwtRect ? [cwtRect] : [])];
+  const margin = 140;
+  const bounds = rects.reduce((acc, rect) => ({
+    minX: Math.min(acc.minX, rect.x),
+    minY: Math.min(acc.minY, rect.y),
+    maxX: Math.max(acc.maxX, rect.x + rect.width),
+    maxY: Math.max(acc.maxY, rect.y + rect.height)
+  }), { minX: 0, minY: 0, maxX: dimensions.ah, maxY: dimensions.bh });
+  bounds.minX = Math.min(bounds.minX, railLeft.x1, railRight.x1) - margin;
+  bounds.minY = Math.min(bounds.minY, railLeft.y1, railRight.y1) - margin;
+  bounds.maxX = Math.max(bounds.maxX, railLeft.x2, railRight.x2) + margin;
+  bounds.maxY = Math.max(bounds.maxY, railLeft.y2, railRight.y2) + margin;
+
+  const scale = Math.min(drawingWidth / (bounds.maxX - bounds.minX), drawingHeight / (bounds.maxY - bounds.minY));
+  const mapX = value => paddingX + (value - bounds.minX) * scale;
+  const mapY = value => paddingY + (value - bounds.minY) * scale;
+  const mapSize = value => value * scale;
+  const rectAttrs = rect =>
+    `x="${mapX(rect.x).toFixed(1)}" y="${mapY(rect.y).toFixed(1)}" width="${mapSize(rect.width).toFixed(1)}" height="${mapSize(rect.height).toFixed(1)}"`;
+  const lineAttrs = line =>
+    `x1="${mapX(line.x1).toFixed(1)}" y1="${mapY(line.y1).toFixed(1)}" x2="${mapX(line.x2).toFixed(1)}" y2="${mapY(line.y2).toFixed(1)}"`;
+  const isInside = (inner, outer) =>
+    inner.x >= outer.x
+    && inner.y >= outer.y
+    && inner.x + inner.width <= outer.x + outer.width
+    && inner.y + inner.height <= outer.y + outer.height;
+  const intersects = (first, second) =>
+    first.x < second.x + second.width
+    && first.x + first.width > second.x
+    && first.y < second.y + second.height
+    && first.y + first.height > second.y;
+  const cabinCollision = !isInside(cabinRect, shaftRect) || (cwtRect && intersects(cabinRect, cwtRect));
+  const cwtCollision = cwtRect && (!isInside(cwtRect, shaftRect) || intersects(cabinRect, cwtRect));
+  const doorCollision = !isInside(doorRect, cabinRect);
+  const cwtMarkup = cwtRect
+    ? `<rect class="shaft-preview-svg__counterweight ${cwtCollision ? "shaft-preview-svg__counterweight--collision" : ""}" ${rectAttrs(cwtRect)} rx="3" />`
+    : "";
+
+  return `
+    <svg class="shaft-preview-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="План шахты">
+      <rect class="shaft-preview-svg__shaft" ${rectAttrs(shaftRect)} rx="4" />
+      <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y1="${mapY(shaftRect.y).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height).toFixed(1)}" />
+      <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x).toFixed(1)}" y1="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" />
+      ${cwtMarkup}
+      <rect class="shaft-preview-svg__car ${cabinCollision ? "shaft-preview-svg__car--collision" : ""}" ${rectAttrs(cabinRect)} rx="3" />
+      <line class="shaft-preview-svg__rail" ${lineAttrs(railLeft)} />
+      <line class="shaft-preview-svg__rail" ${lineAttrs(railRight)} />
+      <rect class="shaft-preview-svg__door ${doorCollision ? "shaft-preview-svg__door--collision" : ""}" ${rectAttrs(doorRect)} rx="1" />
+      <text class="shaft-preview-svg__label" x="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height + 110).toFixed(1)}">AH ${formatPreviewNumber(dimensions.ah)}</text>
+      <text class="shaft-preview-svg__label shaft-preview-svg__label--vertical" x="${mapX(shaftRect.x - 110).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}">BH ${formatPreviewNumber(dimensions.bh)}</text>
+    </svg>`;
+}
+
+function renderShaftPreviewMetrics(dimensions) {
+  const metrics = [
+    ["AH", dimensions.ah, "Ширина шахты"],
+    ["BH", dimensions.bh, "Глубина шахты"],
+    ["AA", dimensions.aa, "Ширина кабины"],
+    ["BB", dimensions.bb, "Глубина кабины"],
+    ["JJ", dimensions.doorWidth, "Ширина дверей"],
+    ["A4", dimensions.a4, "Эксцентриситет"],
+    [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
+    [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
+  ];
+
+  return metrics
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([name, value, label]) => `
+      <div class="shaft-preview__metric">
+        <dt>${name}</dt>
+        <dd>${formatPreviewNumber(value)}<span>${escapeHtml(label)}</span></dd>
+      </div>`)
+    .join("");
+}
+
 function evaluateLevelExpression(expression, context) {
   if (!expression) return 1;
 
@@ -1462,22 +1753,6 @@ function renderParameterTabs() {
   applyParameterTabVisibility();
 }
 
-function setPreviewTab(tabName) {
-  state.activePreviewTab = tabName;
-
-  for (const button of previewTabs?.querySelectorAll("button[data-preview-tab]") || []) {
-    const active = button.dataset.previewTab === tabName;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", active ? "true" : "false");
-  }
-
-  for (const panel of document.querySelectorAll("[data-preview-panel]")) {
-    panel.hidden = tabName === "pdf"
-      ? panel.dataset.previewPanel !== "pdf" && panel.dataset.previewPanel !== "shaft"
-      : panel.dataset.previewPanel !== tabName;
-  }
-}
-
 function getCurrentParameterInputValue(parameter, context) {
   return normalizeValueForAllowedList(
     parameter,
@@ -1644,6 +1919,7 @@ function renderParameters(options = {}) {
     state.validationFieldNames = new Set();
     updateValidationPanel();
     if (parameterReadyBanner) parameterReadyBanner.hidden = true;
+    updateShaftPreview(null);
     restoreViewport(options, scrollPosition, focusTarget);
     return;
   }
@@ -1680,6 +1956,7 @@ function renderParameters(options = {}) {
     parameterReadyBanner.hidden = validationErrors.length > 0;
   }
   updateConfigurationNamePreview();
+  updateShaftPreview(context);
   restoreViewport(options, scrollPosition, focusTarget);
 }
 
@@ -1693,7 +1970,10 @@ function renderSelectedTemplate() {
   updateConfigurationNamePreview();
   initializeParameterValues();
 
-  if (!state.selectedTemplate) return;
+  if (!state.selectedTemplate) {
+    updateShaftPreview(null);
+    return;
+  }
 
   for (const format of state.selectedTemplate.outputFormats) {
     const option = document.createElement("option");
@@ -2120,11 +2400,5 @@ showAllParametersToggle?.addEventListener("change", event => {
   state.showAllParameters = event.currentTarget.checked;
   applyParameterTabVisibility();
 });
-previewTabs?.addEventListener("click", event => {
-  const button = event.target.closest("button[data-preview-tab]");
-  if (!button) return;
-  setPreviewTab(button.dataset.previewTab);
-});
 
-setPreviewTab(state.activePreviewTab);
 await boot();

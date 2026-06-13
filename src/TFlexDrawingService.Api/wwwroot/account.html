@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Личный кабинет — METEOR Engineering Center</title>
+  <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css?v=20260613-meteor-shell-11">
 </head>
 <body>
@@ -156,7 +157,7 @@
         <section id="adminAccessCard" class="admin-access-card" hidden>
           <div>
             <h2>Администратор</h2>
-            <p>Пользователи, шаблоны, доступность форматов и обработчик новых T-FLEX шаблонов.</p>
+            <p>Пользователи, шаблоны и доступность форматов.</p>
           </div>
           <a class="admin-access-card__button" href="#adminPanel">Открыть</a>
         </section>
@@ -164,57 +165,8 @@
         <section id="adminPanel" class="admin-panel" hidden>
           <section class="intro admin-intro">
             <h1>Центр шаблонов</h1>
-            <p>Admin-only обработчик: загрузка шаблона, извлечение зависимостей, переменных, ограничений и публикация для пользователей.</p>
+            <p>Управление доступностью шаблонов, форматами генерации и пользователями.</p>
           </section>
-
-          <div class="template-center-grid">
-            <section class="template-step">
-              <h2>1. Загрузка</h2>
-              <div class="template-upload">
-                <strong>Перетащите .grb или ZIP с фрагментами</strong>
-                <span>Главный файл + одноименная папка фрагментов. Поддержка PDF/DWG/DXF.</span>
-                <label class="topbar__button file-upload-button" for="templateUploadInput">Выбрать файл</label>
-                <input id="templateUploadInput" class="sr-only" type="file" accept=".grb,.zip,.pdf,.dwg,.dxf">
-                <small id="templateUploadStatus">Файл не выбран</small>
-              </div>
-              <ul class="template-checklist">
-                <li>Проверка структуры</li>
-                <li>Поиск связанных фрагментов</li>
-                <li>Чтение T-FLEX переменных</li>
-                <li>Выявление формул, lookup-таблиц и ограничений</li>
-              </ul>
-            </section>
-
-            <section class="template-step">
-              <h2>2. Результат обработки</h2>
-              <div class="template-result-metrics">
-                <article><strong>316</strong><span>Параметры</span></article>
-                <article><strong>28</strong><span>Правила</span></article>
-                <article><strong>14</strong><span>Lookup</span></article>
-                <article><strong>92</strong><span>Фрагменты</span></article>
-              </div>
-              <div class="template-result-grid">
-                <div>
-                  <h3>Зависимости</h3>
-                  <p>LEHY-L-PRO.grb</p>
-                  <span>-/0. TH.xlsx</span>
-                  <span>-/2. Кабина.grb</span>
-                  <span>-/3. Шахта.grb</span>
-                  <span>-/5. Дверной проем.grb</span>
-                </div>
-                <div>
-                  <h3>Ограничения</h3>
-                  <div class="constraint-tags">
-                    <span class="is-warning">TR &lt;= 98000</span>
-                    <span>OH &gt;= 4200</span>
-                    <span>PD &gt;= 1300</span>
-                    <span>AA by car_type</span>
-                    <span>Door fire rating EI</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
 
           <section class="panel panel--wide template-catalog">
             <div class="panel__header">

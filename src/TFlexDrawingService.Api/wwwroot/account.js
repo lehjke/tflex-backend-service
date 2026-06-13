@@ -32,8 +32,6 @@ const readyFilesMetric = document.querySelector("#readyFilesMetric");
 const pendingMetric = document.querySelector("#pendingMetric");
 const savedConfigurationsList = document.querySelector("#savedConfigurationsList");
 const adminAccessCard = document.querySelector("#adminAccessCard");
-const templateUploadInput = document.querySelector("#templateUploadInput");
-const templateUploadStatus = document.querySelector("#templateUploadStatus");
 const adminNavLink = document.querySelector("#adminNavLink");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
@@ -126,9 +124,13 @@ function getTemplateFormats(configuration) {
   return normalized.length > 0 ? normalized : ["pdf"];
 }
 
-function findConfigurationFormatSelect(configurationId) {
-  return [...document.querySelectorAll("select[data-format-for]")]
+function findConfigurationFormatSelect(configurationId, scope = document) {
+  return [...scope.querySelectorAll("select[data-format-for]")]
     .find(select => select.dataset.formatFor === configurationId) || null;
+}
+
+function findConfigurationActionScope(button) {
+  return button.closest(".saved-configuration-item, tr") || document;
 }
 
 function getAllConfigurations() {
@@ -363,7 +365,7 @@ function renderSavedConfigurations() {
       </select>
       <div class="inline-actions">
         <a class="secondary button-link" href="/?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
-        <button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">PDF</button>
+        <button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>
       </div>
     `;
     savedConfigurationsList.append(item);
@@ -734,7 +736,7 @@ projectsList.addEventListener("click", event => {
   if (button.dataset.action === "delete") {
     deleteConfiguration(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "download") {
-    const select = findConfigurationFormatSelect(button.dataset.id);
+    const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
   }
 });
@@ -743,7 +745,7 @@ savedConfigurationsList?.addEventListener("click", event => {
   if (!button) return;
 
   if (button.dataset.action === "download") {
-    const select = findConfigurationFormatSelect(button.dataset.id);
+    const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
   }
 });
@@ -756,12 +758,6 @@ adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");
   if (!input) return;
   setTemplateEnabled(input.dataset.templateId, input.checked);
-});
-templateUploadInput?.addEventListener("change", event => {
-  const file = event.currentTarget.files?.[0];
-  if (templateUploadStatus) {
-    templateUploadStatus.textContent = file ? file.name : "Файл не выбран";
-  }
 });
 
 await boot();

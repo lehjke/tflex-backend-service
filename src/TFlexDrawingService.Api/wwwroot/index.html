@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>METEOR Engineering Center</title>
+  <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css?v=20260613-meteor-shell-11">
 </head>
 <body>
@@ -158,38 +159,17 @@
         <aside class="preview-stack">
           <section class="panel panel--preview">
             <div class="panel__header">
-              <h2>Предпросмотр</h2>
-            </div>
-            <div id="previewTabs" class="preview-tabs" aria-label="Режим предпросмотра">
-              <button class="is-active" type="button" data-preview-tab="pdf">PDF</button>
-              <button type="button" data-preview-tab="shaft">План шахты</button>
-              <button type="button" data-preview-tab="variables">Переменные</button>
-            </div>
-            <div class="drawing-preview" data-preview-panel="pdf" aria-label="Предпросмотр чертежа">
-              <div class="drawing-preview__sheet">
-                <span></span>
-                <div class="drawing-preview__shaft">
-                  <div></div>
-                </div>
-                <i></i>
-              </div>
-              <p>Preview generated from latest parameters</p>
-            </div>
-            <div class="shaft-preview" data-preview-panel="shaft">
-              <strong>Динамический план шахты</strong>
-              <div class="shaft-preview__body">
-                <div class="shaft-preview__plan"><span></span></div>
-                <p>AA 1600 · BB 1500 · AH 2150 · BH 2100</p>
+              <div>
+                <h2>План шахты</h2>
+                <p id="shaftPreviewSubtitle" class="panel__subtitle">Live preview по текущим параметрам</p>
               </div>
             </div>
-            <div class="variables-preview" data-preview-panel="variables" hidden>
-              <strong>Переменные шаблона</strong>
-              <dl>
-                <dt>AA</dt><dd>1600 mm</dd>
-                <dt>BB</dt><dd>1500 mm</dd>
-                <dt>OH</dt><dd>4500 mm</dd>
-                <dt>PD</dt><dd>1400 mm</dd>
-              </dl>
+            <div id="shaftPreviewUnavailable" class="preview-unavailable" hidden>
+              Предпросмотр плана шахты доступен для шаблонов LEHY-L-PRO и LEHY-PRO.
+            </div>
+            <div id="shaftPreviewContent" class="shaft-preview">
+              <div id="shaftPreviewCanvas" class="shaft-preview__canvas" aria-label="Динамический план шахты"></div>
+              <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
             </div>
           </section>
 
