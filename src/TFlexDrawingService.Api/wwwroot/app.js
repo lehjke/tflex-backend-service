@@ -7,6 +7,8 @@ const state = {
   pollTimer: null,
   pendingRenderFrame: null,
   pendingFocusTarget: null,
+  activeParameterCategory: null,
+  showAllParameters: true,
   currentUser: null,
   projects: [],
   configurations: [],
@@ -34,8 +36,17 @@ const submitButton = document.querySelector("#submitButton");
 const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
 const validationPanel = document.querySelector("#validationPanel");
+const parameterTabs = document.querySelector("#parameterTabs");
+const showAllParametersToggle = document.querySelector("#showAllParametersToggle");
+const parameterReadyBanner = document.querySelector("#parameterReadyBanner");
+const shaftPreviewSubtitle = document.querySelector("#shaftPreviewSubtitle");
+const shaftPreviewUnavailable = document.querySelector("#shaftPreviewUnavailable");
+const shaftPreviewContent = document.querySelector("#shaftPreviewContent");
+const shaftPreviewCanvas = document.querySelector("#shaftPreviewCanvas");
+const shaftPreviewMetrics = document.querySelector("#shaftPreviewMetrics");
 const projectSelect = document.querySelector("#projectSelect");
 const saveConfigurationButton = document.querySelector("#saveConfigurationButton");
+const configurationNamePreview = document.querySelector("#configurationNamePreview");
 
 const STOP_CONTROL_NAMES = new Set(["main", "name", "level", "main_floor"]);
 const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$ver"]);
@@ -47,6 +58,7 @@ const STOP_LEVEL_LABEL = "\u041e\u0442\u043c.";
 const STOP_FRONT_LABEL = "\u041f\u0435\u0440.";
 const STOP_REAR_LABEL = "\u0417\u0430\u0434.";
 const STOP_AO_LABEL = "AO";
+const DEFAULT_PARAMETER_CATEGORY = "\u0420\u0430\u0437\u043d\u043e\u0435";
 const CATEGORY_LABEL_OVERRIDES = new Map([
   ["LOP", "Панель вызова"],
   ["LIP", "Этажный указатель"]
@@ -92,6 +104,10 @@ const CATEGORY_DISPLAY_ORDER = [
   "Этажный указатель",
   "Отделка"
 ];
+const SHAFT_PREVIEW_SUPPORTED_TEMPLATE_PREFIXES = [
+  "lehy_l_pro",
+  "lehy_pro"
+];
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -121,6 +137,22 @@ function getConfigurationName(parameters) {
   }
 
   return state.selectedTemplate?.name || state.selectedTemplate?.code || state.selectedTemplate?.id || "Конфигурация";
+}
+
+function updateConfigurationNamePreview(parameters = state.parameterValues) {
+  if (!configurationNamePreview) return;
+  if (!state.selectedTemplate) {
+    configurationNamePreview.value = "-";
+    return;
+  }
+
+  const oboznach = parameters?.$Oboznach ?? getParameterValueByName("$Oboznach");
+  if (hasValue(oboznach) && String(oboznach).trim()) {
+    configurationNamePreview.value = `$Oboznach: ${String(oboznach).trim()}`;
+    return;
+  }
+
+  configurationNamePreview.value = getConfigurationName(parameters);
 }
 
 function escapeHtml(value) {
@@ -789,6 +821,363 @@ function buildLevelContext() {
   return context;
 }
 
+function isShaftPreviewSupportedTemplate(template = state.selectedTemplate) {
+  if (!template) return false;
+  const markers = [
+    template.id,
+    template.code,
+    template.name
+  ].filter(Boolean).map(value => String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, ""));
+
+  return markers.some(marker =>
+    SHAFT_PREVIEW_SUPPORTED_TEMPLATE_PREFIXES.some(prefix =>
+      marker === prefix || marker.startsWith(`${prefix}_`)));
+}
+
+function getPreviewNumber(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  const number = toNumber(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function getPreviewSignedNumber(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getPreviewFlag(context, name) {
+  const value = context?.[name] ?? getParameterValueByName(name);
+  return toFlagNumber(value);
+}
+
+function getPreviewRawValue(context, ...names) {
+  for (const name of names) {
+    const value = context?.[name] ?? getParameterValueByName(name);
+    if (hasValue(value) && String(value).trim() !== "") return value;
+  }
+
+  return undefined;
+}
+
+function getPreviewTextValue(context, ...names) {
+  const value = getPreviewRawValue(context, ...names);
+  return hasValue(value) ? String(value).trim() : "";
+}
+
+function normalizePreviewToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "")
+    .replaceAll("-", "");
+}
+
+function isCenterOpeningDoor(context) {
+  const opening = normalizePreviewToken(getPreviewTextValue(
+    context,
+    "$Opening",
+    "Opening",
+    "$door_type",
+    "door_type",
+    "$DOOR",
+    "DOOR"));
+
+  return opening === "co"
+    || opening === "2co"
+    || opening === "цо"
+    || opening === "cld";
+}
+
+function getCounterweightPlace(context) {
+  const place = normalizePreviewToken(getPreviewTextValue(context, "$s", "s", "$HAND", "HAND"));
+  if (place === "справа" || place === "right" || place === "1") {
+    return { label: "Справа", mirrorX: true };
+  }
+
+  return { label: "Слева", mirrorX: false };
+}
+
+function clampPreviewNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatPreviewNumber(value) {
+  if (!Number.isFinite(value)) return "-";
+  return String(Math.round(value));
+}
+
+function formatPreviewMetricValue(value) {
+  if (typeof value === "number") return formatPreviewNumber(value);
+  return escapeHtml(value);
+}
+
+function showShaftPreviewUnavailable(message) {
+  if (shaftPreviewSubtitle) shaftPreviewSubtitle.textContent = "Preview недоступен";
+  if (shaftPreviewUnavailable) {
+    shaftPreviewUnavailable.hidden = false;
+    shaftPreviewUnavailable.textContent = message;
+  }
+  if (shaftPreviewContent) shaftPreviewContent.hidden = true;
+}
+
+function updateShaftPreview(context = null) {
+  if (!shaftPreviewContent || !shaftPreviewCanvas || !shaftPreviewMetrics) return;
+
+  if (!state.selectedTemplate) {
+    showShaftPreviewUnavailable("Выберите шаблон, чтобы увидеть план шахты.");
+    return;
+  }
+
+  if (!isShaftPreviewSupportedTemplate()) {
+    showShaftPreviewUnavailable("Предпросмотр плана шахты доступен для шаблонов LEHY-L-PRO и LEHY-PRO.");
+    return;
+  }
+
+  const previewContext = context || buildLevelContext();
+  const ah = getPreviewNumber(previewContext, "AH");
+  const bh = getPreviewNumber(previewContext, "BH");
+  const aa = getPreviewNumber(previewContext, "AA");
+  const bb = getPreviewNumber(previewContext, "BB");
+  const jj = getPreviewNumber(previewContext, "JJ");
+  const ee = getPreviewNumber(previewContext, "EE");
+  const ww = getPreviewNumber(previewContext, "WW") || getPreviewNumber(previewContext, "WW_1");
+  const wg = getPreviewNumber(previewContext, "WG") || getPreviewNumber(previewContext, "WG_1");
+  const a1 = getPreviewNumber(previewContext, "A1");
+  const a2 = getPreviewNumber(previewContext, "A2");
+  const bw = getPreviewNumber(previewContext, "BW");
+  const ca = getPreviewNumber(previewContext, "CA");
+  const cb = getPreviewNumber(previewContext, "CB");
+  const as = getPreviewNumber(previewContext, "AS") || (aa ? aa + 62 : null);
+  const a6 = getPreviewNumber(previewContext, "A6");
+  const b1 = getPreviewNumber(previewContext, "B1");
+  const bs = getPreviewNumber(previewContext, "BS");
+  const dk = getPreviewNumber(previewContext, "DK");
+  const bottomGap = getPreviewNumber(previewContext, "bb");
+  const cwtPlace = getCounterweightPlace(previewContext);
+  const centerOpeningDoor = isCenterOpeningDoor(previewContext);
+  const doorWidth = jj && centerOpeningDoor ? jj * 2 : jj;
+  const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
+  const carCenterX = a1 && a2
+    ? a1 + a2
+    : (lehyProSideCwt && cb ? cb : (ca || (ah ? ah / 2 : null)));
+  const rearCwt = lehyProSideCwt
+    && getPreviewFlag(previewContext, "CWT_SG") === 1;
+  const sideCwtCenterX = a1
+    ?? (lehyProSideCwt && ca && carCenterX ? carCenterX + ca : null)
+    ?? (bw && ah ? ah - bw : null);
+  const sideCwtX = sideCwtCenterX && ww ? sideCwtCenterX - ww / 2 : null;
+  const rearCwtX = carCenterX && wg ? carCenterX - wg / 2 : null;
+  const cwtX = rearCwt ? rearCwtX : sideCwtX;
+  const cwtMetricName = rearCwt
+    ? "WG"
+    : (a1 ? "A1" : (lehyProSideCwt && ca ? "CA" : (bw ? "AH-BW" : "CWT X")));
+  const cwtMetricValue = rearCwt
+    ? wg
+    : (a1 ?? (lehyProSideCwt && ca ? ca : sideCwtCenterX));
+  const cwtDepth = ee
+    ? ee + 150
+    : (rearCwt
+      ? (b1 ? Math.max(0, b1 - 15) : Math.max(0, (a6 || 138) - 33))
+      : (bh && wg ? Math.max(0, (bh - wg) / 2) : null));
+  const cwtY = ee && bh && wg && !rearCwt
+    ? bh - cwtDepth - wg
+    : cwtDepth;
+  const dimensions = {
+    ah,
+    bh,
+    aa,
+    bb,
+    as,
+    jj,
+    doorWidth,
+    centerOpeningDoor,
+    cwtPlaceLabel: cwtPlace.label,
+    mirrorX: cwtPlace.mirrorX,
+    a4: getPreviewSignedNumber(previewContext, "A4"),
+    a1,
+    a2,
+    a6,
+    bw,
+    ca,
+    cb,
+    carCenterX,
+    ee,
+    cwtX,
+    cwtMetricName,
+    cwtMetricValue,
+    cwtDepth,
+    cwtY,
+    cwtDepthLabel: rearCwt ? "CWD" : (ee ? "EE+150" : "CWT Y"),
+    rearCwt,
+    bs,
+    dk,
+    bottomGap,
+    ww,
+    wg
+  };
+
+  if (!dimensions.ah || !dimensions.bh || !dimensions.aa || !dimensions.bb) {
+    showShaftPreviewUnavailable("Недостаточно размеров AH, BH, AA и BB для построения плана.");
+    return;
+  }
+
+  if (shaftPreviewSubtitle) shaftPreviewSubtitle.textContent = "Live preview по текущим параметрам";
+  if (shaftPreviewUnavailable) shaftPreviewUnavailable.hidden = true;
+  shaftPreviewContent.hidden = false;
+
+  shaftPreviewCanvas.innerHTML = renderShaftPreviewSvg(dimensions);
+  shaftPreviewMetrics.innerHTML = renderShaftPreviewMetrics(dimensions);
+}
+
+function renderShaftPreviewSvg(dimensions) {
+  const svgWidth = 380;
+  const svgHeight = 286;
+  const paddingX = 34;
+  const paddingY = 30;
+  const drawingWidth = svgWidth - paddingX * 2;
+  const drawingHeight = svgHeight - paddingY * 2;
+
+  const shaftRect = { x: 0, y: 0, width: dimensions.ah, height: dimensions.bh };
+  const cabinX = dimensions.carCenterX
+    ? dimensions.carCenterX - dimensions.aa / 2
+    : (dimensions.ah - dimensions.aa) / 2;
+  const cabinBottomClearance = dimensions.bs
+    ? Math.max(0, dimensions.bs - dimensions.bb)
+    : ((dimensions.dk || 0) + (dimensions.bottomGap || 0));
+  const cabinY = dimensions.rearCwt && dimensions.ww && Number.isFinite(dimensions.cwtDepth)
+    ? clampPreviewNumber(dimensions.cwtDepth + dimensions.ww + 30, 0, Math.max(0, dimensions.bh - dimensions.bb))
+    : (dimensions.bh - dimensions.bb - cabinBottomClearance);
+  const baseCabinRect = {
+    x: cabinX,
+    y: cabinY,
+    width: dimensions.aa,
+    height: dimensions.bb
+  };
+  const doorWidthMm = dimensions.doorWidth || dimensions.aa * 0.55;
+  const baseDoorRect = {
+    x: baseCabinRect.x + baseCabinRect.width / 2 + dimensions.a4 - doorWidthMm / 2,
+    y: baseCabinRect.y + baseCabinRect.height - 70,
+    width: doorWidthMm,
+    height: 50
+  };
+  const baseCwtRect = dimensions.ww
+    && dimensions.wg
+    && Number.isFinite(dimensions.cwtX)
+    && Number.isFinite(dimensions.cwtY)
+    ? {
+        x: dimensions.cwtX,
+        y: dimensions.cwtY,
+        width: dimensions.rearCwt ? dimensions.wg : dimensions.ww,
+        height: dimensions.rearCwt ? dimensions.ww : dimensions.wg
+      }
+    : null;
+  const railInset = 85;
+  const baseRailLeft = {
+    x1: baseCabinRect.x + railInset,
+    y1: baseCabinRect.y - 80,
+    x2: baseCabinRect.x + railInset,
+    y2: baseCabinRect.y + baseCabinRect.height + 80
+  };
+  const baseRailRight = {
+    x1: baseCabinRect.x + baseCabinRect.width - railInset,
+    y1: baseCabinRect.y - 80,
+    x2: baseCabinRect.x + baseCabinRect.width - railInset,
+    y2: baseCabinRect.y + baseCabinRect.height + 80
+  };
+  const mirrorRect = rect => dimensions.mirrorX
+    ? { ...rect, x: dimensions.ah - rect.x - rect.width }
+    : rect;
+  const mirrorLine = line => dimensions.mirrorX
+    ? { ...line, x1: dimensions.ah - line.x1, x2: dimensions.ah - line.x2 }
+    : line;
+  const cabinRect = mirrorRect(baseCabinRect);
+  const doorRect = mirrorRect(baseDoorRect);
+  const cwtRect = baseCwtRect ? mirrorRect(baseCwtRect) : null;
+  const railLeft = mirrorLine(baseRailLeft);
+  const railRight = mirrorLine(baseRailRight);
+  const rects = [shaftRect, cabinRect, doorRect, ...(cwtRect ? [cwtRect] : [])];
+  const margin = 140;
+  const bounds = rects.reduce((acc, rect) => ({
+    minX: Math.min(acc.minX, rect.x),
+    minY: Math.min(acc.minY, rect.y),
+    maxX: Math.max(acc.maxX, rect.x + rect.width),
+    maxY: Math.max(acc.maxY, rect.y + rect.height)
+  }), { minX: 0, minY: 0, maxX: dimensions.ah, maxY: dimensions.bh });
+  bounds.minX = Math.min(bounds.minX, railLeft.x1, railRight.x1) - margin;
+  bounds.minY = Math.min(bounds.minY, railLeft.y1, railRight.y1) - margin;
+  bounds.maxX = Math.max(bounds.maxX, railLeft.x2, railRight.x2) + margin;
+  bounds.maxY = Math.max(bounds.maxY, railLeft.y2, railRight.y2) + margin;
+
+  const scale = Math.min(drawingWidth / (bounds.maxX - bounds.minX), drawingHeight / (bounds.maxY - bounds.minY));
+  const mapX = value => paddingX + (value - bounds.minX) * scale;
+  const mapY = value => paddingY + (value - bounds.minY) * scale;
+  const mapSize = value => value * scale;
+  const rectAttrs = rect =>
+    `x="${mapX(rect.x).toFixed(1)}" y="${mapY(rect.y).toFixed(1)}" width="${mapSize(rect.width).toFixed(1)}" height="${mapSize(rect.height).toFixed(1)}"`;
+  const lineAttrs = line =>
+    `x1="${mapX(line.x1).toFixed(1)}" y1="${mapY(line.y1).toFixed(1)}" x2="${mapX(line.x2).toFixed(1)}" y2="${mapY(line.y2).toFixed(1)}"`;
+  const isInside = (inner, outer) =>
+    inner.x >= outer.x
+    && inner.y >= outer.y
+    && inner.x + inner.width <= outer.x + outer.width
+    && inner.y + inner.height <= outer.y + outer.height;
+  const intersects = (first, second) =>
+    first.x < second.x + second.width
+    && first.x + first.width > second.x
+    && first.y < second.y + second.height
+    && first.y + first.height > second.y;
+  const cabinCollision = !isInside(cabinRect, shaftRect) || (cwtRect && intersects(cabinRect, cwtRect));
+  const cwtCollision = cwtRect && (!isInside(cwtRect, shaftRect) || intersects(cabinRect, cwtRect));
+  const doorCollision = !isInside(doorRect, shaftRect) || !isInside(doorRect, cabinRect);
+  const cwtMarkup = cwtRect
+    ? `<rect class="shaft-preview-svg__counterweight ${cwtCollision ? "shaft-preview-svg__counterweight--collision" : ""}" ${rectAttrs(cwtRect)} rx="3" />`
+    : "";
+
+  return `
+    <svg class="shaft-preview-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="План шахты">
+      <rect class="shaft-preview-svg__shaft" ${rectAttrs(shaftRect)} rx="4" />
+      <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y1="${mapY(shaftRect.y).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height).toFixed(1)}" />
+      <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x).toFixed(1)}" y1="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" />
+      ${cwtMarkup}
+      <rect class="shaft-preview-svg__car ${cabinCollision ? "shaft-preview-svg__car--collision" : ""}" ${rectAttrs(cabinRect)} rx="3" />
+      <line class="shaft-preview-svg__rail" ${lineAttrs(railLeft)} />
+      <line class="shaft-preview-svg__rail" ${lineAttrs(railRight)} />
+      <rect class="shaft-preview-svg__door ${doorCollision ? "shaft-preview-svg__door--collision" : ""}" ${rectAttrs(doorRect)} rx="1" />
+      <text class="shaft-preview-svg__label" x="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height + 110).toFixed(1)}">AH ${formatPreviewNumber(dimensions.ah)}</text>
+      <text class="shaft-preview-svg__label shaft-preview-svg__label--vertical" x="${mapX(shaftRect.x - 110).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}">BH ${formatPreviewNumber(dimensions.bh)}</text>
+    </svg>`;
+}
+
+function renderShaftPreviewMetrics(dimensions) {
+  const metrics = [
+    ["AH", dimensions.ah, "Ширина шахты"],
+    ["BH", dimensions.bh, "Глубина шахты"],
+    ["AA", dimensions.aa, "Ширина кабины"],
+    ["BB", dimensions.bb, "Глубина кабины"],
+    ["JJ", dimensions.jj, "Ширина дверей"],
+    ...(dimensions.centerOpeningDoor && dimensions.doorWidth !== dimensions.jj
+      ? [["2xJJ", dimensions.doorWidth, "Расчетная ширина CO"]]
+      : []),
+    ["A4", dimensions.a4, "Эксцентриситет"],
+    ["Место", dimensions.cwtPlaceLabel, "Положение противовеса"],
+    [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
+    [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
+  ];
+
+  return metrics
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([name, value, label]) => `
+      <div class="shaft-preview__metric">
+        <dt>${escapeHtml(name)}</dt>
+        <dd>${formatPreviewMetricValue(value)}<span>${escapeHtml(label)}</span></dd>
+      </div>`)
+    .join("");
+}
+
 function evaluateLevelExpression(expression, context) {
   if (!expression) return 1;
 
@@ -1294,31 +1683,56 @@ function createStopsTable(context, options = {}) {
 }
 
 function getParameterDisplayParts(parameter) {
-  const displayName = parameter.displayName || parameter.name;
-  const separator = " / ";
-  const separatorIndex = displayName.indexOf(separator);
+  const displayName = normalizeParameterDisplayText(parameter.displayName || parameter.name);
+  const explicitCategory = normalizeParameterCategory(
+    parameter.category || parameter.groupName || parameter.group || "");
+  const separatorIndex = displayName.indexOf("/");
 
   if (separatorIndex < 0) {
-    const category = CATEGORY_LABEL_OVERRIDES.get("Разное") || "Разное";
-    const label = FIELD_LABEL_OVERRIDES.get(displayName) || displayName;
     return {
-      category,
-      label
+      category: explicitCategory || DEFAULT_PARAMETER_CATEGORY,
+      label: normalizeParameterLabel(displayName, parameter.name)
     };
   }
 
-  const category = displayName.slice(0, separatorIndex).trim();
-  const label = displayName.slice(separatorIndex + separator.length).trim();
+  const category = displayName.slice(0, separatorIndex);
+  const label = displayName.slice(separatorIndex + 1);
 
   return {
-    category: CATEGORY_LABEL_OVERRIDES.get(category) || category,
-    label: FIELD_LABEL_OVERRIDES.get(label) || label
+    category: normalizeParameterCategory(category) || explicitCategory || DEFAULT_PARAMETER_CATEGORY,
+    label: normalizeParameterLabel(label, parameter.name)
   };
+}
+
+function normalizeParameterDisplayText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isBrokenParameterText(value) {
+  const text = normalizeParameterDisplayText(value);
+  return !text || /^[?\-_\s]+$/.test(text);
+}
+
+function normalizeParameterCategory(value) {
+  const category = normalizeParameterDisplayText(value);
+  if (isBrokenParameterText(category)) return "";
+  return CATEGORY_LABEL_OVERRIDES.get(category) || category;
+}
+
+function normalizeParameterLabel(value, fallbackName) {
+  const label = normalizeParameterDisplayText(value);
+  if (!isBrokenParameterText(label)) {
+    return FIELD_LABEL_OVERRIDES.get(label) || label;
+  }
+
+  return FIELD_LABEL_OVERRIDES.get(fallbackName) || fallbackName;
 }
 
 function getFieldLabelText(parameter) {
   const parts = getParameterDisplayParts(parameter);
-  return parameter.unit ? `${parts.label}, ${parameter.unit}` : parts.label;
+  return parts.label;
 }
 
 function createParameterGroup(category) {
@@ -1360,12 +1774,95 @@ function getCategoryDisplayOrder(category, fallbackIndex) {
 function reorderParameterGroups(groups) {
   [...groups.entries()]
     .map(([category, group], index) => ({
+      category,
       group,
       index,
       order: getCategoryDisplayOrder(category, index)
     }))
     .sort((left, right) => left.order - right.order || left.index - right.index)
     .forEach(({ group }) => parametersForm.append(group));
+}
+
+function getRenderedParameterCategories() {
+  return [...parametersForm.querySelectorAll(".parameter-group")]
+    .map(group => group.dataset.category)
+    .filter(Boolean);
+}
+
+function getParameterGroupByCategory(category) {
+  return [...parametersForm.querySelectorAll(".parameter-group")]
+    .find(group => group.dataset.category === category);
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches || false;
+}
+
+function scrollToParameterCategory(category) {
+  const group = getParameterGroupByCategory(category);
+  if (!group) return;
+
+  group.scrollIntoView({
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block: "start",
+    inline: "nearest"
+  });
+}
+
+function applyParameterTabVisibility() {
+  const categories = getRenderedParameterCategories();
+  if (!categories.length) {
+    if (parameterTabs) parameterTabs.replaceChildren();
+    state.activeParameterCategory = null;
+    return;
+  }
+
+  if (!state.activeParameterCategory || !categories.includes(state.activeParameterCategory)) {
+    state.activeParameterCategory = categories[0];
+  }
+
+  for (const group of parametersForm.querySelectorAll(".parameter-group")) {
+    group.hidden = !state.showAllParameters && group.dataset.category !== state.activeParameterCategory;
+  }
+
+  for (const button of parameterTabs?.querySelectorAll("button[data-category]") || []) {
+    const active = button.dataset.category === state.activeParameterCategory;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  if (showAllParametersToggle) {
+    showAllParametersToggle.checked = state.showAllParameters;
+  }
+}
+
+function renderParameterTabs() {
+  if (!parameterTabs) return;
+
+  const categories = getRenderedParameterCategories();
+  const visibleCategories = categories;
+
+  if (state.activeParameterCategory && !visibleCategories.includes(state.activeParameterCategory)) {
+    state.activeParameterCategory = visibleCategories[0] || categories[0] || null;
+  }
+
+  parameterTabs.replaceChildren();
+  for (const category of visibleCategories) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.category = category;
+    button.textContent = category;
+    button.addEventListener("click", () => {
+      state.activeParameterCategory = category;
+      applyParameterTabVisibility();
+      if (state.showAllParameters) {
+        requestAnimationFrame(() => scrollToParameterCategory(category));
+      }
+    });
+    parameterTabs.append(button);
+  }
+
+  applyParameterTabVisibility();
 }
 
 function getCurrentParameterInputValue(parameter, context) {
@@ -1445,7 +1942,19 @@ function createParameterInput(parameter, context) {
     input.setAttribute("aria-invalid", "true");
   }
 
-  field.append(label, input);
+  const shouldShowUnit = parameter.unit && input.tagName !== "SELECT" && input.type !== "checkbox" && input.type !== "radio";
+  if (shouldShowUnit) {
+    const control = document.createElement("div");
+    control.className = "field__control";
+    const suffix = document.createElement("span");
+    suffix.className = "field__suffix";
+    suffix.textContent = parameter.unit;
+    control.append(input, suffix);
+    field.append(label, control);
+  } else {
+    field.append(label, input);
+  }
+
   if (parameter.multiline || parameter.name === "$Address" || input.tagName === "TEXTAREA") {
     field.classList.add("field--wide");
   }
@@ -1481,18 +1990,48 @@ function focusParameterInput(focusTarget) {
   input?.focus({ preventScroll: true });
 }
 
+function getViewportScrollPosition() {
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  return {
+    x: window.scrollX,
+    y: window.scrollY,
+    elementLeft: scrollingElement.scrollLeft,
+    elementTop: scrollingElement.scrollTop
+  };
+}
+
+function applyViewportScrollPosition(scrollPosition) {
+  if (!scrollPosition) return;
+
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  scrollingElement.scrollLeft = scrollPosition.elementLeft;
+  scrollingElement.scrollTop = scrollPosition.elementTop;
+  window.scrollTo({
+    left: scrollPosition.x,
+    top: scrollPosition.y,
+    behavior: "auto"
+  });
+}
+
 function restoreViewport(options, scrollPosition, focusTarget) {
   if (!options.preserveScroll && !options.preserveFocus) return;
 
-  requestAnimationFrame(() => {
-    if (options.preserveFocus) focusParameterInput(focusTarget);
-    if (options.preserveScroll && scrollPosition) {
-      window.scrollTo({
-        left: scrollPosition.x,
-        top: scrollPosition.y,
-        behavior: "auto"
-      });
+  let focusRestored = false;
+  const restore = () => {
+    if (options.preserveFocus && !focusRestored) {
+      focusParameterInput(focusTarget);
+      focusRestored = true;
     }
+
+    if (options.preserveScroll) {
+      applyViewportScrollPosition(scrollPosition);
+    }
+  };
+
+  restore();
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
   });
 }
 
@@ -1512,7 +2051,7 @@ function renderParametersAfterInputChange(focusTarget) {
 
 function renderParameters(options = {}) {
   const scrollPosition = options.preserveScroll
-    ? { x: window.scrollX, y: window.scrollY }
+    ? getViewportScrollPosition()
     : null;
   const focusTarget = options.preserveFocus ? (options.focusTarget || getFocusedParameterTarget()) : null;
 
@@ -1521,6 +2060,8 @@ function renderParameters(options = {}) {
   if (!state.selectedTemplate) {
     state.validationFieldNames = new Set();
     updateValidationPanel();
+    if (parameterReadyBanner) parameterReadyBanner.hidden = true;
+    updateShaftPreview(null);
     restoreViewport(options, scrollPosition, focusTarget);
     return;
   }
@@ -1551,7 +2092,13 @@ function renderParameters(options = {}) {
   }
 
   reorderParameterGroups(groups);
+  renderParameterTabs();
   updateValidationPanel(validationErrors);
+  if (parameterReadyBanner) {
+    parameterReadyBanner.hidden = validationErrors.length > 0;
+  }
+  updateConfigurationNamePreview();
+  updateShaftPreview(context);
   restoreViewport(options, scrollPosition, focusTarget);
 }
 
@@ -1560,10 +2107,15 @@ function renderSelectedTemplate() {
   formatSelect.replaceChildren();
   parametersForm.replaceChildren();
   state.validationFieldNames = new Set();
+  state.activeParameterCategory = null;
   updateValidationPanel();
+  updateConfigurationNamePreview();
   initializeParameterValues();
 
-  if (!state.selectedTemplate) return;
+  if (!state.selectedTemplate) {
+    updateShaftPreview(null);
+    return;
+  }
 
   for (const format of state.selectedTemplate.outputFormats) {
     const option = document.createElement("option");
@@ -1838,6 +2390,7 @@ async function saveCurrentConfiguration() {
 
   const savedConfiguration = await response.json();
   state.editingConfigurationId = savedConfiguration.id || editingConfigurationId;
+  updateConfigurationNamePreview(parameters);
   statusPanel.className = "empty";
   statusPanel.textContent = editingConfigurationId
     ? "Конфигурация обновлена"
@@ -1962,6 +2515,7 @@ async function logout() {
   jobsTableBody.replaceChildren();
   parametersForm.replaceChildren();
   projectSelect.replaceChildren();
+  updateConfigurationNamePreview();
   clearInterval(state.pollTimer);
   state.pollTimer = null;
   updateAuthView();
@@ -1984,5 +2538,9 @@ registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
 saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
+showAllParametersToggle?.addEventListener("change", event => {
+  state.showAllParameters = event.currentTarget.checked;
+  applyParameterTabVisibility();
+});
 
 await boot();

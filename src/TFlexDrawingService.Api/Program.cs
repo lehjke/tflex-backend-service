@@ -177,7 +177,8 @@ app.Use(async (context, next) =>
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
         headers["Content-Security-Policy"] =
-            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; " +
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com; " +
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; " +
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
         return Task.CompletedTask;
     });
