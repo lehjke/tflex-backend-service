@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260613-meteor-shell-11">
+  <link rel="stylesheet" href="/styles.css?v=20260614-meteor-shell-14">
 </head>
 <body>
   <div class="app-shell">
@@ -13,9 +13,14 @@
       <a class="brand" href="/" aria-label="METEOR Engineering Center">
         <img src="/assets/meteor-logo-eng-light.svg" alt="METEOR LIFT">
       </a>
+      <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
       <div class="sidebar__subtitle">Engineering Center</div>
 
-      <nav class="sidebar__nav" aria-label="Разделы">
+      <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
         <a class="is-active" href="/"><span>Создание</span><small>Drawings</small></a>
         <a href="/account.html"><span>Проекты</span><small>Projects</small></a>
         <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
@@ -30,6 +35,7 @@
         <a class="sidebar__help-button" href="mailto:support@meteor-lift.local">Запросить</a>
       </div>
     </aside>
+    <button class="mobile-menu-backdrop" type="button" aria-label="Закрыть меню" hidden></button>
 
     <div class="workspace">
       <header class="topbar">
@@ -100,7 +106,6 @@
       <main id="appMain" class="layout layout--editor" hidden>
         <section class="intro">
           <h1>Конфигуратор чертежей</h1>
-          <p>Создание строительных заданий продавцами и инженерами без ручной нагрузки на проектный отдел.</p>
         </section>
 
         <section class="editor-form-stack">
@@ -140,10 +145,9 @@
               <div class="panel__header">
                 <div class="panel__title-row">
                   <h2>Параметры чертежа</h2>
-                  <span class="rule-badge">28 правил</span>
                 </div>
                 <label class="show-all-toggle">
-                  <input id="showAllParametersToggle" type="checkbox">
+                  <input id="showAllParametersToggle" type="checkbox" checked>
                   <span>Показать все параметры</span>
                 </label>
               </div>
@@ -211,6 +215,7 @@
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=20260613-meteor-shell-5"></script>
+  <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
+  <script type="module" src="/app.js?v=20260614-meteor-shell-14"></script>
 </body>
 </html>

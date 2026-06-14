@@ -8,7 +8,7 @@ const state = {
   pendingRenderFrame: null,
   pendingFocusTarget: null,
   activeParameterCategory: null,
-  showAllParameters: false,
+  showAllParameters: true,
   currentUser: null,
   projects: [],
   configurations: [],
@@ -58,6 +58,7 @@ const STOP_LEVEL_LABEL = "\u041e\u0442\u043c.";
 const STOP_FRONT_LABEL = "\u041f\u0435\u0440.";
 const STOP_REAR_LABEL = "\u0417\u0430\u0434.";
 const STOP_AO_LABEL = "AO";
+const DEFAULT_PARAMETER_CATEGORY = "\u0420\u0430\u0437\u043d\u043e\u0435";
 const CATEGORY_LABEL_OVERRIDES = new Map([
   ["LOP", "Панель вызова"],
   ["LIP", "Этажный указатель"]
@@ -102,13 +103,6 @@ const CATEGORY_DISPLAY_ORDER = [
   "Панель вызова",
   "Этажный указатель",
   "Отделка"
-];
-const PRIMARY_PARAMETER_TABS = [
-  "Кабина",
-  "Двери",
-  "Шахта",
-  "Приямок",
-  STOP_GROUP_LABEL
 ];
 const SHAFT_PREVIEW_SUPPORTED_TEMPLATE_PREFIXES = [
   "lehy_l_pro",
@@ -860,6 +854,53 @@ function getPreviewFlag(context, name) {
   return toFlagNumber(value);
 }
 
+function getPreviewRawValue(context, ...names) {
+  for (const name of names) {
+    const value = context?.[name] ?? getParameterValueByName(name);
+    if (hasValue(value) && String(value).trim() !== "") return value;
+  }
+
+  return undefined;
+}
+
+function getPreviewTextValue(context, ...names) {
+  const value = getPreviewRawValue(context, ...names);
+  return hasValue(value) ? String(value).trim() : "";
+}
+
+function normalizePreviewToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "")
+    .replaceAll("-", "");
+}
+
+function isCenterOpeningDoor(context) {
+  const opening = normalizePreviewToken(getPreviewTextValue(
+    context,
+    "$Opening",
+    "Opening",
+    "$door_type",
+    "door_type",
+    "$DOOR",
+    "DOOR"));
+
+  return opening === "co"
+    || opening === "2co"
+    || opening === "цо"
+    || opening === "cld";
+}
+
+function getCounterweightPlace(context) {
+  const place = normalizePreviewToken(getPreviewTextValue(context, "$s", "s", "$HAND", "HAND"));
+  if (place === "справа" || place === "right" || place === "1") {
+    return { label: "Справа", mirrorX: true };
+  }
+
+  return { label: "Слева", mirrorX: false };
+}
+
 function clampPreviewNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -867,6 +908,11 @@ function clampPreviewNumber(value, min, max) {
 function formatPreviewNumber(value) {
   if (!Number.isFinite(value)) return "-";
   return String(Math.round(value));
+}
+
+function formatPreviewMetricValue(value) {
+  if (typeof value === "number") return formatPreviewNumber(value);
+  return escapeHtml(value);
 }
 
 function showShaftPreviewUnavailable(message) {
@@ -911,6 +957,9 @@ function updateShaftPreview(context = null) {
   const bs = getPreviewNumber(previewContext, "BS");
   const dk = getPreviewNumber(previewContext, "DK");
   const bottomGap = getPreviewNumber(previewContext, "bb");
+  const cwtPlace = getCounterweightPlace(previewContext);
+  const centerOpeningDoor = isCenterOpeningDoor(previewContext);
+  const doorWidth = jj && centerOpeningDoor ? jj * 2 : jj;
   const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
   const carCenterX = a1 && a2
     ? a1 + a2
@@ -944,7 +993,10 @@ function updateShaftPreview(context = null) {
     bb,
     as,
     jj,
-    doorWidth: jj,
+    doorWidth,
+    centerOpeningDoor,
+    cwtPlaceLabel: cwtPlace.label,
+    mirrorX: cwtPlace.mirrorX,
     a4: getPreviewSignedNumber(previewContext, "A4"),
     a1,
     a2,
@@ -999,20 +1051,20 @@ function renderShaftPreviewSvg(dimensions) {
   const cabinY = dimensions.rearCwt && dimensions.ww && Number.isFinite(dimensions.cwtDepth)
     ? clampPreviewNumber(dimensions.cwtDepth + dimensions.ww + 30, 0, Math.max(0, dimensions.bh - dimensions.bb))
     : (dimensions.bh - dimensions.bb - cabinBottomClearance);
-  const cabinRect = {
+  const baseCabinRect = {
     x: cabinX,
     y: cabinY,
     width: dimensions.aa,
     height: dimensions.bb
   };
   const doorWidthMm = dimensions.doorWidth || dimensions.aa * 0.55;
-  const doorRect = {
-    x: cabinRect.x + cabinRect.width / 2 + dimensions.a4 - doorWidthMm / 2,
-    y: cabinRect.y + cabinRect.height - 70,
+  const baseDoorRect = {
+    x: baseCabinRect.x + baseCabinRect.width / 2 + dimensions.a4 - doorWidthMm / 2,
+    y: baseCabinRect.y + baseCabinRect.height - 70,
     width: doorWidthMm,
     height: 50
   };
-  const cwtRect = dimensions.ww
+  const baseCwtRect = dimensions.ww
     && dimensions.wg
     && Number.isFinite(dimensions.cwtX)
     && Number.isFinite(dimensions.cwtY)
@@ -1024,18 +1076,29 @@ function renderShaftPreviewSvg(dimensions) {
       }
     : null;
   const railInset = 85;
-  const railLeft = {
-    x1: cabinRect.x + railInset,
-    y1: cabinRect.y - 80,
-    x2: cabinRect.x + railInset,
-    y2: cabinRect.y + cabinRect.height + 80
+  const baseRailLeft = {
+    x1: baseCabinRect.x + railInset,
+    y1: baseCabinRect.y - 80,
+    x2: baseCabinRect.x + railInset,
+    y2: baseCabinRect.y + baseCabinRect.height + 80
   };
-  const railRight = {
-    x1: cabinRect.x + cabinRect.width - railInset,
-    y1: cabinRect.y - 80,
-    x2: cabinRect.x + cabinRect.width - railInset,
-    y2: cabinRect.y + cabinRect.height + 80
+  const baseRailRight = {
+    x1: baseCabinRect.x + baseCabinRect.width - railInset,
+    y1: baseCabinRect.y - 80,
+    x2: baseCabinRect.x + baseCabinRect.width - railInset,
+    y2: baseCabinRect.y + baseCabinRect.height + 80
   };
+  const mirrorRect = rect => dimensions.mirrorX
+    ? { ...rect, x: dimensions.ah - rect.x - rect.width }
+    : rect;
+  const mirrorLine = line => dimensions.mirrorX
+    ? { ...line, x1: dimensions.ah - line.x1, x2: dimensions.ah - line.x2 }
+    : line;
+  const cabinRect = mirrorRect(baseCabinRect);
+  const doorRect = mirrorRect(baseDoorRect);
+  const cwtRect = baseCwtRect ? mirrorRect(baseCwtRect) : null;
+  const railLeft = mirrorLine(baseRailLeft);
+  const railRight = mirrorLine(baseRailRight);
   const rects = [shaftRect, cabinRect, doorRect, ...(cwtRect ? [cwtRect] : [])];
   const margin = 140;
   const bounds = rects.reduce((acc, rect) => ({
@@ -1069,7 +1132,7 @@ function renderShaftPreviewSvg(dimensions) {
     && first.y + first.height > second.y;
   const cabinCollision = !isInside(cabinRect, shaftRect) || (cwtRect && intersects(cabinRect, cwtRect));
   const cwtCollision = cwtRect && (!isInside(cwtRect, shaftRect) || intersects(cabinRect, cwtRect));
-  const doorCollision = !isInside(doorRect, cabinRect);
+  const doorCollision = !isInside(doorRect, shaftRect) || !isInside(doorRect, cabinRect);
   const cwtMarkup = cwtRect
     ? `<rect class="shaft-preview-svg__counterweight ${cwtCollision ? "shaft-preview-svg__counterweight--collision" : ""}" ${rectAttrs(cwtRect)} rx="3" />`
     : "";
@@ -1095,18 +1158,22 @@ function renderShaftPreviewMetrics(dimensions) {
     ["BH", dimensions.bh, "Глубина шахты"],
     ["AA", dimensions.aa, "Ширина кабины"],
     ["BB", dimensions.bb, "Глубина кабины"],
-    ["JJ", dimensions.doorWidth, "Ширина дверей"],
+    ["JJ", dimensions.jj, "Ширина дверей"],
+    ...(dimensions.centerOpeningDoor && dimensions.doorWidth !== dimensions.jj
+      ? [["2xJJ", dimensions.doorWidth, "Расчетная ширина CO"]]
+      : []),
     ["A4", dimensions.a4, "Эксцентриситет"],
+    ["Место", dimensions.cwtPlaceLabel, "Положение противовеса"],
     [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
     [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
   ];
 
   return metrics
-    .filter(([, value]) => value !== null && value !== undefined)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .map(([name, value, label]) => `
       <div class="shaft-preview__metric">
-        <dt>${name}</dt>
-        <dd>${formatPreviewNumber(value)}<span>${escapeHtml(label)}</span></dd>
+        <dt>${escapeHtml(name)}</dt>
+        <dd>${formatPreviewMetricValue(value)}<span>${escapeHtml(label)}</span></dd>
       </div>`)
     .join("");
 }
@@ -1616,26 +1683,51 @@ function createStopsTable(context, options = {}) {
 }
 
 function getParameterDisplayParts(parameter) {
-  const displayName = parameter.displayName || parameter.name;
-  const separator = " / ";
-  const separatorIndex = displayName.indexOf(separator);
+  const displayName = normalizeParameterDisplayText(parameter.displayName || parameter.name);
+  const explicitCategory = normalizeParameterCategory(
+    parameter.category || parameter.groupName || parameter.group || "");
+  const separatorIndex = displayName.indexOf("/");
 
   if (separatorIndex < 0) {
-    const category = CATEGORY_LABEL_OVERRIDES.get("Разное") || "Разное";
-    const label = FIELD_LABEL_OVERRIDES.get(displayName) || displayName;
     return {
-      category,
-      label
+      category: explicitCategory || DEFAULT_PARAMETER_CATEGORY,
+      label: normalizeParameterLabel(displayName, parameter.name)
     };
   }
 
-  const category = displayName.slice(0, separatorIndex).trim();
-  const label = displayName.slice(separatorIndex + separator.length).trim();
+  const category = displayName.slice(0, separatorIndex);
+  const label = displayName.slice(separatorIndex + 1);
 
   return {
-    category: CATEGORY_LABEL_OVERRIDES.get(category) || category,
-    label: FIELD_LABEL_OVERRIDES.get(label) || label
+    category: normalizeParameterCategory(category) || explicitCategory || DEFAULT_PARAMETER_CATEGORY,
+    label: normalizeParameterLabel(label, parameter.name)
   };
+}
+
+function normalizeParameterDisplayText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isBrokenParameterText(value) {
+  const text = normalizeParameterDisplayText(value);
+  return !text || /^[?\-_\s]+$/.test(text);
+}
+
+function normalizeParameterCategory(value) {
+  const category = normalizeParameterDisplayText(value);
+  if (isBrokenParameterText(category)) return "";
+  return CATEGORY_LABEL_OVERRIDES.get(category) || category;
+}
+
+function normalizeParameterLabel(value, fallbackName) {
+  const label = normalizeParameterDisplayText(value);
+  if (!isBrokenParameterText(label)) {
+    return FIELD_LABEL_OVERRIDES.get(label) || label;
+  }
+
+  return FIELD_LABEL_OVERRIDES.get(fallbackName) || fallbackName;
 }
 
 function getFieldLabelText(parameter) {
@@ -1697,6 +1789,26 @@ function getRenderedParameterCategories() {
     .filter(Boolean);
 }
 
+function getParameterGroupByCategory(category) {
+  return [...parametersForm.querySelectorAll(".parameter-group")]
+    .find(group => group.dataset.category === category);
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches || false;
+}
+
+function scrollToParameterCategory(category) {
+  const group = getParameterGroupByCategory(category);
+  if (!group) return;
+
+  group.scrollIntoView({
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block: "start",
+    inline: "nearest"
+  });
+}
+
 function applyParameterTabVisibility() {
   const categories = getRenderedParameterCategories();
   if (!categories.length) {
@@ -1728,10 +1840,7 @@ function renderParameterTabs() {
   if (!parameterTabs) return;
 
   const categories = getRenderedParameterCategories();
-  const primaryCategories = PRIMARY_PARAMETER_TABS.filter(category => categories.includes(category));
-  const visibleCategories = primaryCategories.length > 0
-    ? primaryCategories
-    : categories.slice(0, 5);
+  const visibleCategories = categories;
 
   if (state.activeParameterCategory && !visibleCategories.includes(state.activeParameterCategory)) {
     state.activeParameterCategory = visibleCategories[0] || categories[0] || null;
@@ -1746,6 +1855,9 @@ function renderParameterTabs() {
     button.addEventListener("click", () => {
       state.activeParameterCategory = category;
       applyParameterTabVisibility();
+      if (state.showAllParameters) {
+        requestAnimationFrame(() => scrollToParameterCategory(category));
+      }
     });
     parameterTabs.append(button);
   }
@@ -1878,18 +1990,48 @@ function focusParameterInput(focusTarget) {
   input?.focus({ preventScroll: true });
 }
 
+function getViewportScrollPosition() {
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  return {
+    x: window.scrollX,
+    y: window.scrollY,
+    elementLeft: scrollingElement.scrollLeft,
+    elementTop: scrollingElement.scrollTop
+  };
+}
+
+function applyViewportScrollPosition(scrollPosition) {
+  if (!scrollPosition) return;
+
+  const scrollingElement = document.scrollingElement || document.documentElement;
+  scrollingElement.scrollLeft = scrollPosition.elementLeft;
+  scrollingElement.scrollTop = scrollPosition.elementTop;
+  window.scrollTo({
+    left: scrollPosition.x,
+    top: scrollPosition.y,
+    behavior: "auto"
+  });
+}
+
 function restoreViewport(options, scrollPosition, focusTarget) {
   if (!options.preserveScroll && !options.preserveFocus) return;
 
-  requestAnimationFrame(() => {
-    if (options.preserveFocus) focusParameterInput(focusTarget);
-    if (options.preserveScroll && scrollPosition) {
-      window.scrollTo({
-        left: scrollPosition.x,
-        top: scrollPosition.y,
-        behavior: "auto"
-      });
+  let focusRestored = false;
+  const restore = () => {
+    if (options.preserveFocus && !focusRestored) {
+      focusParameterInput(focusTarget);
+      focusRestored = true;
     }
+
+    if (options.preserveScroll) {
+      applyViewportScrollPosition(scrollPosition);
+    }
+  };
+
+  restore();
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
   });
 }
 
@@ -1909,7 +2051,7 @@ function renderParametersAfterInputChange(focusTarget) {
 
 function renderParameters(options = {}) {
   const scrollPosition = options.preserveScroll
-    ? { x: window.scrollX, y: window.scrollY }
+    ? getViewportScrollPosition()
     : null;
   const focusTarget = options.preserveFocus ? (options.focusTarget || getFocusedParameterTarget()) : null;
 
