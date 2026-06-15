@@ -13,6 +13,11 @@ const accountMain = document.querySelector("#accountMain");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
+const guestLoginPanel = document.querySelector("#guestLoginPanel");
+const registerPanel = document.querySelector("#registerPanel");
+const guestLoginForm = document.querySelector("#guestLoginForm");
+const showRegisterPanelButton = document.querySelector("#showRegisterPanel");
+const showLoginPanelButton = document.querySelector("#showLoginPanel");
 const registerForm = document.querySelector("#registerForm");
 const registerUserName = document.querySelector("#registerUserName");
 const registerDisplayName = document.querySelector("#registerDisplayName");
@@ -20,6 +25,8 @@ const registerPassword = document.querySelector("#registerPassword");
 const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
+const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
+const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
 const projectNameInput = document.querySelector("#projectNameInput");
 const createProjectButton = document.querySelector("#createProjectButton");
@@ -32,11 +39,11 @@ const readyFilesMetric = document.querySelector("#readyFilesMetric");
 const pendingMetric = document.querySelector("#pendingMetric");
 const savedConfigurationsList = document.querySelector("#savedConfigurationsList");
 const adminAccessCard = document.querySelector("#adminAccessCard");
-const adminNavLink = document.querySelector("#adminNavLink");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
+const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -176,16 +183,19 @@ function updateMetrics() {
 
 function updateAuthView() {
   const authenticated = isAuthenticated();
+  const isAdmin = authenticated && canAdmin();
   guestMain.hidden = authenticated;
-  loginForm.hidden = authenticated;
+  loginForm.hidden = true;
   userPanel.hidden = !authenticated;
   accountMain.hidden = !authenticated;
-  const showAdminPanel = authenticated && canAdmin() && isAdminPanelRoute();
+  const showAdminPanel = isAdmin && isAdminPanelRoute();
   accountMain.classList.toggle("is-admin-route", showAdminPanel);
   adminPanel.hidden = !showAdminPanel;
   adminPanel.classList.toggle("is-open", showAdminPanel);
-  adminNavLink.hidden = !authenticated || !canAdmin();
-  if (adminAccessCard) adminAccessCard.hidden = !authenticated || !canAdmin();
+  adminNavLinks.forEach(link => {
+    link.hidden = !isAdmin;
+  });
+  if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
 
   if (showAdminPanel) {
     requestAnimationFrame(() => {
@@ -196,9 +206,28 @@ function updateAuthView() {
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = !isAdmin;
+      currentUserRoleLabel.textContent = isAdmin ? "Admin" : "";
+    }
   } else {
     currentUserName.textContent = "";
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = true;
+      currentUserRoleLabel.textContent = "";
+    }
   }
+}
+
+function showAuthPanel(panel) {
+  const showRegister = panel === "register";
+  if (guestLoginPanel) guestLoginPanel.hidden = showRegister;
+  if (registerPanel) registerPanel.hidden = !showRegister;
+
+  requestAnimationFrame(() => {
+    const target = showRegister ? registerUserName : guestLoginForm?.querySelector("[name='userName']");
+    target?.focus({ preventScroll: true });
+  });
 }
 
 async function apiFetch(url, options = {}) {
@@ -546,7 +575,9 @@ function renderAdminUsers() {
       : (user.approvalStatus || (user.enabled ? "Approved" : "Disabled"));
     const normalizedStatus = status.toLowerCase();
     const isCurrentUser = user.userName === state.currentUser?.userName;
+    const isAdminUser = (user.roles || []).includes("Admin");
     const actions = [];
+    actions.push(`<button class="secondary" type="button" data-action="save-roles" data-user="${escapeHtml(user.userName)}">Сохранить права</button>`);
     if (!isCurrentUser && normalizedStatus !== "approved") {
       const label = normalizedStatus === "disabled" ? "Включить" : "Подтвердить";
       actions.push(`<button class="secondary" type="button" data-action="approve" data-user="${escapeHtml(user.userName)}">${label}</button>`);
@@ -554,30 +585,67 @@ function renderAdminUsers() {
     if (!isCurrentUser && normalizedStatus === "pending") {
       actions.push(`<button class="secondary" type="button" data-action="reject" data-user="${escapeHtml(user.userName)}">Отклонить</button>`);
     }
-    if (!isCurrentUser && user.enabled) {
-      actions.push(`<button class="secondary" type="button" data-action="disable" data-user="${escapeHtml(user.userName)}">Отключить</button>`);
+    if (!isCurrentUser && !isAdminUser) {
+      actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete" data-user="${escapeHtml(user.userName)}">Удалить</button>`);
+    } else if (!isCurrentUser && isAdminUser) {
+      actions.push("<span class=\"muted admin-action-note\">Админ защищен</span>");
     }
 
     row.innerHTML = `
       <td>${escapeHtml(user.displayName || user.userName)}<br><span class="muted">${escapeHtml(user.userName)}</span></td>
       <td><span class="status ${escapeHtml(normalizedStatus)}">${escapeHtml(status)}</span></td>
-      <td>${escapeHtml((user.roles || []).join(", "))}</td>
+      <td>${renderAdminRoleControls(user, isCurrentUser)}</td>
       <td><div class="inline-actions">${actions.join("") || "<span class=\"muted\">Нет действий</span>"}</div></td>
     `;
     adminUsersTableBody.append(row);
   }
 }
 
-async function handleAdminUserAction(action, userName) {
+function renderAdminRoleControls(user, isCurrentUser) {
+  const roles = new Set(user.roles || []);
+  return `
+    <div class="role-controls">
+      ${ADMIN_ROLE_OPTIONS.map(role => {
+        const checked = roles.has(role) ? " checked" : "";
+        const disabled = isCurrentUser && role === "Admin" ? " disabled" : "";
+        return `
+          <label class="role-control">
+            <input type="checkbox" data-role="${role}"${checked}${disabled}>
+            <span>${role}</span>
+          </label>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getSelectedAdminRoles(button) {
+  const row = button.closest("tr");
+  const roles = Array.from(row?.querySelectorAll("input[data-role]:checked") || [])
+    .map(input => input.dataset.role)
+    .filter(Boolean);
+  return roles.length > 0 ? roles : ["Viewer"];
+}
+
+async function handleAdminUserAction(action, userName, button) {
   if (!userName) return;
 
-  const user = state.adminUsers.find(item => item.userName === userName);
   let url = `/api/admin/users/${encodeURIComponent(userName)}`;
   let options = { method: "DELETE" };
-  if (action === "approve") {
-    const currentRoles = user?.roles || [];
-    const roles = currentRoles.some(role => role === "Admin" || role === "Operator")
-      ? currentRoles
+  if (action === "save-roles") {
+    options = {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roles: getSelectedAdminRoles(button) })
+    };
+  } else if (action === "delete") {
+    if (!confirm(`Удалить аккаунт ${userName}? Это действие нельзя отменить.`)) {
+      return;
+    }
+  } else if (action === "approve") {
+    const selectedRoles = getSelectedAdminRoles(button);
+    const roles = selectedRoles.some(role => role === "Admin" || role === "Operator")
+      ? selectedRoles
       : ["Operator", "Viewer"];
     url += "/approve";
     options = {
@@ -668,25 +736,28 @@ async function register(event) {
 
 async function login(event) {
   event.preventDefault();
-  loginPassword.setCustomValidity("");
+  const form = event.currentTarget;
+  const userNameInput = form.querySelector("[name='userName']") || loginUserName;
+  const passwordInput = form.querySelector("[name='password']") || loginPassword;
+  passwordInput.setCustomValidity("");
 
   const response = await apiFetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      userName: loginUserName.value,
-      password: loginPassword.value
+      userName: userNameInput.value,
+      password: passwordInput.value
     })
   });
 
   if (!response.ok) {
-    loginPassword.setCustomValidity("Неверный логин или пароль");
-    loginPassword.reportValidity();
+    passwordInput.setCustomValidity("Неверный логин или пароль");
+    passwordInput.reportValidity();
     return;
   }
 
   state.currentUser = await response.json();
-  loginPassword.value = "";
+  passwordInput.value = "";
   updateAuthView();
   await loadTemplates();
   await loadProjects();
@@ -725,6 +796,9 @@ async function boot() {
 
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
+guestLoginForm?.addEventListener("submit", login);
+showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
+showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
 createProjectButton.addEventListener("click", createProject);
 projectSearchInput?.addEventListener("input", renderProjects);
@@ -752,7 +826,7 @@ savedConfigurationsList?.addEventListener("click", event => {
 adminUsersTableBody.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
-  handleAdminUserAction(button.dataset.action, button.dataset.user);
+  handleAdminUserAction(button.dataset.action, button.dataset.user, button);
 });
 adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");

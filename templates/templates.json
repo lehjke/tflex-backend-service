@@ -3459,6 +3459,12 @@
       ],
       "calculatedVariables": [
         {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 45,
+          "expression": "$door_type == \"ЦО\" ? 55 : 45"
+        },
+        {
           "name": "A1",
           "type": "integer",
           "defaultValue": 209,
@@ -12367,6 +12373,12 @@
         }
       ],
       "calculatedVariables": [
+        {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 55,
+          "expression": "$door_type == \"ЦО\" ? 55 : 45"
+        },
         {
           "name": "A1",
           "type": "integer",
@@ -27728,6 +27740,12 @@
         }
       ],
       "calculatedVariables": [
+        {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 45,
+          "expression": "$door_type == \"ЦО\" ? 80 : 45"
+        },
         {
           "name": "$car_type",
           "type": "string",

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Личный кабинет — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260614-meteor-shell-14">
+  <link rel="stylesheet" href="/styles.css?v=20260615-meteor-shell-17">
 </head>
 <body>
   <div class="app-shell">
@@ -25,7 +25,7 @@
         <a class="is-active" href="/account.html"><span>Проекты</span><small>Projects</small></a>
         <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
         <a href="/#jobsPanel"><span>История</span><small>History</small></a>
-        <a id="adminNavLink" href="#adminPanel" hidden><span>Шаблоны</span><small>Admin</small></a>
+        <a id="adminNavLink" class="admin-only-nav" href="#adminPanel" hidden><span>Шаблоны</span><small>Admin</small></a>
         <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
       </nav>
 
@@ -66,7 +66,7 @@
             <span class="user-avatar" aria-hidden="true">ME</span>
             <span class="user-panel__meta">
               <span id="currentUserName"></span>
-              <small>Admin</small>
+              <small id="currentUserRoleLabel" hidden></small>
             </span>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
@@ -74,30 +74,56 @@
       </header>
 
       <main id="guestMain" class="layout layout--auth">
-        <section class="panel panel--wide auth-panel">
-          <div class="panel__header">
-            <h2>Заявка на доступ</h2>
+        <section class="panel auth-panel">
+          <div id="guestLoginPanel" class="auth-view">
+            <div class="panel__header">
+              <h2>Вход</h2>
+            </div>
+
+            <form id="guestLoginForm" class="auth-card">
+              <label class="field">
+                <span class="field__label">Логин</span>
+                <input id="guestLoginUserName" name="userName" autocomplete="username" required>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Пароль</span>
+                <input id="guestLoginPassword" name="password" type="password" autocomplete="current-password" required>
+              </label>
+
+              <button class="primary" type="submit">Войти</button>
+            </form>
+
+            <p class="auth-switch">Нет аккаунта? <button id="showRegisterPanel" class="auth-link" type="button">Зарегистрироваться</button></p>
           </div>
 
-          <form id="registerForm" class="auth-card">
-            <label class="field">
-              <span class="field__label">Логин</span>
-              <input id="registerUserName" name="userName" autocomplete="username" required>
-            </label>
+          <div id="registerPanel" class="auth-view" hidden>
+            <div class="panel__header">
+              <h2>Заявка на доступ</h2>
+            </div>
 
-            <label class="field">
-              <span class="field__label">Имя</span>
-              <input id="registerDisplayName" name="displayName" autocomplete="name">
-            </label>
+            <form id="registerForm" class="auth-card">
+              <label class="field">
+                <span class="field__label">Логин</span>
+                <input id="registerUserName" name="userName" autocomplete="username" required>
+              </label>
 
-            <label class="field">
-              <span class="field__label">Пароль</span>
-              <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
-            </label>
+              <label class="field">
+                <span class="field__label">Имя</span>
+                <input id="registerDisplayName" name="displayName" autocomplete="name">
+              </label>
 
-            <button class="primary" type="submit">Отправить заявку</button>
-            <div id="registerStatus" class="empty" hidden></div>
-          </form>
+              <label class="field">
+                <span class="field__label">Пароль</span>
+                <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
+              </label>
+
+              <button class="primary" type="submit">Отправить заявку</button>
+              <div id="registerStatus" class="empty" hidden></div>
+            </form>
+
+            <p class="auth-switch">Уже есть аккаунт? <button id="showLoginPanel" class="auth-link" type="button">Войти</button></p>
+          </div>
         </section>
       </main>
 
@@ -216,6 +242,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/account.js?v=20260614-meteor-shell-14"></script>
+  <script type="module" src="/account.js?v=20260615-meteor-shell-15"></script>
 </body>
 </html>

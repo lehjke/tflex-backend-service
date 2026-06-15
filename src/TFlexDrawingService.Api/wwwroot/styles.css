@@ -125,6 +125,8 @@ summary:focus-visible {
 #accountMain[hidden],
 #adminPanel[hidden],
 #adminNavLink[hidden],
+.admin-only-nav[hidden],
+#currentUserRoleLabel[hidden],
 #createTopButton[hidden],
 #submitButton[hidden],
 #saveConfigurationButton[hidden] {
@@ -494,6 +496,16 @@ summary:focus-visible {
   border-color: #b7c4d8;
   background: var(--surface-blue);
   transform: translateY(-1px);
+}
+
+.secondary--danger {
+  border-color: #ffd6d1;
+  color: var(--bad);
+}
+
+.secondary--danger:hover {
+  border-color: #ffc1ba;
+  background: #fff5f4;
 }
 
 .primary--compact,
@@ -915,15 +927,58 @@ textarea.is-invalid:focus {
 }
 
 .auth-panel {
-  max-width: 720px;
+  width: min(100%, 480px);
+  max-width: 480px;
   margin: 42px auto 0;
+}
+
+.auth-view {
+  display: grid;
+  gap: 18px;
+}
+
+.auth-view[hidden] {
+  display: none;
 }
 
 .auth-card {
   display: grid;
   gap: 16px;
-  max-width: 520px;
-  margin-top: 18px;
+  width: 100%;
+  max-width: none;
+  margin-top: 0;
+}
+
+.auth-card .primary {
+  width: 100%;
+}
+
+.auth-switch {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.auth-link {
+  display: inline;
+  min-height: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--brand);
+  padding: 0;
+  font-size: inherit;
+  font-weight: 800;
+  line-height: inherit;
+  box-shadow: none;
+}
+
+.auth-link:hover {
+  background: transparent;
+  color: var(--navy);
+  text-decoration: underline;
+  transform: none;
+  box-shadow: none;
 }
 
 .preview-stack {
@@ -1006,10 +1061,17 @@ textarea.is-invalid:focus {
   max-height: 320px;
 }
 
-.shaft-preview-svg__shaft {
+.shaft-preview-svg__shaft-fill {
   fill: #f8fafd;
+  stroke: none;
+}
+
+.shaft-preview-svg__shaft {
+  fill: none;
   stroke: var(--brand);
   stroke-width: 2.2;
+  stroke-linecap: square;
+  stroke-linejoin: round;
 }
 
 .shaft-preview-svg__axis {
@@ -1018,10 +1080,16 @@ textarea.is-invalid:focus {
   stroke-width: 1;
 }
 
-.shaft-preview-svg__car {
+.shaft-preview-svg__car-outer,
+.shaft-preview-svg__car-inner {
   fill: rgb(255 255 255 / 92%);
-  stroke: var(--accent);
-  stroke-width: 1.8;
+  stroke: var(--brand);
+  stroke-width: 1.6;
+}
+
+.shaft-preview-svg__car-inner {
+  fill: rgb(255 255 255 / 72%);
+  stroke-width: 1.25;
 }
 
 .shaft-preview-svg__car--collision {
@@ -1042,15 +1110,15 @@ textarea.is-invalid:focus {
   stroke-width: 2.2;
 }
 
-.shaft-preview-svg__rail {
-  stroke: var(--brand);
-  stroke-width: 1.4;
+.shaft-preview-svg__car-door,
+.shaft-preview-svg__landing-door {
+  fill: #ffffff;
+  stroke: var(--accent);
+  stroke-width: 1.6;
 }
 
-.shaft-preview-svg__door {
-  fill: #ffffff;
-  stroke: var(--brand);
-  stroke-width: 1.4;
+.shaft-preview-svg__landing-door {
+  fill: rgb(255 69 58 / 5%);
 }
 
 .shaft-preview-svg__door--collision {
@@ -1409,6 +1477,10 @@ table {
   border-collapse: collapse;
 }
 
+.admin-users-section table {
+  min-width: 920px;
+}
+
 th,
 td {
   border-bottom: 1px solid var(--line);
@@ -1553,6 +1625,52 @@ td {
   min-height: 32px;
   padding: 0 11px;
   font-size: 11px;
+}
+
+.role-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 210px;
+}
+
+.role-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.role-control:has(input:checked) {
+  border-color: #cad7ec;
+  background: var(--surface-blue);
+  color: var(--brand);
+}
+
+.role-control input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.role-control input:disabled + span {
+  opacity: 0.68;
+}
+
+.admin-action-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .button-link {
@@ -1776,7 +1894,7 @@ td {
   animation: fade-slide-up 0.32s ease both;
 }
 
-.shaft-preview-svg__car {
+.shaft-preview-svg__car-outer {
   animation: soft-pulse 2.8s ease-in-out infinite;
 }
 

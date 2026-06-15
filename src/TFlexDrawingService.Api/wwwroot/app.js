@@ -20,6 +20,11 @@ const appMain = document.querySelector("#appMain");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
+const guestLoginPanel = document.querySelector("#guestLoginPanel");
+const registerPanel = document.querySelector("#registerPanel");
+const guestLoginForm = document.querySelector("#guestLoginForm");
+const showRegisterPanelButton = document.querySelector("#showRegisterPanel");
+const showLoginPanelButton = document.querySelector("#showLoginPanel");
 const registerForm = document.querySelector("#registerForm");
 const registerUserName = document.querySelector("#registerUserName");
 const registerDisplayName = document.querySelector("#registerDisplayName");
@@ -27,6 +32,8 @@ const registerPassword = document.querySelector("#registerPassword");
 const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
+const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
+const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
 const createTopButton = document.querySelector("#createTopButton");
 const templateSelect = document.querySelector("#templateSelect");
@@ -49,7 +56,7 @@ const saveConfigurationButton = document.querySelector("#saveConfigurationButton
 const configurationNamePreview = document.querySelector("#configurationNamePreview");
 
 const STOP_CONTROL_NAMES = new Set(["main", "name", "level", "main_floor"]);
-const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$ver"]);
+const FRONTEND_HIDDEN_PARAMETER_NAMES = new Set(["$Oboznach", "$ver"]);
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 const STOP_GROUP_LABEL = "\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438";
 const STOP_LOBBY_LABEL = "\u041b\u043e\u0431\u0431\u0438";
@@ -118,6 +125,10 @@ function canCreateJobs() {
   return roles.includes("Admin") || roles.includes("Operator");
 }
 
+function canAdmin() {
+  return (state.currentUser?.roles || []).includes("Admin");
+}
+
 function getTemplateLabel(templateId) {
   const template = state.templates.find(item => item.id === templateId || item.code === templateId);
   return template ? (template.name || template.code || template.id) : templateId;
@@ -139,19 +150,32 @@ function getConfigurationName(parameters) {
   return state.selectedTemplate?.name || state.selectedTemplate?.code || state.selectedTemplate?.id || "Конфигурация";
 }
 
+function getConfigurationNameParameter() {
+  for (const name of CONFIGURATION_NAME_PARAMETER_NAMES) {
+    const parameter = getParameterDefinition(name);
+    if (parameter) return parameter;
+  }
+
+  return null;
+}
+
+function rememberConfigurationNameValue() {
+  if (!configurationNamePreview || !state.selectedTemplate) return;
+  const parameter = getConfigurationNameParameter();
+  if (!parameter) return;
+
+  state.parameterValues[parameter.name] = configurationNamePreview.value;
+}
+
 function updateConfigurationNamePreview(parameters = state.parameterValues) {
   if (!configurationNamePreview) return;
   if (!state.selectedTemplate) {
+    configurationNamePreview.disabled = true;
     configurationNamePreview.value = "-";
     return;
   }
 
-  const oboznach = parameters?.$Oboznach ?? getParameterValueByName("$Oboznach");
-  if (hasValue(oboznach) && String(oboznach).trim()) {
-    configurationNamePreview.value = `$Oboznach: ${String(oboznach).trim()}`;
-    return;
-  }
-
+  configurationNamePreview.disabled = false;
   configurationNamePreview.value = getConfigurationName(parameters);
 }
 
@@ -166,19 +190,42 @@ function escapeHtml(value) {
 
 function updateAuthView() {
   const authenticated = isAuthenticated();
+  const isAdmin = authenticated && canAdmin();
   guestMain.hidden = authenticated;
-  loginForm.hidden = authenticated;
+  loginForm.hidden = true;
   userPanel.hidden = !authenticated;
   appMain.hidden = !authenticated;
   createTopButton.hidden = !authenticated || !canCreateJobs();
   submitButton.hidden = authenticated && !canCreateJobs();
   saveConfigurationButton.hidden = !authenticated;
+  adminNavLinks.forEach(link => {
+    link.hidden = !isAdmin;
+  });
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = !isAdmin;
+      currentUserRoleLabel.textContent = isAdmin ? "Admin" : "";
+    }
   } else {
     currentUserName.textContent = "";
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = true;
+      currentUserRoleLabel.textContent = "";
+    }
   }
+}
+
+function showAuthPanel(panel) {
+  const showRegister = panel === "register";
+  if (guestLoginPanel) guestLoginPanel.hidden = showRegister;
+  if (registerPanel) registerPanel.hidden = !showRegister;
+
+  requestAnimationFrame(() => {
+    const target = showRegister ? registerUserName : guestLoginForm?.querySelector("[name='userName']");
+    target?.focus({ preventScroll: true });
+  });
 }
 
 async function apiFetch(url, options = {}) {
@@ -258,6 +305,8 @@ function setInputValue(input, parameter, value) {
 
 function rememberCurrentValues() {
   if (!state.selectedTemplate) return;
+
+  rememberConfigurationNameValue();
 
   for (const input of parametersForm.querySelectorAll("input, select, textarea")) {
     if (input.type === "radio" && !input.checked) continue;
@@ -901,6 +950,45 @@ function getCounterweightPlace(context) {
   return { label: "Слева", mirrorX: false };
 }
 
+function getPreviewLayoutType(template = state.selectedTemplate) {
+  const marker = [template?.id, template?.code, template?.name]
+    .filter(Boolean)
+    .map(value => String(value).toLowerCase())
+    .join(" ");
+
+  if (marker.includes("rear") || marker.includes("back") || marker.includes("зад")) {
+    return "rear";
+  }
+
+  return "side";
+}
+
+function getPreviewVariantNumber(context, prefix, fallbackNames = []) {
+  const visibleVariant = findLevelVariant(prefix, context);
+  if (visibleVariant) {
+    const value = getPreviewNumber(context, visibleVariant.name);
+    if (value) return value;
+  }
+
+  for (const name of fallbackNames) {
+    const value = getPreviewNumber(context, name);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function getPreviewKk(context, centerOpeningDoor) {
+  const kk = getPreviewNumber(context, "KK");
+  if (kk) return kk;
+
+  if (state.selectedTemplate?.id === "lehy_pro_side_cwt") {
+    return centerOpeningDoor ? 80 : 45;
+  }
+
+  return centerOpeningDoor ? 55 : 45;
+}
+
 function clampPreviewNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -944,8 +1032,28 @@ function updateShaftPreview(context = null) {
   const bb = getPreviewNumber(previewContext, "BB");
   const jj = getPreviewNumber(previewContext, "JJ");
   const ee = getPreviewNumber(previewContext, "EE");
-  const ww = getPreviewNumber(previewContext, "WW") || getPreviewNumber(previewContext, "WW_1");
-  const wg = getPreviewNumber(previewContext, "WG") || getPreviewNumber(previewContext, "WG_1");
+  const ww = getPreviewNumber(previewContext, "WW") || getPreviewVariantNumber(previewContext, "WW_", [
+    "WW_1",
+    "WW_11",
+    "WW_12",
+    "WW_2",
+    "WW_21",
+    "WW_22",
+    "WW_3",
+    "WW_31",
+    "WW_32"
+  ]);
+  const wg = getPreviewNumber(previewContext, "WG") || getPreviewVariantNumber(previewContext, "WG_", [
+    "WG_1",
+    "WG_11",
+    "WG_12",
+    "WG_13",
+    "WG_2",
+    "WG_21",
+    "WG_22",
+    "WG_23",
+    "WG_3"
+  ]);
   const a1 = getPreviewNumber(previewContext, "A1");
   const a2 = getPreviewNumber(previewContext, "A2");
   const bw = getPreviewNumber(previewContext, "BW");
@@ -958,14 +1066,17 @@ function updateShaftPreview(context = null) {
   const dk = getPreviewNumber(previewContext, "DK");
   const bottomGap = getPreviewNumber(previewContext, "bb");
   const cwtPlace = getCounterweightPlace(previewContext);
+  const cwtLayout = getPreviewLayoutType();
   const centerOpeningDoor = isCenterOpeningDoor(previewContext);
-  const doorWidth = jj && centerOpeningDoor ? jj * 2 : jj;
+  const entrances = Math.max(1, Math.round(getPreviewNumber(previewContext, "NE") || 1));
+  const kk = getPreviewKk(previewContext, centerOpeningDoor);
+  const doorWidth = jj ? (centerOpeningDoor ? jj * 2 : jj + 115) : null;
+  const doorWidthMetricName = centerOpeningDoor ? "2xJJ" : "JJ+115";
   const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
   const carCenterX = a1 && a2
     ? a1 + a2
     : (lehyProSideCwt && cb ? cb : (ca || (ah ? ah / 2 : null)));
-  const rearCwt = lehyProSideCwt
-    && getPreviewFlag(previewContext, "CWT_SG") === 1;
+  const rearCwt = cwtLayout === "rear";
   const sideCwtCenterX = a1
     ?? (lehyProSideCwt && ca && carCenterX ? carCenterX + ca : null)
     ?? (bw && ah ? ah - bw : null);
@@ -993,9 +1104,13 @@ function updateShaftPreview(context = null) {
     bb,
     as,
     jj,
+    kk,
     doorWidth,
+    doorWidthMetricName,
     centerOpeningDoor,
+    entrances,
     cwtPlaceLabel: cwtPlace.label,
+    cwtLayout,
     mirrorX: cwtPlace.mirrorX,
     a4: getPreviewSignedNumber(previewContext, "A4"),
     a1,
@@ -1042,64 +1157,113 @@ function renderShaftPreviewSvg(dimensions) {
   const drawingHeight = svgHeight - paddingY * 2;
 
   const shaftRect = { x: 0, y: 0, width: dimensions.ah, height: dimensions.bh };
-  const cabinX = dimensions.carCenterX
+  const cabinSideWallMm = 31;
+  const cabinRearWallMm = 30;
+  const cabinFrontWallMm = dimensions.kk || 45;
+  const cabinInnerX = dimensions.carCenterX
     ? dimensions.carCenterX - dimensions.aa / 2
     : (dimensions.ah - dimensions.aa) / 2;
-  const cabinBottomClearance = dimensions.bs
-    ? Math.max(0, dimensions.bs - dimensions.bb)
-    : ((dimensions.dk || 0) + (dimensions.bottomGap || 0));
-  const cabinY = dimensions.rearCwt && dimensions.ww && Number.isFinite(dimensions.cwtDepth)
-    ? clampPreviewNumber(dimensions.cwtDepth + dimensions.ww + 30, 0, Math.max(0, dimensions.bh - dimensions.bb))
-    : (dimensions.bh - dimensions.bb - cabinBottomClearance);
-  const baseCabinRect = {
-    x: cabinX,
-    y: cabinY,
+  const cabinOuterWidth = Math.max(dimensions.as || 0, dimensions.aa + cabinSideWallMm * 2);
+  const cabinOuterHeight = dimensions.bb + cabinRearWallMm + cabinFrontWallMm;
+  const cabinSideWall = (cabinOuterWidth - dimensions.aa) / 2;
+  const carDoorFrontGap = dimensions.centerOpeningDoor ? 130 : 151;
+  const cabinOuterBottomY = dimensions.bh - carDoorFrontGap;
+  const baseCabinOuterRect = {
+    x: cabinInnerX - cabinSideWall,
+    y: cabinOuterBottomY - cabinOuterHeight,
+    width: cabinOuterWidth,
+    height: cabinOuterHeight
+  };
+  const baseCabinInnerRect = {
+    x: baseCabinOuterRect.x + cabinSideWall,
+    y: baseCabinOuterRect.y + cabinRearWallMm,
     width: dimensions.aa,
     height: dimensions.bb
   };
   const doorWidthMm = dimensions.doorWidth || dimensions.aa * 0.55;
-  const baseDoorRect = {
-    x: baseCabinRect.x + baseCabinRect.width / 2 + dimensions.a4 - doorWidthMm / 2,
-    y: baseCabinRect.y + baseCabinRect.height - 70,
-    width: doorWidthMm,
-    height: 50
-  };
-  const baseCwtRect = dimensions.ww
-    && dimensions.wg
-    && Number.isFinite(dimensions.cwtX)
-    && Number.isFinite(dimensions.cwtY)
-    ? {
-        x: dimensions.cwtX,
-        y: dimensions.cwtY,
-        width: dimensions.rearCwt ? dimensions.wg : dimensions.ww,
-        height: dimensions.rearCwt ? dimensions.ww : dimensions.wg
+  const doorDepthMm = 30;
+  const doorSpacingMm = 30;
+  const doorX = dimensions.centerOpeningDoor
+    ? baseCabinInnerRect.x + baseCabinInnerRect.width / 2 + (dimensions.a4 || 0) - doorWidthMm / 2
+    : baseCabinInnerRect.x + baseCabinInnerRect.width + 25 - doorWidthMm;
+  const makeDoorPair = side => {
+    const isRear = side === "rear";
+    const carDoorY = isRear
+      ? baseCabinOuterRect.y
+      : baseCabinOuterRect.y + baseCabinOuterRect.height - doorDepthMm;
+    const landingDoorY = isRear
+      ? carDoorY - doorSpacingMm - doorDepthMm
+      : carDoorY + doorDepthMm + doorSpacingMm;
+
+    return {
+      side,
+      carDoor: {
+        x: doorX,
+        y: carDoorY,
+        width: doorWidthMm,
+        height: doorDepthMm
+      },
+      landingDoor: {
+        x: doorX,
+        y: landingDoorY,
+        width: doorWidthMm,
+        height: doorDepthMm
       }
-    : null;
-  const railInset = 85;
-  const baseRailLeft = {
-    x1: baseCabinRect.x + railInset,
-    y1: baseCabinRect.y - 80,
-    x2: baseCabinRect.x + railInset,
-    y2: baseCabinRect.y + baseCabinRect.height + 80
+    };
   };
-  const baseRailRight = {
-    x1: baseCabinRect.x + baseCabinRect.width - railInset,
-    y1: baseCabinRect.y - 80,
-    x2: baseCabinRect.x + baseCabinRect.width - railInset,
-    y2: baseCabinRect.y + baseCabinRect.height + 80
+  const baseDoorPairs = [makeDoorPair("front")];
+  if (dimensions.entrances > 1) {
+    baseDoorPairs.push(makeDoorPair("rear"));
+  }
+
+  const buildBaseCwtRect = () => {
+    if (!dimensions.ww || !dimensions.wg) return null;
+
+    const gap = 30;
+    if (dimensions.rearCwt) {
+      const width = dimensions.wg;
+      const height = dimensions.ww;
+      const centerX = dimensions.carCenterX || (baseCabinInnerRect.x + baseCabinInnerRect.width / 2);
+      return {
+        x: clampPreviewNumber(centerX - width / 2, gap, Math.max(gap, dimensions.ah - width - gap)),
+        y: clampPreviewNumber(baseCabinOuterRect.y - height - 42, gap, Math.max(gap, baseCabinOuterRect.y - height - 16)),
+        width,
+        height
+      };
+    }
+
+    const width = dimensions.ww;
+    const height = dimensions.wg;
+    const measuredX = Number.isFinite(dimensions.cwtX) && dimensions.cwtX + width <= baseCabinOuterRect.x + 20
+      ? dimensions.cwtX
+      : baseCabinOuterRect.x - width - 48;
+    const measuredY = Number.isFinite(dimensions.cwtY)
+      ? dimensions.cwtY
+      : (dimensions.bh - height) / 2;
+
+    return {
+      x: clampPreviewNumber(measuredX, gap, Math.max(gap, baseCabinOuterRect.x - width - 22)),
+      y: clampPreviewNumber(measuredY, gap, Math.max(gap, dimensions.bh - height - gap)),
+      width,
+      height
+    };
   };
+
+  const baseCwtRect = buildBaseCwtRect();
   const mirrorRect = rect => dimensions.mirrorX
     ? { ...rect, x: dimensions.ah - rect.x - rect.width }
     : rect;
-  const mirrorLine = line => dimensions.mirrorX
-    ? { ...line, x1: dimensions.ah - line.x1, x2: dimensions.ah - line.x2 }
-    : line;
-  const cabinRect = mirrorRect(baseCabinRect);
-  const doorRect = mirrorRect(baseDoorRect);
+  const mirrorDoorPair = pair => ({
+    ...pair,
+    carDoor: mirrorRect(pair.carDoor),
+    landingDoor: mirrorRect(pair.landingDoor)
+  });
+  const cabinOuterRect = mirrorRect(baseCabinOuterRect);
+  const cabinInnerRect = mirrorRect(baseCabinInnerRect);
+  const doorPairs = baseDoorPairs.map(mirrorDoorPair);
   const cwtRect = baseCwtRect ? mirrorRect(baseCwtRect) : null;
-  const railLeft = mirrorLine(baseRailLeft);
-  const railRight = mirrorLine(baseRailRight);
-  const rects = [shaftRect, cabinRect, doorRect, ...(cwtRect ? [cwtRect] : [])];
+  const doorRects = doorPairs.flatMap(pair => [pair.carDoor, pair.landingDoor]);
+  const rects = [shaftRect, cabinOuterRect, cabinInnerRect, ...doorRects, ...(cwtRect ? [cwtRect] : [])];
   const margin = 140;
   const bounds = rects.reduce((acc, rect) => ({
     minX: Math.min(acc.minX, rect.x),
@@ -1107,10 +1271,10 @@ function renderShaftPreviewSvg(dimensions) {
     maxX: Math.max(acc.maxX, rect.x + rect.width),
     maxY: Math.max(acc.maxY, rect.y + rect.height)
   }), { minX: 0, minY: 0, maxX: dimensions.ah, maxY: dimensions.bh });
-  bounds.minX = Math.min(bounds.minX, railLeft.x1, railRight.x1) - margin;
-  bounds.minY = Math.min(bounds.minY, railLeft.y1, railRight.y1) - margin;
-  bounds.maxX = Math.max(bounds.maxX, railLeft.x2, railRight.x2) + margin;
-  bounds.maxY = Math.max(bounds.maxY, railLeft.y2, railRight.y2) + margin;
+  bounds.minX -= margin;
+  bounds.minY -= margin;
+  bounds.maxX += margin;
+  bounds.maxY += margin;
 
   const scale = Math.min(drawingWidth / (bounds.maxX - bounds.minX), drawingHeight / (bounds.maxY - bounds.minY));
   const mapX = value => paddingX + (value - bounds.minX) * scale;
@@ -1118,8 +1282,10 @@ function renderShaftPreviewSvg(dimensions) {
   const mapSize = value => value * scale;
   const rectAttrs = rect =>
     `x="${mapX(rect.x).toFixed(1)}" y="${mapY(rect.y).toFixed(1)}" width="${mapSize(rect.width).toFixed(1)}" height="${mapSize(rect.height).toFixed(1)}"`;
-  const lineAttrs = line =>
-    `x1="${mapX(line.x1).toFixed(1)}" y1="${mapY(line.y1).toFixed(1)}" x2="${mapX(line.x2).toFixed(1)}" y2="${mapY(line.y2).toFixed(1)}"`;
+  const lineAttrs = (x1, y1, x2, y2) =>
+    `x1="${mapX(x1).toFixed(1)}" y1="${mapY(y1).toFixed(1)}" x2="${mapX(x2).toFixed(1)}" y2="${mapY(y2).toFixed(1)}"`;
+  const pathPoint = (x, y) => `${mapX(x).toFixed(1)} ${mapY(y).toFixed(1)}`;
+  const pillRadius = Math.max(2, Math.min(9, mapSize(doorDepthMm / 2))).toFixed(1);
   const isInside = (inner, outer) =>
     inner.x >= outer.x
     && inner.y >= outer.y
@@ -1130,23 +1296,61 @@ function renderShaftPreviewSvg(dimensions) {
     && first.x + first.width > second.x
     && first.y < second.y + second.height
     && first.y + first.height > second.y;
-  const cabinCollision = !isInside(cabinRect, shaftRect) || (cwtRect && intersects(cabinRect, cwtRect));
-  const cwtCollision = cwtRect && (!isInside(cwtRect, shaftRect) || intersects(cabinRect, cwtRect));
-  const doorCollision = !isInside(doorRect, shaftRect) || !isInside(doorRect, cabinRect);
+  const geometryTolerance = 4;
+  const horizontallyInside = (inner, outer) =>
+    inner.x >= outer.x - geometryTolerance
+    && inner.x + inner.width <= outer.x + outer.width + geometryTolerance;
+  const cabinCollision = !isInside(cabinOuterRect, shaftRect) || (cwtRect && intersects(cabinOuterRect, cwtRect));
+  const cwtCollision = cwtRect && (!isInside(cwtRect, shaftRect) || intersects(cabinOuterRect, cwtRect));
+  const isDoorPairCollision = pair =>
+    !horizontallyInside(pair.landingDoor, shaftRect)
+    || !horizontallyInside(pair.carDoor, shaftRect)
+    || !horizontallyInside(pair.carDoor, cabinOuterRect);
+  const openingSpan = doorRect => {
+    const jamb = Math.max(31, Math.min(70, dimensions.ah * 0.025));
+    const start = clampPreviewNumber(doorRect.x - jamb, shaftRect.x + 22, shaftRect.x + shaftRect.width - 22);
+    const end = clampPreviewNumber(doorRect.x + doorRect.width + jamb, shaftRect.x + 22, shaftRect.x + shaftRect.width - 22);
+    return {
+      start: Math.min(start, end),
+      end: Math.max(start, end)
+    };
+  };
+  const frontOpening = openingSpan(doorPairs[0].landingDoor);
+  const rearOpening = doorPairs[1] ? openingSpan(doorPairs[1].landingDoor) : null;
+  const shaftLeft = shaftRect.x;
+  const shaftRight = shaftRect.x + shaftRect.width;
+  const shaftTop = shaftRect.y;
+  const shaftBottom = shaftRect.y + shaftRect.height;
+  const wallPath = [
+    `M ${pathPoint(shaftLeft, shaftBottom)} L ${pathPoint(shaftLeft, shaftTop)}`,
+    rearOpening
+      ? `M ${pathPoint(shaftLeft, shaftTop)} L ${pathPoint(rearOpening.start, shaftTop)} M ${pathPoint(rearOpening.end, shaftTop)} L ${pathPoint(shaftRight, shaftTop)}`
+      : `M ${pathPoint(shaftLeft, shaftTop)} L ${pathPoint(shaftRight, shaftTop)}`,
+    `M ${pathPoint(shaftRight, shaftTop)} L ${pathPoint(shaftRight, shaftBottom)}`,
+    `M ${pathPoint(shaftLeft, shaftBottom)} L ${pathPoint(frontOpening.start, shaftBottom)}`,
+    `M ${pathPoint(frontOpening.end, shaftBottom)} L ${pathPoint(shaftRight, shaftBottom)}`
+  ].join(" ");
   const cwtMarkup = cwtRect
     ? `<rect class="shaft-preview-svg__counterweight ${cwtCollision ? "shaft-preview-svg__counterweight--collision" : ""}" ${rectAttrs(cwtRect)} rx="3" />`
     : "";
+  const doorMarkup = doorPairs.map(pair => {
+    const doorCollisionClass = isDoorPairCollision(pair) ? "shaft-preview-svg__door--collision" : "";
+    return `
+      <rect class="shaft-preview-svg__landing-door ${doorCollisionClass}" ${rectAttrs(pair.landingDoor)} rx="${pillRadius}" />
+      <rect class="shaft-preview-svg__car-door ${doorCollisionClass}" ${rectAttrs(pair.carDoor)} rx="${pillRadius}" />
+    `;
+  }).join("");
 
   return `
     <svg class="shaft-preview-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="План шахты">
-      <rect class="shaft-preview-svg__shaft" ${rectAttrs(shaftRect)} rx="4" />
+      <rect class="shaft-preview-svg__shaft-fill" ${rectAttrs(shaftRect)} rx="4" />
+      <path class="shaft-preview-svg__shaft" d="${wallPath}" />
       <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y1="${mapY(shaftRect.y).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height).toFixed(1)}" />
       <line class="shaft-preview-svg__axis" x1="${mapX(shaftRect.x).toFixed(1)}" y1="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" x2="${mapX(shaftRect.x + shaftRect.width).toFixed(1)}" y2="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}" />
       ${cwtMarkup}
-      <rect class="shaft-preview-svg__car ${cabinCollision ? "shaft-preview-svg__car--collision" : ""}" ${rectAttrs(cabinRect)} rx="3" />
-      <line class="shaft-preview-svg__rail" ${lineAttrs(railLeft)} />
-      <line class="shaft-preview-svg__rail" ${lineAttrs(railRight)} />
-      <rect class="shaft-preview-svg__door ${doorCollision ? "shaft-preview-svg__door--collision" : ""}" ${rectAttrs(doorRect)} rx="1" />
+      <rect class="shaft-preview-svg__car-outer ${cabinCollision ? "shaft-preview-svg__car--collision" : ""}" ${rectAttrs(cabinOuterRect)} rx="6" />
+      <rect class="shaft-preview-svg__car-inner ${cabinCollision ? "shaft-preview-svg__car--collision" : ""}" ${rectAttrs(cabinInnerRect)} rx="5" />
+      ${doorMarkup}
       <text class="shaft-preview-svg__label" x="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height + 110).toFixed(1)}">AH ${formatPreviewNumber(dimensions.ah)}</text>
       <text class="shaft-preview-svg__label shaft-preview-svg__label--vertical" x="${mapX(shaftRect.x - 110).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}">BH ${formatPreviewNumber(dimensions.bh)}</text>
     </svg>`;
@@ -1159,10 +1363,12 @@ function renderShaftPreviewMetrics(dimensions) {
     ["AA", dimensions.aa, "Ширина кабины"],
     ["BB", dimensions.bb, "Глубина кабины"],
     ["JJ", dimensions.jj, "Ширина дверей"],
-    ...(dimensions.centerOpeningDoor && dimensions.doorWidth !== dimensions.jj
-      ? [["2xJJ", dimensions.doorWidth, "Расчетная ширина CO"]]
+    ...(dimensions.doorWidth && dimensions.doorWidth !== dimensions.jj
+      ? [[dimensions.doorWidthMetricName, dimensions.doorWidth, dimensions.centerOpeningDoor ? "Расчетная ширина CO" : "Расчетная ширина 2S"]]
       : []),
+    ["KK", dimensions.kk, "Передняя стенка кабины"],
     ["A4", dimensions.a4, "Эксцентриситет"],
+    ["Тип", dimensions.rearCwt ? "Задний" : "Боковой", "Компоновка противовеса"],
     ["Место", dimensions.cwtPlaceLabel, "Положение противовеса"],
     [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
     [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
@@ -2478,25 +2684,28 @@ async function register(event) {
 
 async function login(event) {
   event.preventDefault();
-  loginPassword.setCustomValidity("");
+  const form = event.currentTarget;
+  const userNameInput = form.querySelector("[name='userName']") || loginUserName;
+  const passwordInput = form.querySelector("[name='password']") || loginPassword;
+  passwordInput.setCustomValidity("");
 
   const response = await apiFetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      userName: loginUserName.value,
-      password: loginPassword.value
+      userName: userNameInput.value,
+      password: passwordInput.value
     })
   });
 
   if (!response.ok) {
-    loginPassword.setCustomValidity("Неверный логин или пароль");
-    loginPassword.reportValidity();
+    passwordInput.setCustomValidity("Неверный логин или пароль");
+    passwordInput.reportValidity();
     return;
   }
 
   state.currentUser = await response.json();
-  loginPassword.value = "";
+  passwordInput.value = "";
   updateAuthView();
   await loadTemplates();
   await loadProjects();
@@ -2536,6 +2745,9 @@ document.querySelector("#jobForm").addEventListener("submit", submitJob);
 document.querySelector("#jobForm").addEventListener("reset", resetJobForm);
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
+guestLoginForm?.addEventListener("submit", login);
+showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
+showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
 saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
 showAllParametersToggle?.addEventListener("change", event => {

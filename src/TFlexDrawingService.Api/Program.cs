@@ -422,25 +422,40 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
 });
 RequirePolicy(adminUpsertUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
-var adminDisableUserEndpoint = app.MapDelete("/api/admin/users/{userName}", async (
+var adminDeleteUserEndpoint = app.MapDelete("/api/admin/users/{userName}", async (
     string userName,
     ConfiguredUserStore users,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    if (string.Equals(userName, GetUserName(context.User), StringComparison.OrdinalIgnoreCase))
+    var normalizedUserName = userName.Trim();
+    if (string.Equals(normalizedUserName, GetUserName(context.User), StringComparison.OrdinalIgnoreCase))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["userName"] = ["You cannot disable your own user."]
+            ["userName"] = ["You cannot delete your own user."]
         });
     }
 
-    return await users.SetUserEnabledAsync(userName, false, cancellationToken)
+    var existing = await users.FindUserAsync(normalizedUserName, cancellationToken);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (existing.Roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["userName"] = ["You cannot delete another admin user."]
+        });
+    }
+
+    return await users.DeleteUserAsync(normalizedUserName, cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
 });
-RequirePolicy(adminDisableUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+RequirePolicy(adminDeleteUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
 var templatesEndpoint = app.MapGet("/api/templates", async (
     ITemplateCatalog catalog,
