@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260615-meteor-shell-17">
+  <link rel="stylesheet" href="/styles.css?v=20260617-stops-02">
 </head>
 <body>
   <div class="app-shell">
@@ -21,12 +21,9 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/"><span>Создание</span><small>Drawings</small></a>
-        <a href="/account.html"><span>Проекты</span><small>Projects</small></a>
+        <a class="is-active" href="/"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a href="/account.html"><span>Личный кабинет</span><small>Account</small></a>
         <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
-        <a href="#jobsPanel"><span>История</span><small>History</small></a>
-        <a class="admin-only-nav" href="/account.html#adminPanel" hidden><span>Шаблоны</span><small>Admin</small></a>
-        <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -51,11 +48,6 @@
         </label>
 
         <div class="topbar__actions">
-          <div class="language-switch" aria-label="Language">
-            <span class="is-active">RU</span>
-            <span>EN</span>
-          </div>
-
           <form id="loginForm" class="login-form" hidden>
             <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
             <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
@@ -63,11 +55,13 @@
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <span class="user-avatar" aria-hidden="true">ME</span>
-            <span class="user-panel__meta">
+            <a class="user-panel__account-link" href="/account.html" aria-label="Открыть личный кабинет">
+              <span class="user-avatar" aria-hidden="true">ME</span>
+              <span class="user-panel__meta">
               <span id="currentUserName"></span>
               <small id="currentUserRoleLabel" hidden></small>
-            </span>
+              </span>
+            </a>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
 
@@ -190,12 +184,12 @@
           <section class="panel panel--preview">
             <div class="panel__header">
               <div>
-                <h2>План шахты</h2>
+                <h2 id="previewPanelTitle">План шахты</h2>
                 <p id="shaftPreviewSubtitle" class="panel__subtitle">Live preview по текущим параметрам</p>
               </div>
             </div>
             <div id="shaftPreviewUnavailable" class="preview-unavailable" hidden>
-              Предпросмотр плана шахты доступен для шаблонов LEHY-L-PRO и LEHY-PRO.
+              Предпросмотр доступен для шаблонов LEHY-L-PRO, LEHY-PRO и K-II-TYPE.
             </div>
             <div id="shaftPreviewContent" class="shaft-preview">
               <div id="shaftPreviewCanvas" class="shaft-preview__canvas" aria-label="Динамический план шахты"></div>
@@ -211,7 +205,7 @@
             <div id="statusPanel" class="empty">Нет активного задания</div>
             <div class="generation-actions">
               <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
-              <button class="secondary" type="button" disabled>Скачать PDF</button>
+              <button id="downloadResultButton" class="secondary" type="button" disabled>Скачать PDF</button>
             </div>
           </section>
         </aside>
@@ -242,6 +236,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/app.js?v=20260615-meteor-shell-18"></script>
+  <script type="module" src="/app.js?v=20260617-stops-02"></script>
 </body>
 </html>

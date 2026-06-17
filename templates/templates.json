@@ -711,7 +711,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30"
@@ -9626,7 +9626,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30"
@@ -25051,7 +25051,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 20,
           "expression": "20"

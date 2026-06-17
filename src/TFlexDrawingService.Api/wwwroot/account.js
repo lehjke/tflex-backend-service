@@ -28,6 +28,7 @@ const currentUserName = document.querySelector("#currentUserName");
 const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
 const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
+const globalSearchInput = document.querySelector(".global-search input");
 const projectNameInput = document.querySelector("#projectNameInput");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectsList = document.querySelector("#projectsList");
@@ -151,6 +152,20 @@ function normalizeSearch(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function getAccountSearchQuery() {
+  return normalizeSearch(projectSearchInput?.value || globalSearchInput?.value);
+}
+
+function syncSearchInputs(value, source) {
+  if (globalSearchInput && source !== globalSearchInput) {
+    globalSearchInput.value = value;
+  }
+
+  if (projectSearchInput && source !== projectSearchInput) {
+    projectSearchInput.value = value;
+  }
+}
+
 function matchesProjectSearch(project, configurations, query) {
   if (!query) return true;
   const values = [
@@ -164,6 +179,29 @@ function matchesProjectSearch(project, configurations, query) {
     ])
   ];
   return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function matchesConfigurationSearch(project, configuration, query) {
+  if (!query) return true;
+  const values = [
+    project.name,
+    project.description,
+    configuration.name,
+    getConfigurationName(configuration),
+    getTemplateLabel(configuration.templateId),
+    configuration.templateId,
+    configuration.outputFormat,
+    formatDate(configuration.updatedAt),
+    Object.values(configuration.parameters || {}).join(" ")
+  ];
+  return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function applyAccountSearch(source = null) {
+  const value = source?.value || "";
+  syncSearchInputs(value, source);
+  renderProjects();
+  renderSavedConfigurations();
 }
 
 function updateMetrics() {
@@ -319,7 +357,7 @@ function renderProjects() {
     return;
   }
 
-  const query = normalizeSearch(projectSearchInput?.value);
+  const query = getAccountSearchQuery();
   const filteredProjects = state.projects.filter(project =>
     matchesProjectSearch(project, state.configurationsByProjectId.get(project.id) || [], query));
 
@@ -365,13 +403,17 @@ function renderSavedConfigurations() {
   if (!savedConfigurationsList) return;
 
   savedConfigurationsList.replaceChildren();
+  const query = getAccountSearchQuery();
   const entries = getAllConfigurations()
+    .filter(({ project, configuration }) => matchesConfigurationSearch(project, configuration, query))
     .sort((left, right) => new Date(right.configuration.updatedAt || 0) - new Date(left.configuration.updatedAt || 0));
 
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "Пока нет сохраненных конфигураций.";
+    empty.textContent = query
+      ? "По этому запросу конфигурации не найдены."
+      : "Пока нет сохраненных конфигураций.";
     savedConfigurationsList.append(empty);
     return;
   }
@@ -801,7 +843,15 @@ showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register
 showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
 createProjectButton.addEventListener("click", createProject);
-projectSearchInput?.addEventListener("input", renderProjects);
+globalSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
+projectSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
+for (const searchInput of [globalSearchInput, projectSearchInput]) {
+  searchInput?.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.currentTarget.value = "";
+    applyAccountSearch(event.currentTarget);
+  });
+}
 window.addEventListener("hashchange", updateAuthView);
 projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
