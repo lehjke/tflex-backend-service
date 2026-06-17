@@ -688,7 +688,7 @@ summary:focus-visible {
 }
 
 .form-grid--compact {
-  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 190px);
   align-items: end;
 }
 
@@ -1885,7 +1885,7 @@ td {
 
 .saved-configuration-item {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 100px auto;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 100px) minmax(0, 148px);
   gap: 14px;
   align-items: center;
   min-width: 0;
@@ -1899,6 +1899,20 @@ td {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.saved-configuration-item .inline-actions {
+  justify-content: end;
+  min-width: 0;
+}
+
+.saved-configuration-item .inline-actions > * {
+  min-width: 0;
+}
+
+.saved-configuration-item .inline-actions button,
+.saved-configuration-item .button-link {
+  width: 100%;
 }
 
 .saved-configuration-item strong,
@@ -2384,14 +2398,25 @@ td {
   }
 
   .metrics-row,
-  .saved-configurations-panel,
-  .admin-access-card {
+  .saved-configurations-panel {
     display: none;
   }
 
   .panel:not(.panel--config),
   .panel--config {
     padding: 16px;
+  }
+
+  .admin-access-card {
+    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-left: 0;
+    padding: 18px;
+  }
+
+  .admin-access-card__button {
+    width: 100%;
   }
 
   .panel--config {
