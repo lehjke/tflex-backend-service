@@ -19,6 +19,7 @@ const state = {
 
 const guestMain = document.querySelector("#guestMain");
 const appMain = document.querySelector("#appMain");
+const pageSkeleton = document.querySelector("#pageSkeleton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -315,6 +316,12 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function hidePageSkeleton() {
+  if (pageSkeleton) {
+    pageSkeleton.hidden = true;
+  }
+}
+
 function updateAuthView() {
   const authenticated = isAuthenticated();
   const isAdmin = authenticated && canAdmin();
@@ -445,9 +452,19 @@ function matchesSearchValue(values, query) {
 function matchesProjectOption(project, query) {
   return matchesSearchValue([
     project.name,
+    project.address,
+    project.factoryRequestNumber,
     project.description,
+    project.ownerUserName,
     project.id
   ], query);
+}
+
+function getProjectOptionLabel(project) {
+  const ownerUserName = project.ownerUserName || project.OwnerUserName || "";
+  return canAdmin() && ownerUserName && ownerUserName !== state.currentUser?.userName
+    ? `${project.name} · ${ownerUserName}`
+    : project.name;
 }
 
 function matchesTemplateOption(template, query) {
@@ -3282,7 +3299,7 @@ async function loadProjects(selectedProjectId = null) {
   for (const project of state.projects) {
     const option = document.createElement("option");
     option.value = project.id;
-    option.textContent = project.name;
+    option.textContent = getProjectOptionLabel(project);
     projectSelect.append(option);
   }
 
@@ -3465,13 +3482,17 @@ async function logout() {
 }
 
 async function boot() {
-  const authenticated = await loadCurrentUser();
-  if (!authenticated) return;
+  try {
+    const authenticated = await loadCurrentUser();
+    if (!authenticated) return;
 
-  await loadTemplates();
-  await loadProjects();
-  await refreshJobs();
-  await loadConfigurationFromUrl();
+    await loadTemplates();
+    await loadProjects();
+    await refreshJobs();
+    await loadConfigurationFromUrl();
+  } finally {
+    hidePageSkeleton();
+  }
 }
 
 templateSelect.addEventListener("change", renderSelectedTemplate);

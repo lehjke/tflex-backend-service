@@ -123,6 +123,7 @@ summary:focus-visible {
 #guestMain[hidden],
 #appMain[hidden],
 #accountMain[hidden],
+#pageSkeleton[hidden],
 #adminPanel[hidden],
 #adminNavLink[hidden],
 .admin-only-nav[hidden],
@@ -138,6 +139,10 @@ summary:focus-visible {
 }
 
 #createTopButton {
+  display: none;
+}
+
+.page-skeleton:not([hidden]) ~ main {
   display: none;
 }
 
@@ -307,6 +312,90 @@ summary:focus-visible {
 
 .workspace {
   min-width: 0;
+}
+
+.page-skeleton {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 1280px);
+  padding: 38px 32px 56px;
+  margin: 0 auto;
+}
+
+.skeleton-grid {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.skeleton-grid--metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.skeleton-grid--metrics .skeleton {
+  height: 92px;
+}
+
+.skeleton-grid--content {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.74fr);
+  align-items: start;
+}
+
+.skeleton-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(255 255 255 / 82%);
+  box-shadow: var(--shadow-soft);
+}
+
+.skeleton {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #eef3f9 0%, #f8fafc 48%, #eef3f9 100%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.skeleton--title {
+  width: min(520px, 78vw);
+  height: 46px;
+  border-radius: 12px;
+}
+
+.skeleton--heading {
+  width: min(260px, 70%);
+  height: 28px;
+}
+
+.skeleton--short {
+  width: 58%;
+}
+
+.skeleton--button {
+  width: min(240px, 48%);
+  height: 48px;
+}
+
+.skeleton--preview {
+  height: clamp(220px, 28vw, 360px);
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .topbar {
@@ -693,6 +782,7 @@ summary:focus-visible {
 }
 
 .account-create {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(150px, 190px);
   margin-top: 18px;
   margin-bottom: 18px;
 }
@@ -1771,15 +1861,63 @@ td {
   color: var(--brand);
 }
 
-.project-summary span:first-child {
+.project-summary__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.project-summary__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owner-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #cad7ec;
+  border-radius: 999px;
+  background: var(--surface-blue);
+  color: var(--brand);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .project-item__body {
+  display: grid;
+  gap: 16px;
   padding: 0 18px 18px;
+}
+
+.project-edit-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.project-edit-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.project-edit-form__actions button {
+  min-height: 36px;
 }
 
 .format-select {
@@ -2252,6 +2390,15 @@ td {
     padding-bottom: 0;
   }
 
+  .page-skeleton {
+    width: min(100% - 40px, 760px);
+    padding: 26px 0 44px;
+  }
+
+  .skeleton-grid--content {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     position: static;
     grid-template-columns: 1fr;
@@ -2317,6 +2464,18 @@ td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .project-edit-form {
+    grid-template-columns: 1fr;
+  }
+
+  .project-edit-form__actions {
+    justify-content: stretch;
+  }
+
+  .project-edit-form__actions button {
+    flex: 1 1 180px;
+  }
+
   .primary {
     min-width: 0;
   }
@@ -2329,6 +2488,24 @@ td {
 
   .topbar {
     display: none;
+  }
+
+  .page-skeleton {
+    width: min(100% - 40px, 760px);
+    padding-top: 28px;
+    padding-bottom: 40px;
+  }
+
+  .skeleton-grid--metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .skeleton-card {
+    padding: 18px;
+  }
+
+  .skeleton--title {
+    height: 34px;
   }
 
   .sidebar {

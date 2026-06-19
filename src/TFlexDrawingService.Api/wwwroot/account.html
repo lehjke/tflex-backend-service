@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Личный кабинет — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260617-account-buttons-01">
+  <link rel="stylesheet" href="/styles.css?v=20260619-projects-01">
 </head>
 <body>
   <div class="app-shell">
@@ -67,7 +67,31 @@
         </div>
       </header>
 
-      <main id="guestMain" class="layout layout--auth">
+      <section id="pageSkeleton" class="page-skeleton" aria-label="Загрузка страницы" aria-live="polite">
+        <div class="skeleton skeleton--title"></div>
+        <div class="skeleton-grid skeleton-grid--metrics">
+          <span class="skeleton"></span>
+          <span class="skeleton"></span>
+          <span class="skeleton"></span>
+          <span class="skeleton"></span>
+        </div>
+        <div class="skeleton-grid skeleton-grid--content">
+          <div class="skeleton-card">
+            <span class="skeleton skeleton--heading"></span>
+            <span class="skeleton"></span>
+            <span class="skeleton"></span>
+            <span class="skeleton skeleton--short"></span>
+          </div>
+          <div class="skeleton-card">
+            <span class="skeleton skeleton--heading"></span>
+            <span class="skeleton"></span>
+            <span class="skeleton skeleton--short"></span>
+            <span class="skeleton skeleton--button"></span>
+          </div>
+        </div>
+      </section>
+
+      <main id="guestMain" class="layout layout--auth" hidden>
         <section class="panel auth-panel">
           <div id="guestLoginPanel" class="auth-view">
             <div class="panel__header">
@@ -164,8 +188,18 @@
 
             <div class="form-grid form-grid--compact account-create">
               <label class="field">
-                <span class="field__label">Новый проект</span>
+                <span class="field__label">Название проекта</span>
                 <input id="projectNameInput" placeholder="Название">
+              </label>
+
+              <label class="field">
+                <span class="field__label">Адрес проекта</span>
+                <input id="projectAddressInput" placeholder="Адрес">
+              </label>
+
+              <label class="field">
+                <span class="field__label">Номер запроса на завод</span>
+                <input id="projectFactoryRequestNumberInput" placeholder="Номер запроса">
               </label>
 
               <button id="createProjectButton" class="primary primary--compact" type="button">Новый проект</button>
@@ -236,6 +270,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/account.js?v=20260615-meteor-shell-16"></script>
+  <script type="module" src="/account.js?v=20260619-projects-01"></script>
 </body>
 </html>

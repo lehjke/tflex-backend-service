@@ -10,6 +10,7 @@ const state = {
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
+const pageSkeleton = document.querySelector("#pageSkeleton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -30,6 +31,8 @@ const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
 const globalSearchInput = document.querySelector(".global-search input");
 const projectNameInput = document.querySelector("#projectNameInput");
+const projectAddressInput = document.querySelector("#projectAddressInput");
+const projectFactoryRequestNumberInput = document.querySelector("#projectFactoryRequestNumberInput");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectsList = document.querySelector("#projectsList");
 const accountStatus = document.querySelector("#accountStatus");
@@ -148,6 +151,36 @@ function getAllConfigurations() {
   });
 }
 
+function getProjectOwnerName(project) {
+  return project?.ownerUserName || project?.OwnerUserName || "";
+}
+
+function getProjectAddress(project) {
+  return project?.address || project?.Address || "";
+}
+
+function getProjectFactoryRequestNumber(project) {
+  return project?.factoryRequestNumber || project?.FactoryRequestNumber || "";
+}
+
+function shouldShowProjectOwner(project) {
+  const ownerUserName = getProjectOwnerName(project);
+  return canAdmin() && ownerUserName && ownerUserName !== state.currentUser?.userName;
+}
+
+function renderProjectOwnerBadge(project) {
+  return shouldShowProjectOwner(project)
+    ? `<span class="owner-badge">${escapeHtml(getProjectOwnerName(project))}</span>`
+    : "";
+}
+
+function getProjectMetaLabel(project) {
+  const ownerUserName = getProjectOwnerName(project);
+  return shouldShowProjectOwner(project)
+    ? `${project.name} · ${ownerUserName}`
+    : project.name;
+}
+
 function normalizeSearch(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -170,10 +203,14 @@ function matchesProjectSearch(project, configurations, query) {
   if (!query) return true;
   const values = [
     project.name,
+    getProjectAddress(project),
+    getProjectFactoryRequestNumber(project),
     project.description,
+    getProjectOwnerName(project),
     ...configurations.flatMap(configuration => [
       getConfigurationName(configuration),
       getTemplateLabel(configuration.templateId),
+      configuration.ownerUserName,
       configuration.outputFormat,
       Object.values(configuration.parameters || {}).join(" ")
     ])
@@ -185,7 +222,11 @@ function matchesConfigurationSearch(project, configuration, query) {
   if (!query) return true;
   const values = [
     project.name,
+    getProjectAddress(project),
+    getProjectFactoryRequestNumber(project),
     project.description,
+    getProjectOwnerName(project),
+    configuration.ownerUserName,
     configuration.name,
     getConfigurationName(configuration),
     getTemplateLabel(configuration.templateId),
@@ -217,6 +258,12 @@ function updateMetrics() {
   if (configurationsMetric) configurationsMetric.textContent = String(allConfigurations.length);
   if (readyFilesMetric) readyFilesMetric.textContent = String(resultFilesCount);
   if (pendingMetric) pendingMetric.textContent = String(pendingJobs.length);
+}
+
+function hidePageSkeleton() {
+  if (pageSkeleton) {
+    pageSkeleton.hidden = true;
+  }
 }
 
 function updateAuthView() {
@@ -378,13 +425,15 @@ function renderProjects() {
     const summary = document.createElement("summary");
     summary.className = "project-summary";
     summary.innerHTML = `
-      <span>${escapeHtml(project.name)}</span>
+      <span class="project-summary__name"><span class="project-summary__title">${escapeHtml(project.name)}</span>${renderProjectOwnerBadge(project)}</span>
       <span class="muted">${configurations.length} конф.</span>
     `;
     details.append(summary);
 
     const body = document.createElement("div");
     body.className = "project-item__body";
+    body.append(createProjectEditForm(project));
+
     if (configurations.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
@@ -397,6 +446,31 @@ function renderProjects() {
     details.append(body);
     projectsList.append(details);
   }
+}
+
+function createProjectEditForm(project) {
+  const form = document.createElement("div");
+  form.className = "project-edit-form";
+  form.dataset.projectId = project.id;
+  form.innerHTML = `
+    <label class="field">
+      <span class="field__label">Название проекта</span>
+      <input data-project-field="name" value="${escapeHtml(project.name || "")}">
+    </label>
+    <label class="field">
+      <span class="field__label">Адрес проекта</span>
+      <input data-project-field="address" value="${escapeHtml(getProjectAddress(project))}">
+    </label>
+    <label class="field">
+      <span class="field__label">Номер запроса на завод</span>
+      <input data-project-field="factoryRequestNumber" value="${escapeHtml(getProjectFactoryRequestNumber(project))}">
+    </label>
+    <div class="project-edit-form__actions">
+      <button class="secondary" type="button" data-action="update-project" data-project-id="${escapeHtml(project.id)}">Сохранить проект</button>
+      <button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>
+    </div>
+  `;
+  return form;
 }
 
 function renderSavedConfigurations() {
@@ -429,7 +503,7 @@ function renderSavedConfigurations() {
       <div>
         <strong>${escapeHtml(getConfigurationName(configuration))}</strong>
         <span>${escapeHtml(getTemplateLabel(configuration.templateId))}</span>
-        <small>${escapeHtml(project.name)} · ${formatDate(configuration.updatedAt)}</small>
+        <small>${escapeHtml(getProjectMetaLabel(project))} · ${formatDate(configuration.updatedAt)}</small>
       </div>
       <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
         ${formatOptions}
@@ -504,7 +578,12 @@ async function createProject() {
   const response = await apiFetch("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, description: "" })
+    body: JSON.stringify({
+      name,
+      address: projectAddressInput?.value.trim() || "",
+      factoryRequestNumber: projectFactoryRequestNumberInput?.value.trim() || "",
+      description: ""
+    })
   });
 
   if (!response.ok) {
@@ -513,6 +592,68 @@ async function createProject() {
   }
 
   projectNameInput.value = "";
+  if (projectAddressInput) projectAddressInput.value = "";
+  if (projectFactoryRequestNumberInput) projectFactoryRequestNumberInput.value = "";
+  hideAccountStatus();
+  await loadProjects();
+}
+
+function getProjectFormValues(button) {
+  const form = button.closest(".project-edit-form");
+  const nameInput = form?.querySelector("[data-project-field='name']");
+  return {
+    name: nameInput?.value.trim() || "",
+    address: form?.querySelector("[data-project-field='address']")?.value.trim() || "",
+    factoryRequestNumber: form?.querySelector("[data-project-field='factoryRequestNumber']")?.value.trim() || "",
+    nameInput
+  };
+}
+
+async function updateProject(projectId, button) {
+  const values = getProjectFormValues(button);
+  if (!values.name) {
+    values.nameInput?.setCustomValidity("Укажите название проекта");
+    values.nameInput?.reportValidity();
+    return;
+  }
+
+  values.nameInput?.setCustomValidity("");
+  const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: values.name,
+      address: values.address,
+      factoryRequestNumber: values.factoryRequestNumber,
+      description: ""
+    })
+  });
+
+  if (!response.ok) {
+    showAccountStatus((await readProblem(response, "Не удалось сохранить проект")).join(" "), "error");
+    return;
+  }
+
+  hideAccountStatus();
+  await loadProjects();
+}
+
+async function deleteProject(projectId) {
+  const project = state.projects.find(item => item.id === projectId);
+  const label = project?.name ? ` "${project.name}"` : "";
+  if (!confirm(`Удалить проект${label} и все сохраненные конфигурации внутри него? Это действие нельзя отменить.`)) {
+    return;
+  }
+
+  const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    showAccountStatus((await readProblem(response, "Не удалось удалить проект")).join(" "), "error");
+    return;
+  }
+
   hideAccountStatus();
   await loadProjects();
 }
@@ -826,14 +967,18 @@ async function logout() {
 }
 
 async function boot() {
-  const authenticated = await loadCurrentUser();
-  if (!authenticated) return;
+  try {
+    const authenticated = await loadCurrentUser();
+    if (!authenticated) return;
 
-  await loadTemplates();
-  await loadProjects();
-  await loadAccountJobs();
-  await loadAdminData();
-  updateAuthView();
+    await loadTemplates();
+    await loadProjects();
+    await loadAccountJobs();
+    await loadAdminData();
+    updateAuthView();
+  } finally {
+    hidePageSkeleton();
+  }
 }
 
 registerForm.addEventListener("submit", register);
@@ -862,6 +1007,10 @@ projectsList.addEventListener("click", event => {
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+  } else if (button.dataset.action === "update-project") {
+    updateProject(button.dataset.projectId, button);
+  } else if (button.dataset.action === "delete-project") {
+    deleteProject(button.dataset.projectId);
   }
 });
 savedConfigurationsList?.addEventListener("click", event => {
