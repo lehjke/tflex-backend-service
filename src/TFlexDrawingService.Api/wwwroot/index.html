@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>METEOR Engineering Center</title>
+  <title>Инженерный центр — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260614-meteor-shell-14">
+  <link rel="stylesheet" href="/styles.css?v=20260619-home-1">
 </head>
 <body>
   <div class="app-shell">
@@ -21,10 +21,11 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/"><span>Создание</span><small>Drawings</small></a>
-        <a href="/account.html"><span>Проекты</span><small>Projects</small></a>
-        <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
-        <a href="#jobsPanel"><span>История</span><small>History</small></a>
+        <a class="is-active" href="/"><span>Главная</span><small>Overview</small></a>
+        <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a href="/account.html"><span>Личный кабинет</span><small>Projects</small></a>
+        <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
+        <a href="/drawings#jobsPanel"><span>История</span><small>History</small></a>
         <a href="/account.html#adminPanel"><span>Шаблоны</span><small>Admin</small></a>
         <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
       </nav>
@@ -66,12 +67,10 @@
             <span class="user-avatar" aria-hidden="true">ME</span>
             <span class="user-panel__meta">
               <span id="currentUserName"></span>
-              <small>Admin</small>
+              <small id="currentUserRole">User</small>
             </span>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
-
-          <button id="createTopButton" class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
         </div>
       </header>
 
@@ -103,119 +102,91 @@
         </section>
       </main>
 
-      <main id="appMain" class="layout layout--editor" hidden>
-        <section class="intro">
-          <h1>Конфигуратор чертежей</h1>
+      <main id="homeMain" class="layout layout--home" data-authenticated-main hidden>
+        <section class="intro intro--home">
+          <h1>Инженерный центр</h1>
+          <p>Выберите раздел для работы с чертежами, расчетами и проектами</p>
         </section>
 
-        <section class="editor-form-stack">
-          <form id="jobForm">
-            <section class="panel panel--config">
-              <div class="panel__header">
-                <h2>Проект и шаблон</h2>
-                <button class="secondary secondary--compact" type="reset" form="jobForm">Начать заново</button>
+        <section class="home-actions" aria-label="Основные разделы">
+          <article class="home-action-card" data-home-card>
+            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardDrawings">
+              <span class="home-action-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M6 3.75h8.25L18 7.5v12.75H6V3.75Z"></path>
+                  <path d="M14.25 3.75V7.5H18"></path>
+                  <path d="M8.5 12h7M8.5 15.25h5.25"></path>
+                </svg>
+              </span>
+              <span class="home-action-card__text">
+                <span class="home-action-card__title">Создание чертежей</span>
+                <span class="home-action-card__subtitle">Конфигуратор лифтовых чертежей</span>
+              </span>
+              <span class="home-action-card__indicator" aria-hidden="true"></span>
+            </button>
+            <div id="homeCardDrawings" class="home-action-card__body" aria-hidden="true">
+              <div class="home-action-card__description">
+                <p>Раздел позволяет выбрать проект, шаблон, формат файла и параметры лифтовой шахты. После заполнения параметров пользователь может сохранить конфигурацию и сформировать готовый чертеж.</p>
+                <a class="primary-link home-action-card__button" href="/drawings">Перейти к созданию</a>
               </div>
+            </div>
+          </article>
 
-              <div class="form-grid form-grid--editor">
-                <label class="field">
-                  <span class="field__label">Проект</span>
-                  <select id="projectSelect"></select>
-                </label>
-
-                <label class="field">
-                  <span class="field__label">Шаблон</span>
-                  <select id="templateSelect" name="templateId"></select>
-                </label>
-
-                <label class="field field--configuration">
-                  <span class="field__label">Конфигурация</span>
-                  <input id="configurationNamePreview" type="text" value="-" readonly>
-                </label>
-
-                <label class="field field--format">
-                  <span class="field__label">Формат</span>
-                  <select id="formatSelect" name="outputFormat"></select>
-                </label>
-
-                <button id="saveConfigurationButton" class="secondary field-action-button" type="button">Сохранить</button>
+          <article class="home-action-card" data-home-card>
+            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardPricing">
+              <span class="home-action-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M7 3.75h10v16.5H7V3.75Z"></path>
+                  <path d="M9.75 7.25h4.5"></path>
+                  <path d="M9.5 11h.01M12 11h.01M14.5 11h.01M9.5 13.75h.01M12 13.75h.01M14.5 13.75h.01M9.5 16.5h.01M12 16.5h.01M14.5 16.5h.01"></path>
+                </svg>
+              </span>
+              <span class="home-action-card__text">
+                <span class="home-action-card__title">Расчет базовой цены</span>
+                <span class="home-action-card__subtitle">Предварительная оценка стоимости</span>
+              </span>
+              <span class="home-action-card__indicator" aria-hidden="true"></span>
+            </button>
+            <div id="homeCardPricing" class="home-action-card__body" aria-hidden="true">
+              <div class="home-action-card__description">
+                <p>Раздел предназначен для расчета базовой стоимости по параметрам проекта. Пользователь может указать исходные данные, получить расчет и использовать его при подготовке коммерческого предложения.</p>
+                <a class="primary-link home-action-card__button" href="/pricing">Открыть расчет</a>
               </div>
-            </section>
+            </div>
+          </article>
 
-            <section class="panel panel--parameters">
-              <div class="panel__header">
-                <div class="panel__title-row">
-                  <h2>Параметры чертежа</h2>
-                </div>
-                <label class="show-all-toggle">
-                  <input id="showAllParametersToggle" type="checkbox" checked>
-                  <span>Показать все параметры</span>
-                </label>
+          <article class="home-action-card" data-home-card>
+            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardAccount">
+              <span class="home-action-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M5 7.25h5.2l1.55 2H19v9.5H5V7.25Z"></path>
+                  <path d="M8.5 14.25h7"></path>
+                  <path d="M8.5 16.75h4.25"></path>
+                </svg>
+              </span>
+              <span class="home-action-card__text">
+                <span class="home-action-card__title">Личный кабинет</span>
+                <span class="home-action-card__subtitle">Проекты, конфигурации и файлы</span>
+              </span>
+              <span class="home-action-card__indicator" aria-hidden="true"></span>
+            </button>
+            <div id="homeCardAccount" class="home-action-card__body" aria-hidden="true">
+              <div class="home-action-card__description">
+                <p>В личном кабинете пользователь может просматривать проекты, сохраненные конфигурации, готовые файлы, историю действий и доступные операции для инженера, продавца или администратора.</p>
+                <a class="primary-link home-action-card__button" href="/account.html">Открыть кабинет</a>
               </div>
-              <div id="parameterTabs" class="parameter-tabs" aria-label="Категории параметров"></div>
-              <div id="parametersForm" class="parameters"></div>
-              <div id="parameterReadyBanner" class="ready-banner" hidden>Конфигурация готова к генерации PDF/DWG/DXF.</div>
-            </section>
-
-            <div id="validationPanel" class="validation-panel" hidden></div>
-          </form>
+            </div>
+          </article>
         </section>
 
-        <aside class="preview-stack">
-          <section class="panel panel--preview">
-            <div class="panel__header">
-              <div>
-                <h2>План шахты</h2>
-                <p id="shaftPreviewSubtitle" class="panel__subtitle">Live preview по текущим параметрам</p>
-              </div>
-            </div>
-            <div id="shaftPreviewUnavailable" class="preview-unavailable" hidden>
-              Предпросмотр плана шахты доступен для шаблонов LEHY-L-PRO и LEHY-PRO.
-            </div>
-            <div id="shaftPreviewContent" class="shaft-preview">
-              <div id="shaftPreviewCanvas" class="shaft-preview__canvas" aria-label="Динамический план шахты"></div>
-              <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
-            </div>
-          </section>
-
-          <section class="panel panel--status">
-            <div class="panel__header">
-              <h2>Генерация</h2>
-              <span class="queue-badge">Queue 0/50</span>
-            </div>
-            <div id="statusPanel" class="empty">Нет активного задания</div>
-            <div class="generation-actions">
-              <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
-              <button class="secondary" type="button" disabled>Скачать PDF</button>
-            </div>
-          </section>
-        </aside>
-
-        <section id="jobsPanel" class="panel panel--wide jobs-panel">
-          <div class="panel__header">
-            <h2>Последние задания</h2>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Шаблон</th>
-                  <th>Статус</th>
-                  <th>Формат</th>
-                  <th>Создано</th>
-                  <th>Файлы</th>
-                </tr>
-              </thead>
-              <tbody id="jobsTableBody"></tbody>
-            </table>
-          </div>
+        <section class="home-info">
+          <p>Сервис помогает инженерам быстро формировать чертежи, рассчитывать параметры и управлять проектами в едином рабочем пространстве.</p>
         </section>
-
       </main>
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/app.js?v=20260614-meteor-shell-14"></script>
+  <script type="module" src="/shell.js?v=20260619-home-1"></script>
+  <script type="module" src="/home.js?v=20260619-home-1"></script>
 </body>
 </html>

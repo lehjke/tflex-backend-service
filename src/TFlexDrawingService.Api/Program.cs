@@ -177,8 +177,8 @@ app.Use(async (context, next) =>
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
         headers["Content-Security-Policy"] =
-            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com; " +
-            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; " +
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; " +
+            "font-src 'self'; img-src 'self' data:; " +
             "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
         return Task.CompletedTask;
     });
@@ -224,6 +224,10 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+
+app.MapGet("/drawings", (IWebHostEnvironment environment) => ServeHtml(environment, "drawings.html"));
+app.MapGet("/pricing", (IWebHostEnvironment environment) => ServeHtml(environment, "pricing.html"));
+app.MapGet("/account", (IWebHostEnvironment environment) => ServeHtml(environment, "account.html"));
 
 app.MapPost("/api/auth/login", async (
     LoginRequest request,
@@ -837,6 +841,12 @@ RequirePolicy(deleteConfigurationEndpoint, securityOptions.RequireAuthentication
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+static IResult ServeHtml(IWebHostEnvironment environment, string fileName)
+{
+    var webRootPath = environment.WebRootPath ?? Path.Combine(environment.ContentRootPath, "wwwroot");
+    return Results.File(Path.Combine(webRootPath, fileName), "text/html");
+}
 
 static RouteHandlerBuilder RequirePolicy(
     RouteHandlerBuilder builder,

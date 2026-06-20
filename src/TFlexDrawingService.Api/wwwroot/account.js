@@ -364,7 +364,7 @@ function renderSavedConfigurations() {
         ${formatOptions}
       </select>
       <div class="inline-actions">
-        <a class="secondary button-link" href="/?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
+        <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
         <button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>
       </div>
     `;
@@ -409,7 +409,7 @@ function createConfigurationsTable(project, configurations) {
       <td>
         <div class="inline-actions">
           <button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>
-          <a class="secondary button-link" href="/?configurationId=${encodeURIComponent(configuration.id)}">Редактировать</a>
+          <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Редактировать</a>
           <button class="secondary" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить</button>
         </div>
       </td>
