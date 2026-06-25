@@ -27,6 +27,7 @@ const registerPassword = document.querySelector("#registerPassword");
 const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
+const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
 const createTopButton = document.querySelector("#createTopButton");
 const templateSelect = document.querySelector("#templateSelect");
@@ -176,8 +177,14 @@ function updateAuthView() {
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
+    if (currentUserRole) {
+      const isAdmin = (state.currentUser.roles || []).includes("Admin");
+      currentUserRole.hidden = !isAdmin;
+      currentUserRole.textContent = isAdmin ? "Admin" : "";
+    }
   } else {
     currentUserName.textContent = "";
+    if (currentUserRole) currentUserRole.hidden = true;
   }
 }
 
@@ -2537,6 +2544,10 @@ document.querySelector("#jobForm").addEventListener("reset", resetJobForm);
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
+userPanel?.addEventListener("click", event => {
+  if (logoutButton?.contains(event.target)) return;
+  window.location.assign("/account");
+});
 saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
 showAllParametersToggle?.addEventListener("change", event => {
   state.showAllParameters = event.currentTarget.checked;

@@ -45,6 +45,28 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
             CREATE INDEX IF NOT EXISTS IX_ProjectConfigurations_ProjectId_UpdatedAt
                 ON ProjectConfigurations(ProjectId, UpdatedAt);
+
+            CREATE TABLE IF NOT EXISTS PricingSpecifications (
+                Id TEXT PRIMARY KEY,
+                ProjectId TEXT NOT NULL,
+                ProjectConfigurationId TEXT NULL,
+                Name TEXT NOT NULL,
+                Supplier TEXT NOT NULL,
+                Series TEXT NOT NULL,
+                Status TEXT NOT NULL,
+                TotalCny REAL NOT NULL,
+                TargetCurrency TEXT NOT NULL,
+                TotalConverted REAL NOT NULL,
+                RequestJson TEXT NOT NULL,
+                CalculationJson TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL,
+                FOREIGN KEY(ProjectId) REFERENCES UserProjects(Id) ON DELETE CASCADE,
+                FOREIGN KEY(ProjectConfigurationId) REFERENCES ProjectConfigurations(Id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_PricingSpecifications_ProjectId_UpdatedAt
+                ON PricingSpecifications(ProjectId, UpdatedAt);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -353,6 +375,129 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<IReadOnlyList<PricingSpecification>> ListPricingSpecificationsAsync(
+        string projectId,
+        string ownerUserName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.Id, s.ProjectId, s.ProjectConfigurationId, s.Name, s.Supplier, s.Series, s.Status,
+                   s.TotalCny, s.TargetCurrency, s.TotalConverted, s.RequestJson, s.CalculationJson,
+                   s.CreatedAt, s.UpdatedAt
+            FROM PricingSpecifications s
+            INNER JOIN UserProjects p ON p.Id = s.ProjectId
+            WHERE s.ProjectId = $projectId AND p.OwnerUserName = $ownerUserName
+            ORDER BY s.UpdatedAt DESC;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId);
+        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+
+        var specifications = new List<PricingSpecification>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            specifications.Add(MapPricingSpecification(reader));
+        }
+
+        return specifications;
+    }
+
+    public async Task<PricingSpecification?> GetPricingSpecificationAsync(
+        string specificationId,
+        string ownerUserName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.Id, s.ProjectId, s.ProjectConfigurationId, s.Name, s.Supplier, s.Series, s.Status,
+                   s.TotalCny, s.TargetCurrency, s.TotalConverted, s.RequestJson, s.CalculationJson,
+                   s.CreatedAt, s.UpdatedAt
+            FROM PricingSpecifications s
+            INNER JOIN UserProjects p ON p.Id = s.ProjectId
+            WHERE s.Id = $specificationId AND p.OwnerUserName = $ownerUserName;
+            """;
+        command.Parameters.AddWithValue("$specificationId", specificationId);
+        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? MapPricingSpecification(reader) : null;
+    }
+
+    public async Task<PricingSpecification?> SavePricingSpecificationAsync(
+        string ownerUserName,
+        string projectId,
+        string? projectConfigurationId,
+        string name,
+        PricingCalculationRequest request,
+        PricingCalculationResult calculation,
+        CancellationToken cancellationToken = default)
+    {
+        if (await GetProjectAsync(projectId, ownerUserName, cancellationToken) is null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var specification = new PricingSpecification(
+            Guid.NewGuid().ToString("n"),
+            projectId,
+            string.IsNullOrWhiteSpace(projectConfigurationId) ? null : projectConfigurationId,
+            NormalizeName(name, "Спецификация"),
+            calculation.Supplier,
+            calculation.Series,
+            calculation.Status,
+            calculation.TotalCny,
+            calculation.TargetCurrency,
+            calculation.TotalConverted,
+            JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            now,
+            now);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO PricingSpecifications (
+                Id, ProjectId, ProjectConfigurationId, Name, Supplier, Series, Status, TotalCny,
+                TargetCurrency, TotalConverted, RequestJson, CalculationJson, CreatedAt, UpdatedAt
+            )
+            VALUES (
+                $id, $projectId, $projectConfigurationId, $name, $supplier, $series, $status, $totalCny,
+                $targetCurrency, $totalConverted, $requestJson, $calculationJson, $createdAt, $updatedAt
+            );
+
+            UPDATE UserProjects
+            SET UpdatedAt = $updatedAt
+            WHERE Id = $projectId;
+            """;
+        command.Parameters.AddWithValue("$id", specification.Id);
+        command.Parameters.AddWithValue("$projectId", specification.ProjectId);
+        command.Parameters.AddWithValue("$projectConfigurationId", (object?)specification.ProjectConfigurationId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$name", specification.Name);
+        command.Parameters.AddWithValue("$supplier", specification.Supplier);
+        command.Parameters.AddWithValue("$series", specification.Series);
+        command.Parameters.AddWithValue("$status", specification.Status);
+        command.Parameters.AddWithValue("$totalCny", specification.TotalCny);
+        command.Parameters.AddWithValue("$targetCurrency", specification.TargetCurrency);
+        command.Parameters.AddWithValue("$totalConverted", specification.TotalConverted);
+        command.Parameters.AddWithValue("$requestJson", specification.RequestJson);
+        command.Parameters.AddWithValue("$calculationJson", specification.CalculationJson);
+        command.Parameters.AddWithValue("$createdAt", FormatDate(specification.CreatedAt));
+        command.Parameters.AddWithValue("$updatedAt", FormatDate(specification.UpdatedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return specification;
+    }
+
     private SqliteConnection CreateConnection()
     {
         return new SqliteConnection($"Data Source={_storageOptions.DatabasePath}");
@@ -380,6 +525,25 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             reader.GetString(5),
             ParseDate(reader.GetString(6)),
             ParseDate(reader.GetString(7)));
+    }
+
+    private static PricingSpecification MapPricingSpecification(SqliteDataReader reader)
+    {
+        return new PricingSpecification(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.GetString(6),
+            Convert.ToDecimal(reader.GetDouble(7), CultureInfo.InvariantCulture),
+            reader.GetString(8),
+            Convert.ToDecimal(reader.GetDouble(9), CultureInfo.InvariantCulture),
+            reader.GetString(10),
+            reader.GetString(11),
+            ParseDate(reader.GetString(12)),
+            ParseDate(reader.GetString(13)));
     }
 
     private static string NormalizeName(string name, string fallback)
@@ -413,5 +577,21 @@ public sealed record ProjectConfiguration(
     string TemplateId,
     string OutputFormat,
     string ParametersJson,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record PricingSpecification(
+    string Id,
+    string ProjectId,
+    string? ProjectConfigurationId,
+    string Name,
+    string Supplier,
+    string Series,
+    string Status,
+    decimal TotalCny,
+    string TargetCurrency,
+    decimal TotalConverted,
+    string RequestJson,
+    string CalculationJson,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

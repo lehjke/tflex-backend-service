@@ -16,6 +16,7 @@ const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
+const templateCardCloseTimers = new WeakMap();
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -41,10 +42,14 @@ function updateAuthView() {
     if (currentUserName) {
       currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
     }
-    if (currentUserRole) currentUserRole.textContent = getRoleLabel();
+    if (currentUserRole) {
+      const role = getRoleLabel();
+      currentUserRole.hidden = role !== "Admin";
+      currentUserRole.textContent = role;
+    }
   } else {
     if (currentUserName) currentUserName.textContent = "";
-    if (currentUserRole) currentUserRole.textContent = "User";
+    if (currentUserRole) currentUserRole.hidden = true;
   }
 }
 
@@ -179,9 +184,51 @@ function setupHomeCards() {
   }
 }
 
+function setTemplateCardState(card, isOpen) {
+  if (!card) return;
+  card.classList.toggle("is-open", isOpen);
+  card.setAttribute("aria-expanded", isOpen ? "true" : "false");
+}
+
+function openTemplateCard(card) {
+  if (!card) return;
+
+  for (const otherCard of document.querySelectorAll("[data-template-card]")) {
+    if (otherCard !== card) {
+      window.clearTimeout(templateCardCloseTimers.get(otherCard));
+      setTemplateCardState(otherCard, false);
+    }
+  }
+
+  window.clearTimeout(templateCardCloseTimers.get(card));
+  setTemplateCardState(card, true);
+  templateCardCloseTimers.set(card, window.setTimeout(() => {
+    setTemplateCardState(card, false);
+  }, 5000));
+}
+
+function setupTemplateCard() {
+  for (const card of document.querySelectorAll("[data-template-card]")) {
+    card.setAttribute("aria-expanded", "false");
+    card.addEventListener("pointerenter", () => openTemplateCard(card));
+    card.addEventListener("focusin", () => openTemplateCard(card));
+
+    const button = card.querySelector(".home-template-card__button");
+    button?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      window.location.assign(card.href);
+    });
+  }
+}
+
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);
+userPanel?.addEventListener("click", event => {
+  if (logoutButton?.contains(event.target)) return;
+  window.location.assign("/account");
+});
 
 setupHomeCards();
+setupTemplateCard();
 await loadCurrentUser();

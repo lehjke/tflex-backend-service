@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Инженерный центр — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260619-home-1">
+  <link rel="stylesheet" href="/styles.css?v=20260621-home-links-1">
 </head>
 <body>
   <div class="app-shell">
@@ -21,13 +21,9 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/"><span>Главная</span><small>Overview</small></a>
         <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a href="/account.html"><span>Личный кабинет</span><small>Projects</small></a>
+        <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
         <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
-        <a href="/drawings#jobsPanel"><span>История</span><small>History</small></a>
-        <a href="/account.html#adminPanel"><span>Шаблоны</span><small>Admin</small></a>
-        <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -52,11 +48,6 @@
         </label>
 
         <div class="topbar__actions">
-          <div class="language-switch" aria-label="Language">
-            <span class="is-active">RU</span>
-            <span>EN</span>
-          </div>
-
           <form id="loginForm" class="login-form" hidden>
             <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
             <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
@@ -108,85 +99,56 @@
           <p>Выберите раздел для работы с чертежами, расчетами и проектами</p>
         </section>
 
-        <section class="home-actions" aria-label="Основные разделы">
-          <article class="home-action-card" data-home-card>
-            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardDrawings">
-              <span class="home-action-card__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false">
-                  <path d="M6 3.75h8.25L18 7.5v12.75H6V3.75Z"></path>
-                  <path d="M14.25 3.75V7.5H18"></path>
-                  <path d="M8.5 12h7M8.5 15.25h5.25"></path>
+        <section class="home-module-showcase" aria-label="Быстрый доступ">
+          <a class="home-template-card" data-template-card href="/drawings" aria-label="Использовать создание чертежей" aria-expanded="false">
+            <span class="home-template-card__hero" aria-hidden="true">
+              <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
+                <image href="/assets/card-create-drawings-open-1.svg" width="752" height="565"/>
+              </svg>
+            </span>
+            <span class="home-template-card__content">
+              <span class="home-template-card__heading">
+                <span class="home-template-card__title">Создание чертежей</span>
+                <span class="home-template-card__badge">TFlex шаблоны</span>
+              </span>
+              <span class="home-template-card__description">Создание строительных заданий через САПР TFlex.</span>
+            </span>
+            <span class="home-template-card__footer">
+              <span class="home-template-card__button">Использовать</span>
+              <span class="home-template-card__meta">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 7.5v8M8.5 11l3.5-3.5 3.5 3.5"></path>
+                  <path d="M6.75 15.75a3.25 3.25 0 0 1 .42-6.47 4.75 4.75 0 0 1 9.08-1.55 3.9 3.9 0 0 1 .5 7.77H6.75Z"></path>
                 </svg>
+                <strong>6</strong>
+                <span>активных шаблонов</span>
               </span>
-              <span class="home-action-card__text">
-                <span class="home-action-card__title">Создание чертежей</span>
-                <span class="home-action-card__subtitle">Конфигуратор лифтовых чертежей</span>
-              </span>
-              <span class="home-action-card__indicator" aria-hidden="true"></span>
-            </button>
-            <div id="homeCardDrawings" class="home-action-card__body" aria-hidden="true">
-              <div class="home-action-card__description">
-                <p>Раздел позволяет выбрать проект, шаблон, формат файла и параметры лифтовой шахты. После заполнения параметров пользователь может сохранить конфигурацию и сформировать готовый чертеж.</p>
-                <a class="primary-link home-action-card__button" href="/drawings">Перейти к созданию</a>
-              </div>
-            </div>
-          </article>
+            </span>
+          </a>
 
-          <article class="home-action-card" data-home-card>
-            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardPricing">
-              <span class="home-action-card__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false">
-                  <path d="M7 3.75h10v16.5H7V3.75Z"></path>
-                  <path d="M9.75 7.25h4.5"></path>
-                  <path d="M9.5 11h.01M12 11h.01M14.5 11h.01M9.5 13.75h.01M12 13.75h.01M14.5 13.75h.01M9.5 16.5h.01M12 16.5h.01M14.5 16.5h.01"></path>
-                </svg>
+          <a class="home-template-card" data-template-card href="/pricing" aria-label="Использовать расчет цен" aria-expanded="false">
+            <span class="home-template-card__hero" aria-hidden="true">
+              <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
+                <image href="/assets/card-pricing-open.svg" width="752" height="565"/>
+              </svg>
+            </span>
+            <span class="home-template-card__content">
+              <span class="home-template-card__heading">
+                <span class="home-template-card__title">Расчет цен</span>
               </span>
-              <span class="home-action-card__text">
-                <span class="home-action-card__title">Расчет базовой цены</span>
-                <span class="home-action-card__subtitle">Предварительная оценка стоимости</span>
-              </span>
-              <span class="home-action-card__indicator" aria-hidden="true"></span>
-            </button>
-            <div id="homeCardPricing" class="home-action-card__body" aria-hidden="true">
-              <div class="home-action-card__description">
-                <p>Раздел предназначен для расчета базовой стоимости по параметрам проекта. Пользователь может указать исходные данные, получить расчет и использовать его при подготовке коммерческого предложения.</p>
-                <a class="primary-link home-action-card__button" href="/pricing">Открыть расчет</a>
-              </div>
-            </div>
-          </article>
-
-          <article class="home-action-card" data-home-card>
-            <button class="home-action-card__summary" type="button" aria-expanded="false" aria-controls="homeCardAccount">
-              <span class="home-action-card__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false">
-                  <path d="M5 7.25h5.2l1.55 2H19v9.5H5V7.25Z"></path>
-                  <path d="M8.5 14.25h7"></path>
-                  <path d="M8.5 16.75h4.25"></path>
-                </svg>
-              </span>
-              <span class="home-action-card__text">
-                <span class="home-action-card__title">Личный кабинет</span>
-                <span class="home-action-card__subtitle">Проекты, конфигурации и файлы</span>
-              </span>
-              <span class="home-action-card__indicator" aria-hidden="true"></span>
-            </button>
-            <div id="homeCardAccount" class="home-action-card__body" aria-hidden="true">
-              <div class="home-action-card__description">
-                <p>В личном кабинете пользователь может просматривать проекты, сохраненные конфигурации, готовые файлы, историю действий и доступные операции для инженера, продавца или администратора.</p>
-                <a class="primary-link home-action-card__button" href="/account.html">Открыть кабинет</a>
-              </div>
-            </div>
-          </article>
+              <span class="home-template-card__description">Расчет базовой цены.</span>
+            </span>
+            <span class="home-template-card__footer">
+              <span class="home-template-card__button">Использовать</span>
+            </span>
+          </a>
         </section>
 
-        <section class="home-info">
-          <p>Сервис помогает инженерам быстро формировать чертежи, рассчитывать параметры и управлять проектами в едином рабочем пространстве.</p>
-        </section>
       </main>
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260619-home-1"></script>
-  <script type="module" src="/home.js?v=20260619-home-1"></script>
+  <script type="module" src="/shell.js?v=20260621-home-links-1"></script>
+  <script type="module" src="/home.js?v=20260621-home-links-1"></script>
 </body>
 </html>

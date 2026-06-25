@@ -52,6 +52,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddSingleton<ConfiguredUserStore>();
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<TemplateAccessStore>();
+builder.Services.AddSingleton<PricingCatalogStore>();
+builder.Services.AddHttpClient();
 builder.Services.AddDrawingInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 
 builder.Services
@@ -838,6 +840,122 @@ var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{co
 });
 RequirePolicy(deleteConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
+var pricingCatalogEndpoint = app.MapGet("/api/pricing/catalog", (
+    PricingCatalogStore pricing) =>
+{
+    return Results.Ok(pricing.GetSummary());
+});
+RequirePolicy(pricingCatalogEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var pricingCalculateEndpoint = app.MapPost("/api/pricing/calculate", async (
+    PricingCalculationRequest request,
+    PricingCatalogStore pricing,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Supplier)
+        || string.IsNullOrWhiteSpace(request.Series)
+        || request.CapacityKg <= 0
+        || request.Speed <= 0
+        || request.Stops <= 0)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["Supplier, series, capacity, speed and stops are required."]
+        });
+    }
+
+    return Results.Ok(await pricing.CalculateAsync(request, cancellationToken));
+});
+RequirePolicy(pricingCalculateEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var pricingSpecificationsEndpoint = app.MapGet("/api/projects/{projectId}/pricing-specifications", async (
+    string projectId,
+    ProjectStore projects,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var specifications = await projects.ListPricingSpecificationsAsync(
+        projectId,
+        GetEffectiveUserName(context.User, securityOptions),
+        cancellationToken);
+    return Results.Ok(specifications.Select(ToPricingSpecificationDto));
+});
+RequirePolicy(pricingSpecificationsEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pricing-specifications", async (
+    string projectId,
+    PricingSpecificationSaveRequest request,
+    ProjectStore projects,
+    PricingCatalogStore pricing,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var calculation = await pricing.CalculateAsync(request.Request, cancellationToken);
+    if (calculation.Status == "blocked")
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = calculation.Blockers.ToArray()
+        });
+    }
+
+    var name = string.IsNullOrWhiteSpace(request.Name)
+        ? request.Request.Name ?? $"{calculation.Series} {request.Request.CapacityKg} кг"
+        : request.Name;
+    var specification = await projects.SavePricingSpecificationAsync(
+        GetEffectiveUserName(context.User, securityOptions),
+        projectId,
+        request.Request.ProjectConfigurationId,
+        name,
+        request.Request,
+        calculation,
+        cancellationToken);
+
+    return specification is null
+        ? Results.NotFound()
+        : Results.Created($"/api/pricing-specifications/{specification.Id}", ToPricingSpecificationDto(specification));
+});
+RequirePolicy(savePricingSpecificationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var pricingSpecificationEndpoint = app.MapGet("/api/pricing-specifications/{specificationId}", async (
+    string specificationId,
+    ProjectStore projects,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var specification = await projects.GetPricingSpecificationAsync(
+        specificationId,
+        GetEffectiveUserName(context.User, securityOptions),
+        cancellationToken);
+    return specification is null ? Results.NotFound() : Results.Ok(ToPricingSpecificationDto(specification));
+});
+RequirePolicy(pricingSpecificationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var pricingTkpEndpoint = app.MapGet("/api/pricing-specifications/{specificationId}/tkp", async (
+    string specificationId,
+    ProjectStore projects,
+    PricingCatalogStore pricing,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var specification = await projects.GetPricingSpecificationAsync(
+        specificationId,
+        GetEffectiveUserName(context.User, securityOptions),
+        cancellationToken);
+    if (specification is null)
+    {
+        return Results.NotFound();
+    }
+
+    var bytes = pricing.BuildTkpDocx(specification);
+    var fileName = $"{SanitizeFileName(specification.Name)}-tkp.docx";
+    return Results.File(
+        bytes,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        fileName);
+});
+RequirePolicy(pricingTkpEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
 app.MapFallbackToFile("index.html");
 
 app.Run();
@@ -953,6 +1071,31 @@ static object ToProjectConfigurationDto(ProjectConfiguration configuration)
     };
 }
 
+static object ToPricingSpecificationDto(PricingSpecification specification)
+{
+    return new
+    {
+        specification.Id,
+        specification.ProjectId,
+        specification.ProjectConfigurationId,
+        specification.Name,
+        specification.Supplier,
+        specification.Series,
+        specification.Status,
+        specification.TotalCny,
+        specification.TargetCurrency,
+        specification.TotalConverted,
+        Request = JsonSerializer.Deserialize<PricingCalculationRequest>(
+            specification.RequestJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        Calculation = JsonSerializer.Deserialize<PricingCalculationResult>(
+            specification.CalculationJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        specification.CreatedAt,
+        specification.UpdatedAt
+    };
+}
+
 static object ToJobDto(DrawingJob job, ClaimsPrincipal user, SecurityOptions securityOptions)
 {
     var canViewInternal = !securityOptions.RequireAuthentication || user.IsInRole("Admin");
@@ -1016,6 +1159,16 @@ static string GetUserName(ClaimsPrincipal principal)
 static string GetEffectiveUserName(ClaimsPrincipal principal, SecurityOptions securityOptions)
 {
     return securityOptions.RequireAuthentication ? GetUserName(principal) : "local";
+}
+
+static string SanitizeFileName(string value)
+{
+    var invalid = Path.GetInvalidFileNameChars();
+    var chars = value
+        .Select(character => invalid.Contains(character) ? '_' : character)
+        .ToArray();
+    var fileName = new string(chars).Trim();
+    return string.IsNullOrWhiteSpace(fileName) ? "tkp" : fileName;
 }
 
 static bool CanViewAllJobs(ClaimsPrincipal principal)
@@ -1115,3 +1268,7 @@ public sealed record ProjectConfigurationSaveRequest(
     string TemplateId,
     string OutputFormat,
     Dictionary<string, JsonElement>? Parameters);
+
+public sealed record PricingSpecificationSaveRequest(
+    string? Name,
+    PricingCalculationRequest Request);

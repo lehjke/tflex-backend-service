@@ -20,6 +20,7 @@ const registerPassword = document.querySelector("#registerPassword");
 const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
+const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
 const projectNameInput = document.querySelector("#projectNameInput");
 const createProjectButton = document.querySelector("#createProjectButton");
@@ -184,7 +185,7 @@ function updateAuthView() {
   accountMain.classList.toggle("is-admin-route", showAdminPanel);
   adminPanel.hidden = !showAdminPanel;
   adminPanel.classList.toggle("is-open", showAdminPanel);
-  adminNavLink.hidden = !authenticated || !canAdmin();
+  if (adminNavLink) adminNavLink.hidden = !authenticated || !canAdmin();
   if (adminAccessCard) adminAccessCard.hidden = !authenticated || !canAdmin();
 
   if (showAdminPanel) {
@@ -196,8 +197,14 @@ function updateAuthView() {
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
+    if (currentUserRole) {
+      const isAdmin = canAdmin();
+      currentUserRole.hidden = !isAdmin;
+      currentUserRole.textContent = isAdmin ? "Admin" : "";
+    }
   } else {
     currentUserName.textContent = "";
+    if (currentUserRole) currentUserRole.hidden = true;
   }
 }
 
@@ -726,6 +733,10 @@ async function boot() {
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
+userPanel?.addEventListener("click", event => {
+  if (logoutButton?.contains(event.target)) return;
+  window.location.assign("/account");
+});
 createProjectButton.addEventListener("click", createProject);
 projectSearchInput?.addEventListener("input", renderProjects);
 window.addEventListener("hashchange", updateAuthView);

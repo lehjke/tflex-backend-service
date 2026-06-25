@@ -21,13 +21,9 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a href="/"><span>Главная</span><small>Overview</small></a>
         <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a class="is-active" href="/account.html"><span>Личный кабинет</span><small>Projects</small></a>
+        <a class="is-active" href="/account"><span>Личный кабинет</span><small>Account</small></a>
         <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
-        <a href="/drawings#jobsPanel"><span>История</span><small>History</small></a>
-        <a id="adminNavLink" href="#adminPanel" hidden><span>Шаблоны</span><small>Admin</small></a>
-        <a href="/account.html"><span>Настройки</span><small>Settings</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -52,11 +48,6 @@
         </label>
 
         <div class="topbar__actions">
-          <div class="language-switch" aria-label="Language">
-            <span class="is-active">RU</span>
-            <span>EN</span>
-          </div>
-
           <form id="loginForm" class="login-form" hidden>
             <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
             <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
@@ -67,7 +58,7 @@
             <span class="user-avatar" aria-hidden="true">ME</span>
             <span class="user-panel__meta">
               <span id="currentUserName"></span>
-              <small>Admin</small>
+              <small id="currentUserRole" hidden>Admin</small>
             </span>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
