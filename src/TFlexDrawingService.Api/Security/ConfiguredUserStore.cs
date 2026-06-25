@@ -313,6 +313,25 @@ public sealed class ConfiguredUserStore(
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<bool> DeleteUserAsync(
+        string userName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return false;
+        }
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SecurityUsers WHERE UserName = $userName;";
+        command.Parameters.AddWithValue("$userName", userName.Trim());
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private async Task InsertBootstrapUserIfMissingAsync(
         SqliteConnection connection,
         ConfiguredUser user,

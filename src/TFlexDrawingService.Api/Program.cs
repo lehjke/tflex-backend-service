@@ -428,25 +428,40 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
 });
 RequirePolicy(adminUpsertUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
-var adminDisableUserEndpoint = app.MapDelete("/api/admin/users/{userName}", async (
+var adminDeleteUserEndpoint = app.MapDelete("/api/admin/users/{userName}", async (
     string userName,
     ConfiguredUserStore users,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    if (string.Equals(userName, GetUserName(context.User), StringComparison.OrdinalIgnoreCase))
+    var normalizedUserName = userName.Trim();
+    if (string.Equals(normalizedUserName, GetUserName(context.User), StringComparison.OrdinalIgnoreCase))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["userName"] = ["You cannot disable your own user."]
+            ["userName"] = ["You cannot delete your own user."]
         });
     }
 
-    return await users.SetUserEnabledAsync(userName, false, cancellationToken)
+    var existing = await users.FindUserAsync(normalizedUserName, cancellationToken);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (existing.Roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["userName"] = ["You cannot delete another admin user."]
+        });
+    }
+
+    return await users.DeleteUserAsync(normalizedUserName, cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
 });
-RequirePolicy(adminDisableUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+RequirePolicy(adminDeleteUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
 var templatesEndpoint = app.MapGet("/api/templates", async (
     ITemplateCatalog catalog,
@@ -647,7 +662,7 @@ var projectsEndpoint = app.MapGet("/api/projects", async (
     CancellationToken cancellationToken) =>
 {
     return Results.Ok(await projects.ListProjectsAsync(
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken));
 });
 RequirePolicy(projectsEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
@@ -669,11 +684,43 @@ var createProjectEndpoint = app.MapPost("/api/projects", async (
     var project = await projects.CreateProjectAsync(
         GetEffectiveUserName(context.User, securityOptions),
         request.Name,
+        request.Address,
+        request.FactoryRequestNumber,
         request.Description,
         cancellationToken);
     return Results.Created($"/api/projects/{project.Id}", project);
 });
 RequirePolicy(createProjectEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var updateProjectEndpoint = app.MapPut("/api/projects/{projectId}", async (
+    string projectId,
+    ProjectUpdateRequest request,
+    ProjectStore projects,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["name"] = ["Project name is required."]
+        });
+    }
+
+    var project = await projects.UpdateProjectAsync(
+        projectId,
+        GetProjectOwnerScope(context.User, securityOptions),
+        request.Name,
+        request.Address,
+        request.FactoryRequestNumber,
+        request.Description,
+        cancellationToken);
+
+    return project is null
+        ? Results.NotFound()
+        : Results.Ok(project);
+});
+RequirePolicy(updateProjectEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
     string projectId,
@@ -683,7 +730,7 @@ var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
 {
     return await projects.DeleteProjectAsync(
         projectId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
@@ -698,7 +745,7 @@ var projectConfigurationsEndpoint = app.MapGet("/api/projects/{projectId}/config
 {
     var configurations = await projects.ListConfigurationsAsync(
         projectId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken);
     return Results.Ok(configurations.Select(ToProjectConfigurationDto));
 });
@@ -712,7 +759,7 @@ var projectConfigurationEndpoint = app.MapGet("/api/project-configurations/{conf
 {
     var configuration = await projects.GetConfigurationAsync(
         configurationId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken);
 
     return configuration is null
@@ -758,7 +805,7 @@ var saveConfigurationEndpoint = app.MapPost("/api/projects/{projectId}/configura
     }
 
     var configuration = await projects.SaveConfigurationAsync(
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         projectId,
         request.Name,
         template.Id,
@@ -811,7 +858,7 @@ var updateConfigurationEndpoint = app.MapPut("/api/project-configurations/{confi
     }
 
     var configuration = await projects.UpdateConfigurationAsync(
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         configurationId,
         request.Name,
         template.Id,
@@ -833,7 +880,7 @@ var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{co
 {
     return await projects.DeleteConfigurationAsync(
         configurationId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
@@ -1062,6 +1109,7 @@ static object ToProjectConfigurationDto(ProjectConfiguration configuration)
     {
         configuration.Id,
         configuration.ProjectId,
+        configuration.OwnerUserName,
         configuration.Name,
         configuration.TemplateId,
         configuration.OutputFormat,
@@ -1171,6 +1219,18 @@ static string SanitizeFileName(string value)
     return string.IsNullOrWhiteSpace(fileName) ? "tkp" : fileName;
 }
 
+static string? GetProjectOwnerScope(ClaimsPrincipal principal, SecurityOptions securityOptions)
+{
+    return CanManageAllProjects(principal, securityOptions)
+        ? null
+        : GetEffectiveUserName(principal, securityOptions);
+}
+
+static bool CanManageAllProjects(ClaimsPrincipal principal, SecurityOptions securityOptions)
+{
+    return !securityOptions.RequireAuthentication || principal.IsInRole("Admin");
+}
+
 static bool CanViewAllJobs(ClaimsPrincipal principal)
 {
     return principal.IsInRole("Admin");
@@ -1261,7 +1321,17 @@ public sealed record UserUpsertRequest(
 
 public sealed record TemplateEnabledRequest(bool Enabled);
 
-public sealed record ProjectCreateRequest(string Name, string? Description);
+public sealed record ProjectCreateRequest(
+    string Name,
+    string? Address,
+    string? FactoryRequestNumber,
+    string? Description);
+
+public sealed record ProjectUpdateRequest(
+    string Name,
+    string? Address,
+    string? FactoryRequestNumber,
+    string? Description);
 
 public sealed record ProjectConfigurationSaveRequest(
     string Name,

@@ -45,7 +45,7 @@ public sealed class SecurityAndAccountStoreTests
         var store = new ProjectStore(storageOptions);
         await store.InitializeAsync();
 
-        var project = await store.CreateProjectAsync("operator", "Lift A", null);
+        var project = await store.CreateProjectAsync("operator", "Lift A", "г. Москва, ул. Мира 21", "REQ-001");
         var parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             """{"WIDTH":1200,"MATERIAL":"Сталь"}""")!;
 
@@ -67,6 +67,8 @@ public sealed class SecurityAndAccountStoreTests
 
         Assert.Single(projects);
         Assert.Equal("Lift A", projects[0].Name);
+        Assert.Equal("г. Москва, ул. Мира 21", projects[0].Address);
+        Assert.Equal("REQ-001", projects[0].FactoryRequestNumber);
         Assert.Single(configurations);
         Assert.Equal("PDF configuration", configurations[0].Name);
         Assert.Contains("\"WIDTH\":1200", configurations[0].ParametersJson, StringComparison.Ordinal);
@@ -88,6 +90,83 @@ public sealed class SecurityAndAccountStoreTests
         Assert.Equal(configuration.Id, updatedConfigurations[0].Id);
         Assert.Equal("L1", updatedConfigurations[0].Name);
         Assert.Contains("\"WIDTH\":1400", updatedConfigurations[0].ParametersJson, StringComparison.Ordinal);
+
+        var updatedProject = await freshStore.UpdateProjectAsync(
+            project.Id,
+            "operator",
+            "Lift A updated",
+            "г. Санкт-Петербург, Невский 10",
+            "REQ-002");
+
+        Assert.NotNull(updatedProject);
+        Assert.Equal("Lift A updated", updatedProject.Name);
+        Assert.Equal("г. Санкт-Петербург, Невский 10", updatedProject.Address);
+        Assert.Equal("REQ-002", updatedProject.FactoryRequestNumber);
+    }
+
+    [Fact]
+    public async Task ProjectStore_AdminScopeCanManageProjectsAndConfigurationsAcrossOwners()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ProjectStore(storageOptions);
+        await store.InitializeAsync();
+
+        var operatorProject = await store.CreateProjectAsync("operator", "Operator project", "Operator address", "OP-001");
+        var engineerProject = await store.CreateProjectAsync("engineer", "Engineer project", "Engineer address", "EN-001");
+        var parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """{"WIDTH":1200}""")!;
+
+        var operatorConfiguration = await store.SaveConfigurationAsync(
+            "operator",
+            operatorProject.Id,
+            "Operator configuration",
+            "template-a",
+            "pdf",
+            parameters);
+        var engineerConfiguration = await store.SaveConfigurationAsync(
+            "engineer",
+            engineerProject.Id,
+            "Engineer configuration",
+            "template-b",
+            "pdf",
+            parameters);
+
+        Assert.NotNull(operatorConfiguration);
+        Assert.NotNull(engineerConfiguration);
+        Assert.Null(await store.GetConfigurationAsync(operatorConfiguration.Id, "engineer"));
+
+        var allProjects = await store.ListProjectsAsync(null);
+        Assert.Equal(2, allProjects.Count);
+        Assert.Contains(allProjects, project => project.OwnerUserName == "operator");
+        Assert.Contains(allProjects, project => project.OwnerUserName == "engineer");
+
+        var adminConfiguration = await store.GetConfigurationAsync(operatorConfiguration.Id, null);
+        Assert.NotNull(adminConfiguration);
+        Assert.Equal("operator", adminConfiguration.OwnerUserName);
+
+        var updatedParameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """{"WIDTH":1500}""")!;
+        var updatedConfiguration = await store.UpdateConfigurationAsync(
+            null,
+            operatorConfiguration.Id,
+            "Updated by admin",
+            "template-a",
+            "pdf",
+            updatedParameters);
+
+        Assert.NotNull(updatedConfiguration);
+        Assert.Equal("operator", updatedConfiguration.OwnerUserName);
+
+        var operatorConfigurations = await store.ListConfigurationsAsync(operatorProject.Id, "operator");
+        Assert.Single(operatorConfigurations);
+        Assert.Equal("Updated by admin", operatorConfigurations[0].Name);
+        Assert.Contains("\"WIDTH\":1500", operatorConfigurations[0].ParametersJson, StringComparison.Ordinal);
+
+        Assert.True(await store.DeleteConfigurationAsync(engineerConfiguration.Id, null));
+        Assert.Empty(await store.ListConfigurationsAsync(engineerProject.Id, "engineer"));
+
+        Assert.True(await store.DeleteProjectAsync(engineerProject.Id, null));
+        Assert.DoesNotContain(await store.ListProjectsAsync(null), project => project.Id == engineerProject.Id);
     }
 
     [Fact]

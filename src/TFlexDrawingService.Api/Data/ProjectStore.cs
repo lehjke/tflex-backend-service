@@ -23,6 +23,8 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
                 Id TEXT PRIMARY KEY,
                 OwnerUserName TEXT NOT NULL,
                 Name TEXT NOT NULL,
+                Address TEXT NOT NULL DEFAULT '',
+                FactoryRequestNumber TEXT NOT NULL DEFAULT '',
                 Description TEXT NOT NULL DEFAULT '',
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT NOT NULL
@@ -69,10 +71,12 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
                 ON PricingSpecifications(ProjectId, UpdatedAt);
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await EnsureColumnAsync(connection, "UserProjects", "Address", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(connection, "UserProjects", "FactoryRequestNumber", "TEXT NOT NULL DEFAULT ''", cancellationToken);
     }
 
     public async Task<IReadOnlyList<UserProject>> ListProjectsAsync(
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -80,12 +84,12 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, OwnerUserName, Name, Description, CreatedAt, UpdatedAt
+            SELECT Id, OwnerUserName, Name, Address, FactoryRequestNumber, Description, CreatedAt, UpdatedAt
             FROM UserProjects
-            WHERE OwnerUserName = $ownerUserName
+            WHERE $ownerUserName IS NULL OR OwnerUserName = $ownerUserName
             ORDER BY UpdatedAt DESC;
             """;
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         var projects = new List<UserProject>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -99,7 +103,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<UserProject?> GetProjectAsync(
         string projectId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -107,12 +111,12 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, OwnerUserName, Name, Description, CreatedAt, UpdatedAt
+            SELECT Id, OwnerUserName, Name, Address, FactoryRequestNumber, Description, CreatedAt, UpdatedAt
             FROM UserProjects
-            WHERE Id = $id AND OwnerUserName = $ownerUserName;
+            WHERE Id = $id AND ($ownerUserName IS NULL OR OwnerUserName = $ownerUserName);
             """;
         command.Parameters.AddWithValue("$id", projectId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapProject(reader) : null;
@@ -121,7 +125,9 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
     public async Task<UserProject> CreateProjectAsync(
         string ownerUserName,
         string name,
-        string? description,
+        string? address,
+        string? factoryRequestNumber,
+        string? description = null,
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -129,6 +135,8 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             Guid.NewGuid().ToString("n"),
             ownerUserName,
             NormalizeName(name, "Новый проект"),
+            NormalizeOptional(address),
+            NormalizeOptional(factoryRequestNumber),
             description?.Trim() ?? string.Empty,
             now,
             now);
@@ -138,12 +146,14 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO UserProjects (Id, OwnerUserName, Name, Description, CreatedAt, UpdatedAt)
-            VALUES ($id, $ownerUserName, $name, $description, $createdAt, $updatedAt);
+            INSERT INTO UserProjects (Id, OwnerUserName, Name, Address, FactoryRequestNumber, Description, CreatedAt, UpdatedAt)
+            VALUES ($id, $ownerUserName, $name, $address, $factoryRequestNumber, $description, $createdAt, $updatedAt);
             """;
         command.Parameters.AddWithValue("$id", project.Id);
         command.Parameters.AddWithValue("$ownerUserName", project.OwnerUserName);
         command.Parameters.AddWithValue("$name", project.Name);
+        command.Parameters.AddWithValue("$address", project.Address);
+        command.Parameters.AddWithValue("$factoryRequestNumber", project.FactoryRequestNumber);
         command.Parameters.AddWithValue("$description", project.Description);
         command.Parameters.AddWithValue("$createdAt", FormatDate(project.CreatedAt));
         command.Parameters.AddWithValue("$updatedAt", FormatDate(project.UpdatedAt));
@@ -152,9 +162,60 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         return project;
     }
 
+    public async Task<UserProject?> UpdateProjectAsync(
+        string projectId,
+        string? ownerUserName,
+        string name,
+        string? address,
+        string? factoryRequestNumber,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await GetProjectAsync(projectId, ownerUserName, cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var updated = existing with
+        {
+            Name = NormalizeName(name, "Новый проект"),
+            Address = NormalizeOptional(address),
+            FactoryRequestNumber = NormalizeOptional(factoryRequestNumber),
+            Description = description?.Trim() ?? existing.Description,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE UserProjects
+            SET Name = $name,
+                Address = $address,
+                FactoryRequestNumber = $factoryRequestNumber,
+                Description = $description,
+                UpdatedAt = $updatedAt
+            WHERE Id = $projectId
+              AND ($ownerUserName IS NULL OR OwnerUserName = $ownerUserName);
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId);
+        AddNullableUserName(command, ownerUserName);
+        command.Parameters.AddWithValue("$name", updated.Name);
+        command.Parameters.AddWithValue("$address", updated.Address);
+        command.Parameters.AddWithValue("$factoryRequestNumber", updated.FactoryRequestNumber);
+        command.Parameters.AddWithValue("$description", updated.Description);
+        command.Parameters.AddWithValue("$updatedAt", FormatDate(updated.UpdatedAt));
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0
+            ? updated
+            : null;
+    }
+
     public async Task<bool> DeleteProjectAsync(
         string projectId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -167,11 +228,12 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             configurationsCommand.CommandText = """
                 DELETE FROM ProjectConfigurations
                 WHERE ProjectId IN (
-                    SELECT Id FROM UserProjects WHERE Id = $projectId AND OwnerUserName = $ownerUserName
+                    SELECT Id FROM UserProjects
+                    WHERE Id = $projectId AND ($ownerUserName IS NULL OR OwnerUserName = $ownerUserName)
                 );
                 """;
             configurationsCommand.Parameters.AddWithValue("$projectId", projectId);
-            configurationsCommand.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+            AddNullableUserName(configurationsCommand, ownerUserName);
             await configurationsCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -180,10 +242,10 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             projectCommand.Transaction = transaction;
             projectCommand.CommandText = """
                 DELETE FROM UserProjects
-                WHERE Id = $projectId AND OwnerUserName = $ownerUserName;
+                WHERE Id = $projectId AND ($ownerUserName IS NULL OR OwnerUserName = $ownerUserName);
                 """;
             projectCommand.Parameters.AddWithValue("$projectId", projectId);
-            projectCommand.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+            AddNullableUserName(projectCommand, ownerUserName);
             var rows = await projectCommand.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return rows > 0;
@@ -192,7 +254,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<IReadOnlyList<ProjectConfiguration>> ListConfigurationsAsync(
         string projectId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -200,14 +262,14 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT c.Id, c.ProjectId, c.Name, c.TemplateId, c.OutputFormat, c.ParametersJson, c.CreatedAt, c.UpdatedAt
+            SELECT c.Id, c.ProjectId, p.OwnerUserName, c.Name, c.TemplateId, c.OutputFormat, c.ParametersJson, c.CreatedAt, c.UpdatedAt
             FROM ProjectConfigurations c
             INNER JOIN UserProjects p ON p.Id = c.ProjectId
-            WHERE c.ProjectId = $projectId AND p.OwnerUserName = $ownerUserName
+            WHERE c.ProjectId = $projectId AND ($ownerUserName IS NULL OR p.OwnerUserName = $ownerUserName)
             ORDER BY c.UpdatedAt DESC;
             """;
         command.Parameters.AddWithValue("$projectId", projectId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         var configurations = new List<ProjectConfiguration>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -221,7 +283,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<ProjectConfiguration?> GetConfigurationAsync(
         string configurationId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -229,20 +291,20 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT c.Id, c.ProjectId, c.Name, c.TemplateId, c.OutputFormat, c.ParametersJson, c.CreatedAt, c.UpdatedAt
+            SELECT c.Id, c.ProjectId, p.OwnerUserName, c.Name, c.TemplateId, c.OutputFormat, c.ParametersJson, c.CreatedAt, c.UpdatedAt
             FROM ProjectConfigurations c
             INNER JOIN UserProjects p ON p.Id = c.ProjectId
-            WHERE c.Id = $configurationId AND p.OwnerUserName = $ownerUserName;
+            WHERE c.Id = $configurationId AND ($ownerUserName IS NULL OR p.OwnerUserName = $ownerUserName);
             """;
         command.Parameters.AddWithValue("$configurationId", configurationId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapConfiguration(reader) : null;
     }
 
     public async Task<ProjectConfiguration?> SaveConfigurationAsync(
-        string ownerUserName,
+        string? ownerUserName,
         string projectId,
         string name,
         string templateId,
@@ -250,7 +312,8 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         IReadOnlyDictionary<string, JsonElement> parameters,
         CancellationToken cancellationToken = default)
     {
-        if (await GetProjectAsync(projectId, ownerUserName, cancellationToken) is null)
+        var project = await GetProjectAsync(projectId, ownerUserName, cancellationToken);
+        if (project is null)
         {
             return null;
         }
@@ -259,6 +322,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         var configuration = new ProjectConfiguration(
             Guid.NewGuid().ToString("n"),
             projectId,
+            project.OwnerUserName,
             NormalizeName(name, "Конфигурация"),
             templateId,
             outputFormat,
@@ -296,7 +360,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
     }
 
     public async Task<ProjectConfiguration?> UpdateConfigurationAsync(
-        string ownerUserName,
+        string? ownerUserName,
         string configurationId,
         string name,
         string templateId,
@@ -333,7 +397,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
                 UpdatedAt = $updatedAt
             WHERE Id = $configurationId
               AND ProjectId IN (
-                SELECT Id FROM UserProjects WHERE OwnerUserName = $ownerUserName
+                SELECT Id FROM UserProjects WHERE $ownerUserName IS NULL OR OwnerUserName = $ownerUserName
               );
 
             UPDATE UserProjects
@@ -341,7 +405,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             WHERE Id = $projectId;
             """;
         command.Parameters.AddWithValue("$configurationId", configuration.Id);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
         command.Parameters.AddWithValue("$projectId", configuration.ProjectId);
         command.Parameters.AddWithValue("$name", configuration.Name);
         command.Parameters.AddWithValue("$templateId", configuration.TemplateId);
@@ -356,7 +420,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<bool> DeleteConfigurationAsync(
         string configurationId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -367,11 +431,11 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             DELETE FROM ProjectConfigurations
             WHERE Id = $configurationId
               AND ProjectId IN (
-                SELECT Id FROM UserProjects WHERE OwnerUserName = $ownerUserName
+                SELECT Id FROM UserProjects WHERE $ownerUserName IS NULL OR OwnerUserName = $ownerUserName
               );
             """;
         command.Parameters.AddWithValue("$configurationId", configurationId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
@@ -510,8 +574,10 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            ParseDate(reader.GetString(4)),
-            ParseDate(reader.GetString(5)));
+            reader.GetString(4),
+            reader.GetString(5),
+            ParseDate(reader.GetString(6)),
+            ParseDate(reader.GetString(7)));
     }
 
     private static ProjectConfiguration MapConfiguration(SqliteDataReader reader)
@@ -523,8 +589,39 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             reader.GetString(3),
             reader.GetString(4),
             reader.GetString(5),
-            ParseDate(reader.GetString(6)),
-            ParseDate(reader.GetString(7)));
+            reader.GetString(6),
+            ParseDate(reader.GetString(7)),
+            ParseDate(reader.GetString(8)));
+    }
+
+    private static void AddNullableUserName(SqliteCommand command, string? ownerUserName)
+    {
+        command.Parameters.AddWithValue("$ownerUserName", string.IsNullOrWhiteSpace(ownerUserName) ? DBNull.Value : ownerUserName);
+    }
+
+    private static async Task EnsureColumnAsync(
+        SqliteConnection connection,
+        string tableName,
+        string columnName,
+        string columnDefinition,
+        CancellationToken cancellationToken)
+    {
+        await using (var pragmaCommand = connection.CreateCommand())
+        {
+            pragmaCommand.CommandText = $"PRAGMA table_info({tableName});";
+            await using var reader = await pragmaCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static PricingSpecification MapPricingSpecification(SqliteDataReader reader)
@@ -551,6 +648,11 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         return string.IsNullOrWhiteSpace(name) ? fallback : name.Trim();
     }
 
+    private static string NormalizeOptional(string? value)
+    {
+        return value?.Trim() ?? string.Empty;
+    }
+
     private static string FormatDate(DateTimeOffset value)
     {
         return value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
@@ -566,6 +668,8 @@ public sealed record UserProject(
     string Id,
     string OwnerUserName,
     string Name,
+    string Address,
+    string FactoryRequestNumber,
     string Description,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -573,6 +677,7 @@ public sealed record UserProject(
 public sealed record ProjectConfiguration(
     string Id,
     string ProjectId,
+    string OwnerUserName,
     string Name,
     string TemplateId,
     string OutputFormat,

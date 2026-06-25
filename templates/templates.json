@@ -711,7 +711,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30"
@@ -3458,6 +3458,12 @@
         }
       ],
       "calculatedVariables": [
+        {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 45,
+          "expression": "$door_type == \"ЦО\" ? 55 : 45"
+        },
         {
           "name": "A1",
           "type": "integer",
@@ -9620,7 +9626,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30"
@@ -12367,6 +12373,12 @@
         }
       ],
       "calculatedVariables": [
+        {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 55,
+          "expression": "$door_type == \"ЦО\" ? 55 : 45"
+        },
         {
           "name": "A1",
           "type": "integer",
@@ -25039,7 +25051,7 @@
         {
           "name": "TR",
           "displayName": "Вертикальный разрез / Высота",
-          "type": "integer",
+          "type": "number",
           "isRequired": true,
           "defaultValue": 20,
           "expression": "20"
@@ -27728,6 +27740,12 @@
         }
       ],
       "calculatedVariables": [
+        {
+          "name": "KK",
+          "type": "integer",
+          "defaultValue": 45,
+          "expression": "$door_type == \"ЦО\" ? 80 : 45"
+        },
         {
           "name": "$car_type",
           "type": "string",

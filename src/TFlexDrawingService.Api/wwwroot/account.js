@@ -10,9 +10,15 @@ const state = {
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
+const pageSkeleton = document.querySelector("#pageSkeleton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
+const guestLoginPanel = document.querySelector("#guestLoginPanel");
+const registerPanel = document.querySelector("#registerPanel");
+const guestLoginForm = document.querySelector("#guestLoginForm");
+const showRegisterPanelButton = document.querySelector("#showRegisterPanel");
+const showLoginPanelButton = document.querySelector("#showLoginPanel");
 const registerForm = document.querySelector("#registerForm");
 const registerUserName = document.querySelector("#registerUserName");
 const registerDisplayName = document.querySelector("#registerDisplayName");
@@ -20,9 +26,13 @@ const registerPassword = document.querySelector("#registerPassword");
 const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
-const currentUserRole = document.querySelector("#currentUserRole");
+const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
+const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
+const globalSearchInput = document.querySelector(".global-search input");
 const projectNameInput = document.querySelector("#projectNameInput");
+const projectAddressInput = document.querySelector("#projectAddressInput");
+const projectFactoryRequestNumberInput = document.querySelector("#projectFactoryRequestNumberInput");
 const createProjectButton = document.querySelector("#createProjectButton");
 const projectsList = document.querySelector("#projectsList");
 const accountStatus = document.querySelector("#accountStatus");
@@ -33,11 +43,11 @@ const readyFilesMetric = document.querySelector("#readyFilesMetric");
 const pendingMetric = document.querySelector("#pendingMetric");
 const savedConfigurationsList = document.querySelector("#savedConfigurationsList");
 const adminAccessCard = document.querySelector("#adminAccessCard");
-const adminNavLink = document.querySelector("#adminNavLink");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
+const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -141,23 +151,98 @@ function getAllConfigurations() {
   });
 }
 
+function getProjectOwnerName(project) {
+  return project?.ownerUserName || project?.OwnerUserName || "";
+}
+
+function getProjectAddress(project) {
+  return project?.address || project?.Address || "";
+}
+
+function getProjectFactoryRequestNumber(project) {
+  return project?.factoryRequestNumber || project?.FactoryRequestNumber || "";
+}
+
+function shouldShowProjectOwner(project) {
+  const ownerUserName = getProjectOwnerName(project);
+  return canAdmin() && ownerUserName && ownerUserName !== state.currentUser?.userName;
+}
+
+function renderProjectOwnerBadge(project) {
+  return shouldShowProjectOwner(project)
+    ? `<span class="owner-badge">${escapeHtml(getProjectOwnerName(project))}</span>`
+    : "";
+}
+
+function getProjectMetaLabel(project) {
+  const ownerUserName = getProjectOwnerName(project);
+  return shouldShowProjectOwner(project)
+    ? `${project.name} · ${ownerUserName}`
+    : project.name;
+}
+
 function normalizeSearch(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function getAccountSearchQuery() {
+  return normalizeSearch(projectSearchInput?.value || globalSearchInput?.value);
+}
+
+function syncSearchInputs(value, source) {
+  if (globalSearchInput && source !== globalSearchInput) {
+    globalSearchInput.value = value;
+  }
+
+  if (projectSearchInput && source !== projectSearchInput) {
+    projectSearchInput.value = value;
+  }
 }
 
 function matchesProjectSearch(project, configurations, query) {
   if (!query) return true;
   const values = [
     project.name,
+    getProjectAddress(project),
+    getProjectFactoryRequestNumber(project),
     project.description,
+    getProjectOwnerName(project),
     ...configurations.flatMap(configuration => [
       getConfigurationName(configuration),
       getTemplateLabel(configuration.templateId),
+      configuration.ownerUserName,
       configuration.outputFormat,
       Object.values(configuration.parameters || {}).join(" ")
     ])
   ];
   return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function matchesConfigurationSearch(project, configuration, query) {
+  if (!query) return true;
+  const values = [
+    project.name,
+    getProjectAddress(project),
+    getProjectFactoryRequestNumber(project),
+    project.description,
+    getProjectOwnerName(project),
+    configuration.ownerUserName,
+    configuration.name,
+    getConfigurationName(configuration),
+    getTemplateLabel(configuration.templateId),
+    configuration.templateId,
+    configuration.outputFormat,
+    formatDate(configuration.updatedAt),
+    Object.values(configuration.parameters || {}).join(" ")
+  ];
+  return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function applyAccountSearch(source = null) {
+  const value = source?.value || "";
+  syncSearchInputs(value, source);
+  renderProjects();
+  renderSavedConfigurations();
 }
 
 function updateMetrics() {
@@ -175,18 +260,27 @@ function updateMetrics() {
   if (pendingMetric) pendingMetric.textContent = String(pendingJobs.length);
 }
 
+function hidePageSkeleton() {
+  if (pageSkeleton) {
+    pageSkeleton.hidden = true;
+  }
+}
+
 function updateAuthView() {
   const authenticated = isAuthenticated();
+  const isAdmin = authenticated && canAdmin();
   guestMain.hidden = authenticated;
-  loginForm.hidden = authenticated;
+  loginForm.hidden = true;
   userPanel.hidden = !authenticated;
   accountMain.hidden = !authenticated;
-  const showAdminPanel = authenticated && canAdmin() && isAdminPanelRoute();
+  const showAdminPanel = isAdmin && isAdminPanelRoute();
   accountMain.classList.toggle("is-admin-route", showAdminPanel);
   adminPanel.hidden = !showAdminPanel;
   adminPanel.classList.toggle("is-open", showAdminPanel);
-  if (adminNavLink) adminNavLink.hidden = !authenticated || !canAdmin();
-  if (adminAccessCard) adminAccessCard.hidden = !authenticated || !canAdmin();
+  adminNavLinks.forEach(link => {
+    link.hidden = !isAdmin;
+  });
+  if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
 
   if (showAdminPanel) {
     requestAnimationFrame(() => {
@@ -197,15 +291,28 @@ function updateAuthView() {
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
-    if (currentUserRole) {
-      const isAdmin = canAdmin();
-      currentUserRole.hidden = !isAdmin;
-      currentUserRole.textContent = isAdmin ? "Admin" : "";
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = !isAdmin;
+      currentUserRoleLabel.textContent = isAdmin ? "Admin" : "";
     }
   } else {
     currentUserName.textContent = "";
-    if (currentUserRole) currentUserRole.hidden = true;
+    if (currentUserRoleLabel) {
+      currentUserRoleLabel.hidden = true;
+      currentUserRoleLabel.textContent = "";
+    }
   }
+}
+
+function showAuthPanel(panel) {
+  const showRegister = panel === "register";
+  if (guestLoginPanel) guestLoginPanel.hidden = showRegister;
+  if (registerPanel) registerPanel.hidden = !showRegister;
+
+  requestAnimationFrame(() => {
+    const target = showRegister ? registerUserName : guestLoginForm?.querySelector("[name='userName']");
+    target?.focus({ preventScroll: true });
+  });
 }
 
 async function apiFetch(url, options = {}) {
@@ -297,7 +404,7 @@ function renderProjects() {
     return;
   }
 
-  const query = normalizeSearch(projectSearchInput?.value);
+  const query = getAccountSearchQuery();
   const filteredProjects = state.projects.filter(project =>
     matchesProjectSearch(project, state.configurationsByProjectId.get(project.id) || [], query));
 
@@ -318,13 +425,15 @@ function renderProjects() {
     const summary = document.createElement("summary");
     summary.className = "project-summary";
     summary.innerHTML = `
-      <span>${escapeHtml(project.name)}</span>
+      <span class="project-summary__name"><span class="project-summary__title">${escapeHtml(project.name)}</span>${renderProjectOwnerBadge(project)}</span>
       <span class="muted">${configurations.length} конф.</span>
     `;
     details.append(summary);
 
     const body = document.createElement("div");
     body.className = "project-item__body";
+    body.append(createProjectEditForm(project));
+
     if (configurations.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
@@ -339,17 +448,46 @@ function renderProjects() {
   }
 }
 
+function createProjectEditForm(project) {
+  const form = document.createElement("div");
+  form.className = "project-edit-form";
+  form.dataset.projectId = project.id;
+  form.innerHTML = `
+    <label class="field">
+      <span class="field__label">Название проекта</span>
+      <input data-project-field="name" value="${escapeHtml(project.name || "")}">
+    </label>
+    <label class="field">
+      <span class="field__label">Адрес проекта</span>
+      <input data-project-field="address" value="${escapeHtml(getProjectAddress(project))}">
+    </label>
+    <label class="field">
+      <span class="field__label">Номер запроса на завод</span>
+      <input data-project-field="factoryRequestNumber" value="${escapeHtml(getProjectFactoryRequestNumber(project))}">
+    </label>
+    <div class="project-edit-form__actions">
+      <button class="secondary" type="button" data-action="update-project" data-project-id="${escapeHtml(project.id)}">Сохранить проект</button>
+      <button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>
+    </div>
+  `;
+  return form;
+}
+
 function renderSavedConfigurations() {
   if (!savedConfigurationsList) return;
 
   savedConfigurationsList.replaceChildren();
+  const query = getAccountSearchQuery();
   const entries = getAllConfigurations()
+    .filter(({ project, configuration }) => matchesConfigurationSearch(project, configuration, query))
     .sort((left, right) => new Date(right.configuration.updatedAt || 0) - new Date(left.configuration.updatedAt || 0));
 
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "Пока нет сохраненных конфигураций.";
+    empty.textContent = query
+      ? "По этому запросу конфигурации не найдены."
+      : "Пока нет сохраненных конфигураций.";
     savedConfigurationsList.append(empty);
     return;
   }
@@ -365,7 +503,7 @@ function renderSavedConfigurations() {
       <div>
         <strong>${escapeHtml(getConfigurationName(configuration))}</strong>
         <span>${escapeHtml(getTemplateLabel(configuration.templateId))}</span>
-        <small>${escapeHtml(project.name)} · ${formatDate(configuration.updatedAt)}</small>
+        <small>${escapeHtml(getProjectMetaLabel(project))} · ${formatDate(configuration.updatedAt)}</small>
       </div>
       <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
         ${formatOptions}
@@ -440,7 +578,12 @@ async function createProject() {
   const response = await apiFetch("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, description: "" })
+    body: JSON.stringify({
+      name,
+      address: projectAddressInput?.value.trim() || "",
+      factoryRequestNumber: projectFactoryRequestNumberInput?.value.trim() || "",
+      description: ""
+    })
   });
 
   if (!response.ok) {
@@ -449,6 +592,68 @@ async function createProject() {
   }
 
   projectNameInput.value = "";
+  if (projectAddressInput) projectAddressInput.value = "";
+  if (projectFactoryRequestNumberInput) projectFactoryRequestNumberInput.value = "";
+  hideAccountStatus();
+  await loadProjects();
+}
+
+function getProjectFormValues(button) {
+  const form = button.closest(".project-edit-form");
+  const nameInput = form?.querySelector("[data-project-field='name']");
+  return {
+    name: nameInput?.value.trim() || "",
+    address: form?.querySelector("[data-project-field='address']")?.value.trim() || "",
+    factoryRequestNumber: form?.querySelector("[data-project-field='factoryRequestNumber']")?.value.trim() || "",
+    nameInput
+  };
+}
+
+async function updateProject(projectId, button) {
+  const values = getProjectFormValues(button);
+  if (!values.name) {
+    values.nameInput?.setCustomValidity("Укажите название проекта");
+    values.nameInput?.reportValidity();
+    return;
+  }
+
+  values.nameInput?.setCustomValidity("");
+  const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: values.name,
+      address: values.address,
+      factoryRequestNumber: values.factoryRequestNumber,
+      description: ""
+    })
+  });
+
+  if (!response.ok) {
+    showAccountStatus((await readProblem(response, "Не удалось сохранить проект")).join(" "), "error");
+    return;
+  }
+
+  hideAccountStatus();
+  await loadProjects();
+}
+
+async function deleteProject(projectId) {
+  const project = state.projects.find(item => item.id === projectId);
+  const label = project?.name ? ` "${project.name}"` : "";
+  if (!confirm(`Удалить проект${label} и все сохраненные конфигурации внутри него? Это действие нельзя отменить.`)) {
+    return;
+  }
+
+  const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    showAccountStatus((await readProblem(response, "Не удалось удалить проект")).join(" "), "error");
+    return;
+  }
+
   hideAccountStatus();
   await loadProjects();
 }
@@ -553,7 +758,9 @@ function renderAdminUsers() {
       : (user.approvalStatus || (user.enabled ? "Approved" : "Disabled"));
     const normalizedStatus = status.toLowerCase();
     const isCurrentUser = user.userName === state.currentUser?.userName;
+    const isAdminUser = (user.roles || []).includes("Admin");
     const actions = [];
+    actions.push(`<button class="secondary" type="button" data-action="save-roles" data-user="${escapeHtml(user.userName)}">Сохранить права</button>`);
     if (!isCurrentUser && normalizedStatus !== "approved") {
       const label = normalizedStatus === "disabled" ? "Включить" : "Подтвердить";
       actions.push(`<button class="secondary" type="button" data-action="approve" data-user="${escapeHtml(user.userName)}">${label}</button>`);
@@ -561,30 +768,67 @@ function renderAdminUsers() {
     if (!isCurrentUser && normalizedStatus === "pending") {
       actions.push(`<button class="secondary" type="button" data-action="reject" data-user="${escapeHtml(user.userName)}">Отклонить</button>`);
     }
-    if (!isCurrentUser && user.enabled) {
-      actions.push(`<button class="secondary" type="button" data-action="disable" data-user="${escapeHtml(user.userName)}">Отключить</button>`);
+    if (!isCurrentUser && !isAdminUser) {
+      actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete" data-user="${escapeHtml(user.userName)}">Удалить</button>`);
+    } else if (!isCurrentUser && isAdminUser) {
+      actions.push("<span class=\"muted admin-action-note\">Админ защищен</span>");
     }
 
     row.innerHTML = `
       <td>${escapeHtml(user.displayName || user.userName)}<br><span class="muted">${escapeHtml(user.userName)}</span></td>
       <td><span class="status ${escapeHtml(normalizedStatus)}">${escapeHtml(status)}</span></td>
-      <td>${escapeHtml((user.roles || []).join(", "))}</td>
+      <td>${renderAdminRoleControls(user, isCurrentUser)}</td>
       <td><div class="inline-actions">${actions.join("") || "<span class=\"muted\">Нет действий</span>"}</div></td>
     `;
     adminUsersTableBody.append(row);
   }
 }
 
-async function handleAdminUserAction(action, userName) {
+function renderAdminRoleControls(user, isCurrentUser) {
+  const roles = new Set(user.roles || []);
+  return `
+    <div class="role-controls">
+      ${ADMIN_ROLE_OPTIONS.map(role => {
+        const checked = roles.has(role) ? " checked" : "";
+        const disabled = isCurrentUser && role === "Admin" ? " disabled" : "";
+        return `
+          <label class="role-control">
+            <input type="checkbox" data-role="${role}"${checked}${disabled}>
+            <span>${role}</span>
+          </label>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getSelectedAdminRoles(button) {
+  const row = button.closest("tr");
+  const roles = Array.from(row?.querySelectorAll("input[data-role]:checked") || [])
+    .map(input => input.dataset.role)
+    .filter(Boolean);
+  return roles.length > 0 ? roles : ["Viewer"];
+}
+
+async function handleAdminUserAction(action, userName, button) {
   if (!userName) return;
 
-  const user = state.adminUsers.find(item => item.userName === userName);
   let url = `/api/admin/users/${encodeURIComponent(userName)}`;
   let options = { method: "DELETE" };
-  if (action === "approve") {
-    const currentRoles = user?.roles || [];
-    const roles = currentRoles.some(role => role === "Admin" || role === "Operator")
-      ? currentRoles
+  if (action === "save-roles") {
+    options = {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roles: getSelectedAdminRoles(button) })
+    };
+  } else if (action === "delete") {
+    if (!confirm(`Удалить аккаунт ${userName}? Это действие нельзя отменить.`)) {
+      return;
+    }
+  } else if (action === "approve") {
+    const selectedRoles = getSelectedAdminRoles(button);
+    const roles = selectedRoles.some(role => role === "Admin" || role === "Operator")
+      ? selectedRoles
       : ["Operator", "Viewer"];
     url += "/approve";
     options = {
@@ -675,25 +919,28 @@ async function register(event) {
 
 async function login(event) {
   event.preventDefault();
-  loginPassword.setCustomValidity("");
+  const form = event.currentTarget;
+  const userNameInput = form.querySelector("[name='userName']") || loginUserName;
+  const passwordInput = form.querySelector("[name='password']") || loginPassword;
+  passwordInput.setCustomValidity("");
 
   const response = await apiFetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      userName: loginUserName.value,
-      password: loginPassword.value
+      userName: userNameInput.value,
+      password: passwordInput.value
     })
   });
 
   if (!response.ok) {
-    loginPassword.setCustomValidity("Неверный логин или пароль");
-    loginPassword.reportValidity();
+    passwordInput.setCustomValidity("Неверный логин или пароль");
+    passwordInput.reportValidity();
     return;
   }
 
   state.currentUser = await response.json();
-  loginPassword.value = "";
+  passwordInput.value = "";
   updateAuthView();
   await loadTemplates();
   await loadProjects();
@@ -720,25 +967,36 @@ async function logout() {
 }
 
 async function boot() {
-  const authenticated = await loadCurrentUser();
-  if (!authenticated) return;
+  try {
+    const authenticated = await loadCurrentUser();
+    if (!authenticated) return;
 
-  await loadTemplates();
-  await loadProjects();
-  await loadAccountJobs();
-  await loadAdminData();
-  updateAuthView();
+    await loadTemplates();
+    await loadProjects();
+    await loadAccountJobs();
+    await loadAdminData();
+    updateAuthView();
+  } finally {
+    hidePageSkeleton();
+  }
 }
 
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
+guestLoginForm?.addEventListener("submit", login);
+showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
+showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
-userPanel?.addEventListener("click", event => {
-  if (logoutButton?.contains(event.target)) return;
-  window.location.assign("/account");
-});
 createProjectButton.addEventListener("click", createProject);
-projectSearchInput?.addEventListener("input", renderProjects);
+globalSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
+projectSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
+for (const searchInput of [globalSearchInput, projectSearchInput]) {
+  searchInput?.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.currentTarget.value = "";
+    applyAccountSearch(event.currentTarget);
+  });
+}
 window.addEventListener("hashchange", updateAuthView);
 projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
@@ -749,6 +1007,10 @@ projectsList.addEventListener("click", event => {
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+  } else if (button.dataset.action === "update-project") {
+    updateProject(button.dataset.projectId, button);
+  } else if (button.dataset.action === "delete-project") {
+    deleteProject(button.dataset.projectId);
   }
 });
 savedConfigurationsList?.addEventListener("click", event => {
@@ -763,7 +1025,7 @@ savedConfigurationsList?.addEventListener("click", event => {
 adminUsersTableBody.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
-  handleAdminUserAction(button.dataset.action, button.dataset.user);
+  handleAdminUserAction(button.dataset.action, button.dataset.user, button);
 });
 adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");
