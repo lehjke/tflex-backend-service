@@ -1,3 +1,6 @@
+using System.IO.Compression;
+using System.Text.Json;
+using System.Xml.Linq;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
 using TFlexDrawingService.Api.Data;
@@ -592,6 +595,116 @@ public sealed class PricingCatalogStoreTests
                     null));
 
             Assert.Contains(result.Lines, line => line.Code == "base" && line.AmountCny == 100000m);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void BuildTkpDocx_CreatesWordPackageWithProposalContent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var store = new PricingCatalogStore(
+                new TestWebHostEnvironment(root),
+                new TestHttpClientFactory());
+            var request = new PricingCalculationRequest(
+                "SMEC",
+                "LEHY-L-Pro",
+                1050,
+                1m,
+                5,
+                900,
+                null,
+                null,
+                5,
+                0,
+                null,
+                ["FER"],
+                false,
+                false,
+                "RUB",
+                "project-1",
+                null,
+                new Dictionary<string, string>
+                {
+                    ["AH"] = "1700",
+                    ["BH"] = "2500",
+                    ["TR"] = "30000",
+                    ["OH"] = "4300",
+                    ["PD"] = "1600",
+                    ["JJ"] = "900",
+                    ["HH"] = "2200",
+                    ["Car Design"] = "ZCD-020X",
+                    ["Ceiling"] = "ZCL-GS06",
+                    ["Floor Type"] = "concave-down",
+                    ["Floor Pattern"] = "depth 25mm",
+                    ["COP"] = "ZCB-ND10",
+                    ["Main LOP"] = "ZPI-GD10"
+                },
+                "L1");
+            var calculation = new PricingCalculationResult(
+                "warning",
+                "SMEC",
+                "LEHY-L-Pro",
+                "CNY",
+                "RUB",
+                12.5m,
+                "manual",
+                123456m,
+                1543200m,
+                [
+                    new PricingLine("base", "Базовая цена LEHY-L-Pro", 1, 120000m, 120000m, "ready"),
+                    new PricingLine("FER", "Режим пожарная опасность", 1, 3456m, 3456m, "ready")
+                ],
+                ["Предварительный расчет требует проверки"],
+                [],
+                new ContainerInfo("40HQ", "40HQ"),
+                DateTimeOffset.UtcNow);
+            var specification = new PricingSpecification(
+                "specification-1",
+                "project-1",
+                null,
+                "L1",
+                "SMEC",
+                "LEHY-L-Pro",
+                "warning",
+                calculation.TotalCny,
+                calculation.TargetCurrency,
+                calculation.TotalConverted,
+                JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                DateTimeOffset.Parse("2026-06-26T10:00:00Z"),
+                DateTimeOffset.Parse("2026-06-26T10:00:00Z"));
+            var project = new UserProject(
+                "project-1",
+                "admin",
+                "ЖК Северный корпус 3",
+                "г. Москва, ул. Мира 21",
+                "P240174",
+                "",
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow);
+
+            var docx = store.BuildTkpDocx(specification, project);
+
+            using var archive = new ZipArchive(new MemoryStream(docx), ZipArchiveMode.Read);
+            Assert.NotNull(archive.GetEntry("[Content_Types].xml"));
+            var documentEntry = archive.GetEntry("word/document.xml");
+            Assert.NotNull(documentEntry);
+            using var reader = new StreamReader(documentEntry!.Open());
+            var documentXml = reader.ReadToEnd();
+            _ = XDocument.Parse(documentXml);
+            Assert.Contains("Коммерческое предложение #P240174", documentXml);
+            Assert.Contains("ЖК Северный корпус 3", documentXml);
+            Assert.Contains("Shanghai Mitsubishi Elevator Co., Ltd.", documentXml);
+            Assert.Contains("Базовая цена LEHY-L-Pro", documentXml);
+            Assert.Contains("ПРИЛОЖЕНИЕ 1", documentXml);
         }
         finally
         {

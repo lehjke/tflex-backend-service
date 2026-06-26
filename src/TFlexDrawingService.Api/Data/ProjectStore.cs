@@ -441,7 +441,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<IReadOnlyList<PricingSpecification>> ListPricingSpecificationsAsync(
         string projectId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -454,11 +454,11 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
                    s.CreatedAt, s.UpdatedAt
             FROM PricingSpecifications s
             INNER JOIN UserProjects p ON p.Id = s.ProjectId
-            WHERE s.ProjectId = $projectId AND p.OwnerUserName = $ownerUserName
+            WHERE s.ProjectId = $projectId AND ($ownerUserName IS NULL OR p.OwnerUserName = $ownerUserName)
             ORDER BY s.UpdatedAt DESC;
             """;
         command.Parameters.AddWithValue("$projectId", projectId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         var specifications = new List<PricingSpecification>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -472,7 +472,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
 
     public async Task<PricingSpecification?> GetPricingSpecificationAsync(
         string specificationId,
-        string ownerUserName,
+        string? ownerUserName,
         CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -485,10 +485,10 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
                    s.CreatedAt, s.UpdatedAt
             FROM PricingSpecifications s
             INNER JOIN UserProjects p ON p.Id = s.ProjectId
-            WHERE s.Id = $specificationId AND p.OwnerUserName = $ownerUserName;
+            WHERE s.Id = $specificationId AND ($ownerUserName IS NULL OR p.OwnerUserName = $ownerUserName);
             """;
         command.Parameters.AddWithValue("$specificationId", specificationId);
-        command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        AddNullableUserName(command, ownerUserName);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapPricingSpecification(reader) : null;

@@ -923,7 +923,7 @@ var pricingSpecificationsEndpoint = app.MapGet("/api/projects/{projectId}/pricin
 {
     var specifications = await projects.ListPricingSpecificationsAsync(
         projectId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken);
     return Results.Ok(specifications.Select(ToPricingSpecificationDto));
 });
@@ -972,7 +972,7 @@ var pricingSpecificationEndpoint = app.MapGet("/api/pricing-specifications/{spec
 {
     var specification = await projects.GetPricingSpecificationAsync(
         specificationId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken);
     return specification is null ? Results.NotFound() : Results.Ok(ToPricingSpecificationDto(specification));
 });
@@ -987,14 +987,18 @@ var pricingTkpEndpoint = app.MapGet("/api/pricing-specifications/{specificationI
 {
     var specification = await projects.GetPricingSpecificationAsync(
         specificationId,
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         cancellationToken);
     if (specification is null)
     {
         return Results.NotFound();
     }
 
-    var bytes = pricing.BuildTkpDocx(specification);
+    var project = await projects.GetProjectAsync(
+        specification.ProjectId,
+        GetProjectOwnerScope(context.User, securityOptions),
+        cancellationToken);
+    var bytes = pricing.BuildTkpDocx(specification, project);
     var fileName = $"{SanitizeFileName(specification.Name)}-tkp.docx";
     return Results.File(
         bytes,

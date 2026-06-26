@@ -149,6 +149,7 @@ const efsToggle = document.querySelector("#efsToggle");
 const e312Toggle = document.querySelector("#e312Toggle");
 const smecOtherRequirementsInput = document.querySelector("#smecOtherRequirementsInput");
 const savePricingButton = document.querySelector("#savePricingButton");
+const downloadTkpButton = document.querySelector("#downloadTkpButton");
 const pricingStatus = document.querySelector("#pricingStatus");
 const totalCny = document.querySelector("#totalCny");
 const totalConverted = document.querySelector("#totalConverted");
@@ -1081,6 +1082,7 @@ function markCalculationPending() {
   pricingStatus.textContent = "Считается...";
   pricingStatus.className = "pricing-status is-loading";
   savePricingButton.disabled = true;
+  downloadTkpButton.disabled = true;
 }
 
 function scheduleLiveCalculation() {
@@ -1117,6 +1119,7 @@ async function calculate(event) {
       state.lastCalculation = null;
       state.lastRequest = null;
       savePricingButton.disabled = true;
+      downloadTkpButton.disabled = true;
       return;
     }
 
@@ -1131,6 +1134,7 @@ async function calculate(event) {
     state.lastCalculation = null;
     state.lastRequest = null;
     savePricingButton.disabled = true;
+    downloadTkpButton.disabled = true;
   }
 }
 
@@ -1167,7 +1171,9 @@ function renderCalculation() {
   }
 
   renderWarnings([...(calculation.blockers || []), ...(calculation.warnings || [])], calculation.status === "blocked");
-  savePricingButton.disabled = calculation.status === "blocked" || !pricingProjectSelect.value;
+  const saveDisabled = calculation.status === "blocked" || !pricingProjectSelect.value;
+  savePricingButton.disabled = saveDisabled;
+  downloadTkpButton.disabled = saveDisabled;
 }
 
 function renderWarnings(messages, isError = false) {
@@ -1193,8 +1199,20 @@ async function savePricing() {
     return;
   }
 
+  const savedSpecification = await response.json();
   await loadProjects();
   savePricingButton.disabled = true;
+  downloadTkpButton.disabled = true;
+  return savedSpecification;
+}
+
+async function saveAndDownloadTkp() {
+  const savedSpecification = await savePricing();
+  if (!savedSpecification?.id) {
+    return;
+  }
+
+  window.location.assign(`/api/pricing-specifications/${encodeURIComponent(savedSpecification.id)}/tkp`);
 }
 
 async function register(event) {
@@ -1280,6 +1298,7 @@ pricingProjectSelect.addEventListener("change", () => {
   renderSavedPricing();
   state.lastCalculation = null;
   savePricingButton.disabled = true;
+  downloadTkpButton.disabled = true;
 });
 drawingConfigurationSelect.addEventListener("change", () => {
   const configuration = (state.configurationsByProjectId.get(pricingProjectSelect.value) || [])
@@ -1290,6 +1309,7 @@ pricingForm.addEventListener("input", scheduleLiveCalculation);
 pricingForm.addEventListener("change", scheduleLiveCalculation);
 pricingForm.addEventListener("submit", calculate);
 savePricingButton.addEventListener("click", savePricing);
+downloadTkpButton.addEventListener("click", saveAndDownloadTkp);
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);

@@ -143,7 +143,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             DateTimeOffset.UtcNow);
     }
 
-    public byte[] BuildTkpDocx(PricingSpecification specification)
+    public byte[] BuildTkpDocx(PricingSpecification specification, UserProject? project)
     {
         var calculation = JsonSerializer.Deserialize<PricingCalculationResult>(
             specification.CalculationJson,
@@ -152,50 +152,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             specification.RequestJson,
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
-        var paragraphs = new List<string>
-        {
-            "Технико-коммерческое предложение",
-            $"Спецификация: {specification.Name}",
-            $"Производитель: {calculation?.Supplier}",
-            $"Серия: {calculation?.Series}",
-            $"Грузоподъемность: {request?.CapacityKg} кг",
-            $"Скорость: {request?.Speed} м/с",
-            $"Остановки: {request?.Stops}",
-            $"Заводская цена: {FormatMoney(calculation?.TotalCny ?? 0)} CNY",
-            $"Пересчет: {FormatMoney(calculation?.TotalConverted ?? 0)} {calculation?.TargetCurrency}",
-            ""
-        };
-
-        if (request?.SpecificationFields?.Count > 0)
-        {
-            paragraphs.Add("Параметры спецификации");
-            foreach (var field in request.SpecificationFields.Where(item => HasText(item.Value)))
-            {
-                paragraphs.Add($"{field.Key}: {field.Value}");
-            }
-            paragraphs.Add("");
-        }
-
-        paragraphs.Add("Состав расчета");
-        foreach (var line in calculation?.Lines ?? [])
-        {
-            paragraphs.Add($"{line.Label}: {FormatMoney(line.AmountCny ?? 0)} CNY");
-        }
-
-        if (calculation?.Container is not null)
-        {
-            paragraphs.Add("");
-            paragraphs.Add($"Контейнер: {calculation.Container.Label}");
-        }
-
-        if (calculation?.Warnings.Count > 0)
-        {
-            paragraphs.Add("");
-            paragraphs.Add("Предупреждения");
-            paragraphs.AddRange(calculation.Warnings);
-        }
-
-        return MinimalDocx.Create(paragraphs);
+        return TkpDocxBuilder.Build(specification, project, request, calculation);
     }
 
     private void CalculateXizi(
