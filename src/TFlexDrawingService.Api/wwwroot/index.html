@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>METEOR Engineering Center</title>
+  <title>Инженерный центр — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260619-projects-01">
+  <link rel="stylesheet" href="/styles.css?v=20260621-home-links-1">
 </head>
 <body>
   <div class="app-shell">
@@ -21,9 +21,9 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a href="/account.html"><span>Личный кабинет</span><small>Account</small></a>
-        <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
+        <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
+        <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -55,206 +55,100 @@
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <a class="user-panel__account-link" href="/account.html" aria-label="Открыть личный кабинет">
-              <span class="user-avatar" aria-hidden="true">ME</span>
-              <span class="user-panel__meta">
+            <span class="user-avatar" aria-hidden="true">ME</span>
+            <span class="user-panel__meta">
               <span id="currentUserName"></span>
-              <small id="currentUserRoleLabel" hidden></small>
-              </span>
-            </a>
+              <small id="currentUserRole">User</small>
+            </span>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
-
-          <button id="createTopButton" class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
         </div>
       </header>
 
-      <section id="pageSkeleton" class="page-skeleton" aria-label="Загрузка страницы" aria-live="polite">
-        <div class="skeleton skeleton--title"></div>
-        <div class="skeleton-grid skeleton-grid--content">
-          <div class="skeleton-card">
-            <span class="skeleton skeleton--heading"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton skeleton--short"></span>
-            <span class="skeleton skeleton--button"></span>
-          </div>
-          <div class="skeleton-card">
-            <span class="skeleton skeleton--heading"></span>
-            <span class="skeleton skeleton--preview"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton skeleton--short"></span>
-          </div>
-        </div>
-      </section>
-
-      <main id="guestMain" class="layout layout--auth" hidden>
-        <section class="panel auth-panel">
-          <div id="guestLoginPanel" class="auth-view">
-            <div class="panel__header">
-              <h2>Вход</h2>
-            </div>
-
-            <form id="guestLoginForm" class="auth-card">
-              <label class="field">
-                <span class="field__label">Логин</span>
-                <input id="guestLoginUserName" name="userName" autocomplete="username" required>
-              </label>
-
-              <label class="field">
-                <span class="field__label">Пароль</span>
-                <input id="guestLoginPassword" name="password" type="password" autocomplete="current-password" required>
-              </label>
-
-              <button class="primary" type="submit">Войти</button>
-            </form>
-
-            <p class="auth-switch">Нет аккаунта? <button id="showRegisterPanel" class="auth-link" type="button">Зарегистрироваться</button></p>
+      <main id="guestMain" class="layout layout--auth">
+        <section class="panel panel--wide auth-panel">
+          <div class="panel__header">
+            <h2>Заявка на доступ</h2>
           </div>
 
-          <div id="registerPanel" class="auth-view" hidden>
-            <div class="panel__header">
-              <h2>Заявка на доступ</h2>
-            </div>
+          <form id="registerForm" class="auth-card">
+            <label class="field">
+              <span class="field__label">Логин</span>
+              <input id="registerUserName" name="userName" autocomplete="username" required>
+            </label>
 
-            <form id="registerForm" class="auth-card">
-              <label class="field">
-                <span class="field__label">Логин</span>
-                <input id="registerUserName" name="userName" autocomplete="username" required>
-              </label>
+            <label class="field">
+              <span class="field__label">Имя</span>
+              <input id="registerDisplayName" name="displayName" autocomplete="name">
+            </label>
 
-              <label class="field">
-                <span class="field__label">Имя</span>
-                <input id="registerDisplayName" name="displayName" autocomplete="name">
-              </label>
+            <label class="field">
+              <span class="field__label">Пароль</span>
+              <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
+            </label>
 
-              <label class="field">
-                <span class="field__label">Пароль</span>
-                <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
-              </label>
-
-              <button class="primary" type="submit">Отправить заявку</button>
-              <div id="registerStatus" class="empty" hidden></div>
-            </form>
-
-            <p class="auth-switch">Уже есть аккаунт? <button id="showLoginPanel" class="auth-link" type="button">Войти</button></p>
-          </div>
+            <button class="primary" type="submit">Отправить заявку</button>
+            <div id="registerStatus" class="empty" hidden></div>
+          </form>
         </section>
       </main>
 
-      <main id="appMain" class="layout layout--editor" hidden>
-        <section class="intro">
-          <h1>Конфигуратор чертежей</h1>
+      <main id="homeMain" class="layout layout--home" data-authenticated-main hidden>
+        <section class="intro intro--home">
+          <h1>Инженерный центр</h1>
+          <p>Выберите раздел для работы с чертежами, расчетами и проектами</p>
         </section>
 
-        <section class="editor-form-stack">
-          <form id="jobForm">
-            <section class="panel panel--config">
-              <div class="panel__header">
-                <h2>Проект и шаблон</h2>
-                <button class="secondary secondary--compact" type="reset" form="jobForm">Начать заново</button>
-              </div>
+        <section class="home-module-showcase" aria-label="Быстрый доступ">
+          <a class="home-template-card" data-template-card href="/drawings" aria-label="Использовать создание чертежей" aria-expanded="false">
+            <span class="home-template-card__hero" aria-hidden="true">
+              <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
+                <image href="/assets/card-create-drawings-open-1.svg" width="752" height="565"/>
+              </svg>
+            </span>
+            <span class="home-template-card__content">
+              <span class="home-template-card__heading">
+                <span class="home-template-card__title">Создание чертежей</span>
+                <span class="home-template-card__badge">TFlex шаблоны</span>
+              </span>
+              <span class="home-template-card__description">Создание строительных заданий через САПР TFlex.</span>
+            </span>
+            <span class="home-template-card__footer">
+              <span class="home-template-card__button">Использовать</span>
+              <span class="home-template-card__meta">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 7.5v8M8.5 11l3.5-3.5 3.5 3.5"></path>
+                  <path d="M6.75 15.75a3.25 3.25 0 0 1 .42-6.47 4.75 4.75 0 0 1 9.08-1.55 3.9 3.9 0 0 1 .5 7.77H6.75Z"></path>
+                </svg>
+                <strong>6</strong>
+                <span>активных шаблонов</span>
+              </span>
+            </span>
+          </a>
 
-              <div class="form-grid form-grid--editor">
-                <label class="field">
-                  <span class="field__label">Проект</span>
-                  <select id="projectSelect"></select>
-                </label>
-
-                <label class="field">
-                  <span class="field__label">Шаблон</span>
-                  <select id="templateSelect" name="templateId"></select>
-                </label>
-
-                <label class="field field--configuration">
-                  <span class="field__label">Конфигурация</span>
-                  <input id="configurationNamePreview" type="text" value="-" autocomplete="off">
-                </label>
-
-                <label class="field field--format">
-                  <span class="field__label">Формат</span>
-                  <select id="formatSelect" name="outputFormat"></select>
-                </label>
-
-                <button id="saveConfigurationButton" class="secondary field-action-button" type="button">Сохранить</button>
-              </div>
-            </section>
-
-            <section class="panel panel--parameters">
-              <div class="panel__header">
-                <div class="panel__title-row">
-                  <h2>Параметры чертежа</h2>
-                </div>
-                <label class="show-all-toggle">
-                  <input id="showAllParametersToggle" type="checkbox" checked>
-                  <span>Показать все параметры</span>
-                </label>
-              </div>
-              <div id="parameterTabs" class="parameter-tabs" aria-label="Категории параметров"></div>
-              <div id="parametersForm" class="parameters"></div>
-              <div id="parameterReadyBanner" class="ready-banner" hidden>Конфигурация готова к генерации PDF/DWG/DXF.</div>
-            </section>
-
-            <div id="validationPanel" class="validation-panel" hidden></div>
-          </form>
-        </section>
-
-        <aside class="preview-stack">
-          <section class="panel panel--preview">
-            <div class="panel__header">
-              <div>
-                <h2 id="previewPanelTitle">План шахты</h2>
-                <p id="shaftPreviewSubtitle" class="panel__subtitle">Live preview по текущим параметрам</p>
-              </div>
-            </div>
-            <div id="shaftPreviewUnavailable" class="preview-unavailable" hidden>
-              Предпросмотр доступен для шаблонов LEHY-L-PRO, LEHY-PRO и K-II-TYPE.
-            </div>
-            <div id="shaftPreviewContent" class="shaft-preview">
-              <div id="shaftPreviewCanvas" class="shaft-preview__canvas" aria-label="Динамический план шахты"></div>
-              <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
-            </div>
-          </section>
-
-          <section class="panel panel--status">
-            <div class="panel__header">
-              <h2>Генерация</h2>
-              <span class="queue-badge">Queue 0/50</span>
-            </div>
-            <div id="statusPanel" class="empty">Нет активного задания</div>
-            <div class="generation-actions">
-              <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
-              <button id="downloadResultButton" class="secondary" type="button" disabled>Скачать PDF</button>
-            </div>
-          </section>
-        </aside>
-
-        <section id="jobsPanel" class="panel panel--wide jobs-panel">
-          <div class="panel__header">
-            <h2>Последние задания</h2>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Шаблон</th>
-                  <th>Статус</th>
-                  <th>Формат</th>
-                  <th>Создано</th>
-                  <th>Файлы</th>
-                </tr>
-              </thead>
-              <tbody id="jobsTableBody"></tbody>
-            </table>
-          </div>
+          <a class="home-template-card" data-template-card href="/pricing" aria-label="Использовать расчет цен" aria-expanded="false">
+            <span class="home-template-card__hero" aria-hidden="true">
+              <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
+                <image href="/assets/card-pricing-open.svg" width="752" height="565"/>
+              </svg>
+            </span>
+            <span class="home-template-card__content">
+              <span class="home-template-card__heading">
+                <span class="home-template-card__title">Расчет цен</span>
+              </span>
+              <span class="home-template-card__description">Расчет базовой цены.</span>
+            </span>
+            <span class="home-template-card__footer">
+              <span class="home-template-card__button">Использовать</span>
+            </span>
+          </a>
         </section>
 
       </main>
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/app.js?v=20260619-projects-01"></script>
+  <script type="module" src="/shell.js?v=20260621-home-links-1"></script>
+  <script type="module" src="/home.js?v=20260621-home-links-1"></script>
 </body>
 </html>

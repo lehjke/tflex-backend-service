@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Личный кабинет — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260619-projects-01">
+  <link rel="stylesheet" href="/styles.css?v=20260625-main-sync-1">
 </head>
 <body>
   <div class="app-shell">
@@ -21,9 +21,9 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a href="/"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a class="is-active" href="/account.html"><span>Личный кабинет</span><small>Account</small></a>
-        <a href="#" aria-disabled="true"><span>Базовая цена</span><small>Pricing soon</small></a>
+        <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a class="is-active" href="/account"><span>Личный кабинет</span><small>Account</small></a>
+        <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -55,7 +55,7 @@
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <a class="user-panel__account-link" href="/account.html" aria-label="Открыть личный кабинет">
+            <a class="user-panel__account-link" href="/account" aria-label="Открыть личный кабинет">
               <span class="user-avatar" aria-hidden="true">ME</span>
               <span class="user-panel__meta">
                 <span id="currentUserName"></span>
@@ -270,6 +270,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/account.js?v=20260619-projects-01"></script>
+  <script type="module" src="/account.js?v=20260625-main-sync-1"></script>
 </body>
 </html>

@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Базовая цена — METEOR Engineering Center</title>
+  <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=20260625-smec-series-1">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="METEOR Engineering Center">
+      <a class="brand" href="/" aria-label="METEOR Engineering Center">
+        <img src="/assets/meteor-logo-eng-light.svg" alt="METEOR LIFT">
+      </a>
+      <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
+      <div class="sidebar__subtitle">Engineering Center</div>
+
+      <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
+        <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
+        <a class="is-active" href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
+      </nav>
+
+      <div class="sidebar__help">
+        <strong>Поддержка инженера</strong>
+        <span>Нужна проверка нестандартной шахты?</span>
+        <a class="sidebar__help-button" href="mailto:DLtechsupport@meteor.ru">Запросить</a>
+      </div>
+    </aside>
+    <button class="mobile-menu-backdrop" type="button" aria-label="Закрыть меню" hidden></button>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs" aria-label="Навигация">
+          <span>Главная</span>
+          <span aria-hidden="true">/</span>
+          <span>Базовая цена</span>
+        </div>
+
+        <label class="global-search">
+          <span class="sr-only">Поиск</span>
+          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+        </label>
+
+        <div class="topbar__actions">
+          <form id="loginForm" class="login-form" hidden>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <button class="topbar__button" type="submit">Войти</button>
+          </form>
+
+          <div id="userPanel" class="user-panel" hidden>
+            <span class="user-avatar" aria-hidden="true">ME</span>
+            <span class="user-panel__meta">
+              <span id="currentUserName"></span>
+              <small id="currentUserRole">User</small>
+            </span>
+            <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="guestMain" class="layout layout--auth">
+        <section class="panel panel--wide auth-panel">
+          <div class="panel__header">
+            <h2>Заявка на доступ</h2>
+          </div>
+
+          <form id="registerForm" class="auth-card">
+            <label class="field">
+              <span class="field__label">Логин</span>
+              <input id="registerUserName" name="userName" autocomplete="username" required>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Имя</span>
+              <input id="registerDisplayName" name="displayName" autocomplete="name">
+            </label>
+
+            <label class="field">
+              <span class="field__label">Пароль</span>
+              <input id="registerPassword" name="password" type="password" autocomplete="new-password" required>
+            </label>
+
+            <button class="primary" type="submit">Отправить заявку</button>
+            <div id="registerStatus" class="empty" hidden></div>
+          </form>
+        </section>
+      </main>
+
+      <main id="pricingMain" class="layout layout--pricing" data-authenticated-main hidden>
+        <section class="intro">
+          <h1>Расчет базовой цены</h1>
+        </section>
+
+        <section class="panel panel--wide pricing-workspace">
+          <div class="pricing-grid">
+            <form id="pricingForm" class="pricing-form">
+              <div class="pricing-section">
+                <div class="panel__header">
+                  <h2>Проект и спецификация</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--two">
+                  <label class="field">
+                    <span class="field__label">Проект</span>
+                    <select id="pricingProjectSelect" required></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Конфигурация чертежа</span>
+                    <select id="drawingConfigurationSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Название спецификации</span>
+                    <input id="pricingNameInput" placeholder="Лифт 1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Валюта пересчета</span>
+                    <select id="targetCurrencySelect">
+                      <option value="CNY">CNY</option>
+                      <option value="RUB">RUB</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section">
+                <div class="panel__header">
+                  <h2>Основные параметры</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Поставщик</span>
+                    <select id="supplierSelect">
+                      <option value="XIZI">XIZI</option>
+                      <option value="SMEC" selected>SMEC</option>
+                    </select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Модель лифта</span>
+                    <select id="seriesSelect"></select>
+                  </label>
+                  <label class="field" data-xizi-only>
+                    <span class="field__label">Тип лифта</span>
+                    <select id="xiziElevatorTypeSelect"></select>
+                  </label>
+                  <label class="field" data-xizi-only>
+                    <span class="field__label">Модель</span>
+                    <select id="xiziModelSelect"></select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Серия оборудования</span>
+                    <select id="smecEleSeriesInput"></select>
+                  </label>
+                  <label class="field" data-xizi-only>
+                    <span class="field__label">Количество дверей</span>
+                    <input id="doorCountInput" type="number" min="0" step="1" value="1">
+                  </label>
+                  <label class="field" data-xizi-only>
+                    <span class="field__label">Система управления</span>
+                    <select id="xiziControlSystemSelect"></select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Стандарт изготовления</span>
+                    <select id="manufacturingStandardSelect"></select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Тип проекта</span>
+                    <select id="projectTypeSelect">
+                    </select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Система управления</span>
+                    <select id="operationSelect"></select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Количество</span>
+                    <input id="smecQuantityInput" type="number" min="1" step="1" value="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Грузоподъемность, кг</span>
+                    <select id="capacitySelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Скорость, м/с</span>
+                    <select id="speedSelect"></select>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Количество этажей</span>
+                    <input id="floorsInput" type="number" min="1" step="1" value="6">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Количество остановок</span>
+                    <input id="stopsInput" type="number" min="1" step="1" value="6">
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Количество дверей</span>
+                    <input id="smecDoorCountInput" type="number" min="0" step="1" value="1">
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Масса отделки</span>
+                    <input id="smecDecorationWeightInput" value="standard">
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Основной этаж</span>
+                    <input id="smecMainFloorInput" value="1">
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Остальные этажи</span>
+                    <input id="smecOtherFloorsInput" placeholder="G,2~6">
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Силовое питание</span>
+                    <input id="smecPowerSupplyInput" value="380V, 50 Hz" readonly>
+                  </label>
+                  <label class="field" data-smec-only>
+                    <span class="field__label">Питание освещения</span>
+                    <input id="smecLightingSupplyInput" value="220V, 50 Hz" readonly>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header">
+                  <h2>Шахта и основные размеры</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Ширина шахты (AH), мм</span>
+                    <input id="shaftWidthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Глубина шахты (BH), мм</span>
+                    <input id="shaftDepthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип дверей шахты</span>
+                    <select id="shaftDoorTypeInput"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота подъема (TR), мм</span>
+                    <input id="trInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота оголовка (OH), мм</span>
+                    <input id="ohInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Глубина приямка (PD), мм</span>
+                    <input id="pdInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Ширина кабины (AA), мм</span>
+                    <input id="carWidthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Глубина кабины (BB), мм</span>
+                    <input id="carDepthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота кабины (HL), мм</span>
+                    <input id="carHeightInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Дверной режим</span>
+                    <select id="doorModeSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Ширина дверей в чистоте (JJ), мм</span>
+                    <input id="smecDoorWidthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота дверей в чистоте (HH), мм</span>
+                    <input id="doorHeightInput" type="number" min="0" step="1" value="2100">
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Идентификация и этажи</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Наименование</span>
+                    <input id="xiziProjectNameInput" placeholder="СРП 17">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Адрес</span>
+                    <input id="xiziAddressInput" placeholder="г. Москва">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Номер контракта</span>
+                    <input id="xiziContractInput">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Номер единицы</span>
+                    <input id="xiziUnitInput">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">№ лифта</span>
+                    <input id="xiziLiftNumberInput" value="L1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Количество лифтов</span>
+                    <input id="xiziQuantityInput" type="number" min="1" step="1" value="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Основной этаж</span>
+                    <input id="xiziMainFloorInput" value="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Остальные этажи</span>
+                    <input id="xiziOtherFloorsInput" placeholder="2-27">
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Шахта</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Ширина шахты, мм</span>
+                    <input id="xiziShaftWidthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Глубина шахты, мм</span>
+                    <input id="xiziShaftDepthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота подъема, мм</span>
+                    <input id="xiziTravelHeightInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип шахты</span>
+                    <select id="xiziShaftTypeSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Оголовок, мм</span>
+                    <input id="xiziOverheadInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Приямок, мм</span>
+                    <input id="xiziPitInput" type="number" min="0" step="1">
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Характеристики кабины</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Ширина кабины, мм</span>
+                    <input id="xiziCarWidthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Глубина кабины, мм</span>
+                    <input id="xiziCarDepthInput" type="number" min="0" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота кабины, мм</span>
+                    <select id="xiziCarHeightSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип кабины</span>
+                    <select id="xiziCarTypeSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Масса отделки, кг</span>
+                    <input id="xiziDecorationWeightInput" type="number" min="0" step="1" value="0">
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Двери</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Высота дверей, мм</span>
+                    <select id="xiziDoorHeightSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Огнестойкость</span>
+                    <select id="xiziFireRatingSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип открывания дверей</span>
+                    <select id="xiziDoorOpeningSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Производитель дверей</span>
+                    <select id="doorManufacturerSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип дверей</span>
+                    <select id="doorTypeSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Ширина дверей, мм</span>
+                    <select id="doorWidthSelect"></select>
+                  </label>
+                  <label class="field" hidden>
+                    <span class="field__label">Отделка</span>
+                    <select id="decorationSelect"></select>
+                  </label>
+                </div>
+                <div id="decorationPreview" class="finish-preview" hidden></div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Отделка кабины XIZI</h2>
+                </div>
+                <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Дизайн по каталогу</span>
+                    <select id="xiziCabinDesignSelect" data-visual-select data-description="Дизайн кабины"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Купе кабины</span>
+                    <select id="xiziCarWallMaterialSelect" data-visual-select data-description="Материал стен кабины"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Двери кабины</span>
+                    <select id="xiziCarDoorMaterialSelect" data-visual-select data-description="Материал дверей кабины"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Потолок</span>
+                    <select id="xiziCeilingSelect" data-visual-select data-description="Потолок кабины"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Пол</span>
+                    <select id="xiziFloorSelect" data-visual-select data-description="Отделка пола"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Зеркало</span>
+                    <select id="xiziMirrorWallSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Высота зеркала</span>
+                    <select id="xiziMirrorHeightSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Поручень, положение</span>
+                    <select id="xiziHandrailPositionSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Поручень</span>
+                    <select id="xiziHandrailSelect" data-visual-select data-description="Поручень"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">COP</span>
+                    <select id="xiziCopSelect" data-visual-select data-description="Панель управления в кабине"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кнопки COP</span>
+                    <select id="xiziCopButtonSelect" data-visual-select data-description="Кнопки COP"></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section" data-xizi-only>
+                <div class="panel__header">
+                  <h2>Отделка на этажной площадке</h2>
+                </div>
+                <div class="xizi-floor-group">
+                  <h3>Основной посадочный этаж</h3>
+                  <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Дверь шахты, основной этаж</span>
+                    <select id="xiziMainShaftDoorSelect" data-visual-select data-description="Материал двери шахты"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">LOP, основной этаж</span>
+                    <select id="xiziMainLopSelect" data-visual-select data-description="Вызывной пост"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">LIP, основной этаж</span>
+                    <select id="xiziMainLipSelect" data-visual-select data-description="Этажный индикатор"></select>
+                  </label>
+                  </div>
+                </div>
+                <div class="xizi-floor-group">
+                  <h3>Остальные этажи</h3>
+                  <div class="pricing-fields pricing-fields--three">
+                  <label class="field">
+                    <span class="field__label">Дверь шахты, остальные этажи</span>
+                    <select id="xiziOtherShaftDoorSelect" data-visual-select data-description="Материал двери шахты"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">LOP, остальные этажи</span>
+                    <select id="xiziOtherLopSelect" data-visual-select data-description="Вызывной пост"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">LIP, остальные этажи</span>
+                    <select id="xiziOtherLipSelect" data-visual-select data-description="Этажный индикатор"></select>
+                  </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header">
+                  <h2>Кабина</h2>
+                </div>
+                <div class="smec-card-picker" id="carDesignPicker"></div>
+                <div class="pricing-fields pricing-fields--three visual-field-grid">
+                  <label class="field">
+                    <span class="field__label">Потолок</span>
+                    <select id="ceilingSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Тип пола</span>
+                    <select id="floorTypeSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Пол</span>
+                    <select id="floorPatternSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Стены кабины</span>
+                    <select id="wallMaterialSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Двери кабины</span>
+                    <select id="carDoorMaterialSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Зеркало</span>
+                    <select id="mirrorSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Положение поручня</span>
+                    <select id="mirrorPositionSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Поручень</span>
+                    <select id="handrailSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">COP</span>
+                    <select id="copSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">COP 2</span>
+                    <select id="cop2Select" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кнопки COP</span>
+                    <select id="copButtonSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">COP для МГН</span>
+                    <select id="wheelchairCopSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">COP 2 для МГН</span>
+                    <select id="wheelchairCop2Select" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кнопки COP для МГН</span>
+                    <select id="wheelchairButtonSelect" data-visual-select></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header">
+                  <h2>Этажные площадки</h2>
+                </div>
+                <div class="smec-landing-grid">
+                  <div class="smec-landing-grid__head"></div>
+                  <div class="smec-landing-grid__head">Основной этаж</div>
+                  <div class="smec-landing-grid__head">Остальные этажи</div>
+
+                  <label class="field">
+                    <span class="field__label">Портал</span>
+                    <select id="mainJambSelect">
+                      <option value="E-102">E-102</option>
+                      <option value="E-302">E-302</option>
+                      <option value="E-312">E-312</option>
+                      <option value="E-322">E-322</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Портал</span>
+                    <select id="otherJambSelect">
+                      <option value="E-102">E-102</option>
+                      <option value="E-302">E-302</option>
+                      <option value="E-312">E-312</option>
+                      <option value="E-322">E-322</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Материал</span>
+                    <select id="mainLandingMaterialSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Материал</span>
+                    <select id="otherLandingMaterialSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Кронштейн порога</span>
+                    <select id="mainSillBracketSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кронштейн порога</span>
+                    <select id="otherSillBracketSelect"></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Дверь шахты</span>
+                    <select id="mainLandingDoorSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Дверь шахты</span>
+                    <select id="otherLandingDoorSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">LOP</span>
+                    <select id="mainLopSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">LOP</span>
+                    <select id="otherLopSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Кнопка</span>
+                    <select id="lopButtonSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кнопка</span>
+                    <select id="otherLopButtonSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Дополнительный LOP</span>
+                    <select id="mainAuxiliaryLopSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Дополнительный LOP</span>
+                    <select id="otherAuxiliaryLopSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Кнопка</span>
+                    <select id="auxiliaryLopButtonSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Кнопка</span>
+                    <select id="otherAuxiliaryLopButtonSelect" data-visual-select></select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Этажный индикатор</span>
+                    <select id="hallIndicatorSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Этажный фонарь</span>
+                    <select id="hallLanternSelect" data-visual-select></select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pricing-section">
+                <div class="panel__header">
+                  <h2><span data-xizi-only>Опции и комплектация</span><span data-smec-only>Опции и комплектация</span></h2>
+                </div>
+                <div class="pricing-fields pricing-fields--two" data-xizi-only>
+                  <label class="field">
+                    <span class="field__label">AC</span>
+                    <select id="xiziAirConditionerSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">RCC</span>
+                    <select id="xiziRccSelect"></select>
+                  </label>
+                </div>
+                <div id="optionsList" class="pricing-options"></div>
+                <label class="field field--wide" data-smec-only>
+                  <span class="field__label">Прочие требования</span>
+                  <textarea id="smecOtherRequirementsInput" rows="4" placeholder="1 EI60&#10;2 Kickplate ZDT-001&#10;3 Handrail ZDT-501"></textarea>
+                </label>
+              </div>
+
+              <div class="pricing-actions">
+                <button class="primary" type="submit">Рассчитать</button>
+                <button id="savePricingButton" class="secondary" type="button" disabled>Сохранить в проект</button>
+                <button id="downloadTkpButton" class="secondary" type="button" disabled>Сохранить и вывести ТКП</button>
+              </div>
+            </form>
+
+            <aside class="pricing-result" aria-live="polite">
+              <div class="pricing-total">
+                <span id="pricingStatus" class="pricing-status">Не рассчитано</span>
+                <strong id="totalCny">0 CNY</strong>
+                <small id="totalConverted">0 RUB</small>
+                <small id="rateInfo"></small>
+              </div>
+
+              <div class="pricing-result__block">
+                <h2>Состав цены</h2>
+                <div id="pricingLines" class="pricing-lines">
+                  <div class="empty">Заполните параметры, расчет обновится автоматически.</div>
+                </div>
+              </div>
+
+              <div id="pricingWarnings" class="pricing-warnings" hidden></div>
+
+              <div class="pricing-result__block">
+                <h2>Сохраненные спецификации</h2>
+                <div id="savedPricingList" class="saved-pricing-list">
+                  <div class="empty">Пока нет расчетов в проекте.</div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="/shell.js?v=20260619-home-1"></script>
+    <script type="module" src="/pricing.js?v=20260625-smec-series-1"></script>
+</body>
+</html>
