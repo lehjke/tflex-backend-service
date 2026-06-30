@@ -1223,11 +1223,11 @@ function isCenterOpeningDoor(context) {
 
 function getCounterweightPlace(context) {
   const place = normalizePreviewToken(getPreviewTextValue(context, "$s", "s", "$HAND", "HAND"));
-  if (place === "справа" || place === "right" || place === "1") {
-    return { label: "Справа", mirrorX: true };
+  if (place === "справа" || place === "направо" || place === "right" || place === "1") {
+    return { label: place === "направо" ? "Направо" : "Справа", mirrorX: true };
   }
 
-  return { label: "Слева", mirrorX: false };
+  return { label: place === "налево" ? "Налево" : "Слева", mirrorX: false };
 }
 
 function getPreviewLayoutType(template = state.selectedTemplate) {
@@ -1362,6 +1362,7 @@ function updateShaftPreview(context = null) {
   const bw = getPreviewNumber(previewContext, "BW");
   const ca = getPreviewNumber(previewContext, "CA");
   const cb = getPreviewNumber(previewContext, "CB");
+  const cc = getPreviewNumber(previewContext, "CC");
   const as = getPreviewNumber(previewContext, "AS") || (aa ? aa + 62 : null);
   const a6 = getPreviewNumber(previewContext, "A6");
   const b1 = getPreviewNumber(previewContext, "B1");
@@ -1376,10 +1377,12 @@ function updateShaftPreview(context = null) {
   const doorWidth = jj ? (centerOpeningDoor ? jj * 2 : jj * 1.5 + 175) : null;
   const doorWidthMetricName = centerOpeningDoor ? "2xJJ" : "1.5*JJ+175";
   const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
-  const carCenterX = a1 && a2
-    ? a1 + a2
-    : (lehyProSideCwt && cb && ah ? ah - cb : (ca || (ah ? ah / 2 : null)));
   const rearCwt = cwtLayout === "rear";
+  const carCenterX = rearCwt && ah
+    ? ah / 2
+    : (a1 && a2
+    ? a1 + a2
+    : (lehyProSideCwt && cb && ah ? ah - cb : (ca || (ah ? ah / 2 : null))));
   const sideCwtCenterX = a1
     ?? (lehyProSideCwt && ca && carCenterX ? carCenterX - ca : null)
     ?? (bw && ah ? ah - bw : null);
@@ -1392,14 +1395,17 @@ function updateShaftPreview(context = null) {
   const cwtMetricValue = rearCwt
     ? wg
     : (a1 ?? (lehyProSideCwt && ca ? ca : sideCwtCenterX));
-  const cwtDepth = ee
-    ? ee + 150
-    : (rearCwt
-      ? (b1 ? Math.max(0, b1 - 15) : Math.max(0, (a6 || 138) - 33))
+  const cwtDepth = rearCwt
+    ? ww
+    : (ee
+      ? ee + 150
       : (bh && wg ? Math.max(0, (bh - wg) / 2) : null));
-  const cwtY = ee && bh && wg && !rearCwt
-    ? bh - cwtDepth - wg
-    : cwtDepth;
+  const cwtY = rearCwt
+    ? 30
+    : (ee && bh && wg ? bh - cwtDepth - wg : cwtDepth);
+  const doorOffset = rearCwt
+    ? getPreviewSignedNumber(previewContext, "CJ")
+    : getPreviewSignedNumber(previewContext, "A4");
   const dimensions = {
     ah,
     bh,
@@ -1415,21 +1421,23 @@ function updateShaftPreview(context = null) {
     cwtPlaceLabel: cwtPlace.label,
     cwtLayout,
     mirrorX: cwtPlace.mirrorX,
-    a4: getPreviewSignedNumber(previewContext, "A4"),
+    a4: doorOffset,
     a1,
     a2,
     a6,
     bw,
     ca,
     cb,
+    cc,
     carCenterX,
+    carCenterY: rearCwt ? cc : null,
     ee,
     cwtX,
     cwtMetricName,
     cwtMetricValue,
     cwtDepth,
     cwtY,
-    cwtDepthLabel: rearCwt ? "CWD" : (ee ? "EE+150" : "CWT Y"),
+    cwtDepthLabel: rearCwt ? "WW" : (ee ? "EE+150" : "CWT Y"),
     rearCwt,
     bs,
     dk,
@@ -1732,9 +1740,12 @@ function renderShaftPreviewSvg(dimensions) {
   const doorSpacingMm = 30;
   const carDoorFrontGap = dimensions.centerOpeningDoor ? 130 : 151;
   const cabinOuterBottomY = dimensions.bh - carDoorFrontGap - doorDepthMm;
+  const cabinOuterTopY = dimensions.rearCwt && dimensions.carCenterY
+    ? dimensions.carCenterY - dimensions.bb / 2 - cabinRearWallMm
+    : cabinOuterBottomY - cabinOuterHeight;
   const baseCabinOuterRect = {
     x: cabinInnerX - cabinSideWall,
-    y: cabinOuterBottomY - cabinOuterHeight,
+    y: cabinOuterTopY,
     width: cabinOuterWidth,
     height: cabinOuterHeight
   };
@@ -1786,8 +1797,8 @@ function renderShaftPreviewSvg(dimensions) {
       const height = dimensions.ww;
       const centerX = dimensions.carCenterX || (baseCabinInnerRect.x + baseCabinInnerRect.width / 2);
       return {
-        x: clampPreviewNumber(centerX - width / 2, gap, Math.max(gap, dimensions.ah - width - gap)),
-        y: clampPreviewNumber(baseCabinOuterRect.y - height - 42, gap, Math.max(gap, baseCabinOuterRect.y - height - 16)),
+        x: centerX - width / 2,
+        y: Number.isFinite(dimensions.cwtY) ? dimensions.cwtY : gap,
         width,
         height
       };
@@ -2056,9 +2067,12 @@ function renderShaftPreviewMetrics(dimensions) {
       ? [[dimensions.doorWidthMetricName, dimensions.doorWidth, dimensions.centerOpeningDoor ? "Расчетная ширина CO" : "Расчетная ширина 2S"]]
       : []),
     ["KK", dimensions.kk, "Передняя стенка кабины"],
-    ["A4", dimensions.a4, "Эксцентриситет"],
+    [dimensions.rearCwt ? "CJ" : "A4", dimensions.a4, "Эксцентриситет"],
     ["Тип", dimensions.rearCwt ? "Задний" : "Боковой", "Компоновка противовеса"],
-    ["Место", dimensions.cwtPlaceLabel, "Положение противовеса"],
+    ["Место", dimensions.rearCwt ? "По центру" : dimensions.cwtPlaceLabel, "Положение противовеса"],
+    ...(dimensions.rearCwt && dimensions.carCenterY
+      ? [["CC", dimensions.carCenterY, "Ось кабины по глубине"]]
+      : []),
     [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
     [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
   ];

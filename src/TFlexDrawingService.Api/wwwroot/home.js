@@ -16,6 +16,7 @@ const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
+const activeTemplateCount = document.querySelector("#activeTemplateCount");
 const templateCardCloseTimers = new WeakMap();
 
 function isAuthenticated() {
@@ -94,6 +95,16 @@ async function loadCurrentUser() {
   state.currentUser = await response.json();
   updateAuthView();
   return isAuthenticated();
+}
+
+async function loadActiveTemplateCount() {
+  if (!activeTemplateCount) return;
+
+  const response = await apiFetch("/api/templates");
+  if (!response.ok) return;
+
+  const templates = await response.json();
+  activeTemplateCount.textContent = String(Array.isArray(templates) ? templates.length : 0);
 }
 
 async function register(event) {
@@ -231,4 +242,6 @@ userPanel?.addEventListener("click", event => {
 
 setupHomeCards();
 setupTemplateCard();
-await loadCurrentUser();
+if (await loadCurrentUser()) {
+  await loadActiveTemplateCount();
+}

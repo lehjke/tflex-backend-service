@@ -51,6 +51,14 @@ dotnet run --project .\src\TFlexAutomationRunner\TFlexAutomationRunner.csproj -c
   --inspect-variables "C:\Shared\LEHY-L-PRO [320-1050].grb" ".\docs\inspect-320-1050-variables.json"
 ```
 
+To inspect calculated values after applying input parameters, pass a JSON object
+as the optional fourth argument:
+
+```powershell
+dotnet run --project .\src\TFlexAutomationRunner\TFlexAutomationRunner.csproj -c Release -- `
+  --inspect-variables "C:\Shared\LEHY-PRO [REAR CWT].grb" ".\docs\inspect-rear-variables.json" ".\parameters.json"
+```
+
 Use absolute template paths for inspection. The T-FLEX API bootstrap switches
 the current directory to the T-FLEX program folder while loading native
 dependencies.

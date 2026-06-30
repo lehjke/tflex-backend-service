@@ -44,14 +44,16 @@ namespace TFlexAutomationRunner
                 {
                     if (args.Length < 3)
                     {
-                        throw new ArgumentException("Usage: TFlexAutomationRunner.exe --inspect-variables <templatePath> <outputPath>");
+                        throw new ArgumentException(
+                            "Usage: TFlexAutomationRunner.exe --inspect-variables <templatePath> <outputPath> [parametersPath]");
                     }
 
                     var templatePath = Path.GetFullPath(args[1]);
                     var outputPath = Path.GetFullPath(args[2]);
+                    var parametersPath = args.Length > 3 ? Path.GetFullPath(args[3]) : null;
 
                     TFlexApiBootstrap.Initialize();
-                    InspectVariables(templatePath, outputPath);
+                    InspectVariables(templatePath, outputPath, parametersPath);
                     return 0;
                 }
 
@@ -79,11 +81,14 @@ namespace TFlexAutomationRunner
             }
         }
 
-        private static void InspectVariables(string templatePath, string outputPath)
+        private static void InspectVariables(string templatePath, string outputPath, string parametersPath)
         {
+            var parameters = string.IsNullOrWhiteSpace(parametersPath)
+                ? null
+                : LoadInspectionParameters(parametersPath);
             var setup = new ApplicationSessionSetup
             {
-                ReadOnly = true,
+                ReadOnly = parameters == null,
                 Enable3D = true,
                 EnableDOCs = false,
                 EnableMacros = false,
@@ -99,10 +104,16 @@ namespace TFlexAutomationRunner
             try
             {
                 Application.DisableSubstituteFontDialog = true;
-                document = Application.OpenDocument(templatePath, false, true);
+                document = Application.OpenDocument(templatePath, false, parameters == null);
                 if (document == null)
                 {
                     throw new InvalidOperationException("T-FLEX CAD failed to open document '" + templatePath + "'.");
+                }
+
+                if (parameters != null)
+                {
+                    ApplyParameters(document, parameters);
+                    Regenerate(document);
                 }
 
                 var variables = new List<Dictionary<string, object>>();
@@ -147,6 +158,18 @@ namespace TFlexAutomationRunner
 
                 Application.ExitSession();
             }
+        }
+
+        private static IDictionary<string, object> LoadInspectionParameters(string parametersPath)
+        {
+            if (!File.Exists(parametersPath))
+            {
+                throw new FileNotFoundException("Inspection parameters file was not found.", parametersPath);
+            }
+
+            var serializer = new JavaScriptSerializer();
+            return serializer.Deserialize<Dictionary<string, object>>(
+                File.ReadAllText(parametersPath, Encoding.UTF8));
         }
 
         private static string RunAutomation(AutomationRequest request)
