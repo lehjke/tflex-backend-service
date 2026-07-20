@@ -497,7 +497,6 @@ function Invoke-ServiceInstaller {
         "-Urls", $Urls,
         "-TFlexCadProgramDir", $TFlexCadProgramDir,
         "-AdminUser", $AdminUser,
-        "-RequireAuthentication", $RequireAuthentication.ToString(),
         "-MaxActiveJobs", $MaxActiveJobs.ToString(),
         "-MaxActiveJobsPerUser", $MaxActiveJobsPerUser.ToString(),
         "-FinishedJobRetentionDays", $FinishedJobRetentionDays.ToString(),
@@ -571,6 +570,13 @@ if (-not (Test-IsAdmin)) {
 
 if ($UseExistingSource -and [string]::IsNullOrWhiteSpace($SourceRoot)) {
     throw "SourceRoot must be specified when UseExistingSource is enabled."
+}
+
+# The service installer defaults to authenticated production mode. Do not pass
+# this [bool] through powershell.exe -File: Windows PowerShell 5.1 exposes the
+# native command-line value as a String and cannot bind "True" to Boolean.
+if (-not $RequireAuthentication) {
+    throw "Windows Server production deployments require authentication."
 }
 
 Set-Tls12

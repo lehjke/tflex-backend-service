@@ -24,6 +24,14 @@ public sealed class WindowsDeploymentScriptContractTests
         var installer = File.ReadAllText(InstallerPath);
         var bootstrap = File.ReadAllText(BootstrapPath);
 
+        var systemSecurityLoad = installer.IndexOf(
+            "Add-Type -AssemblyName System.Security -ErrorAction Stop",
+            StringComparison.Ordinal);
+        var protectedDataUse = installer.IndexOf(
+            "[Security.Cryptography.ProtectedData]",
+            StringComparison.Ordinal);
+
+        Assert.True(systemSecurityLoad >= 0 && systemSecurityLoad < protectedDataUse);
         Assert.Contains("ProtectedData]::Protect", installer, StringComparison.Ordinal);
         Assert.Contains("DataProtectionScope]::LocalMachine", installer, StringComparison.Ordinal);
         Assert.Contains("S-1-5-18", installer, StringComparison.Ordinal);
@@ -54,6 +62,44 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.DoesNotContain(
             "$output = & $FilePath @Arguments",
             bootstrap,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BootstrapDoesNotForwardBooleanAuthenticationThroughWindowsPowerShellFileBinding()
+    {
+        var bootstrap = File.ReadAllText(BootstrapPath);
+
+        Assert.DoesNotContain(
+            "\"-RequireAuthentication\", $RequireAuthentication.ToString()",
+            bootstrap,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (-not $RequireAuthentication)",
+            bootstrap,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Windows Server production deployments require authentication.",
+            bootstrap,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FreshServiceInstallTreatsMissingEnvironmentRegistryValueAsEmpty()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+
+        Assert.DoesNotContain(
+            "(Get-ItemProperty -LiteralPath $serviceKey -Name Environment -ErrorAction SilentlyContinue).Environment",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$serviceProperties = Get-ItemProperty -LiteralPath $serviceKey -ErrorAction Stop",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$existing = if ($null -eq $serviceProperties.Environment)",
+            installer,
             StringComparison.Ordinal);
     }
 
@@ -162,7 +208,7 @@ public sealed class WindowsDeploymentScriptContractTests
             "Write-Step \"Configuring effective service account file access\"",
             StringComparison.Ordinal);
         var deploymentFailure = installer.IndexOf(
-            "Write-Warning \"Deployment validation failed. Restoring the previous deployment.\"",
+            "Write-Warning \"Deployment validation failed: $deploymentErrorMessage Restoring the previous deployment.\"",
             StringComparison.Ordinal);
         var aclRestore = installer.IndexOf(
             "Restore-DirectoryAclSnapshots $directoryAclSnapshots",
@@ -198,6 +244,29 @@ public sealed class WindowsDeploymentScriptContractTests
 
         Assert.True(rightGrant > rollbackPossible);
         Assert.True(rightRollback > deploymentFailure);
+    }
+
+    [Fact]
+    public void DeploymentRollbackPreservesThePrimaryFailureMessage()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+
+        var catchStart = installer.IndexOf(
+            "$deploymentError = $_",
+            StringComparison.Ordinal);
+        var rollbackWarning = installer.IndexOf(
+            "Deployment validation failed: $deploymentErrorMessage",
+            StringComparison.Ordinal);
+        var finalFailure = installer.LastIndexOf(
+            "Deployment failed: $deploymentErrorMessage The previous deployment was restored.",
+            StringComparison.Ordinal);
+
+        Assert.True(catchStart >= 0 && catchStart < rollbackWarning);
+        Assert.True(rollbackWarning < finalFailure);
+        Assert.Contains(
+            "sc.exe failed with exit code $LASTEXITCODE`: $details",
+            installer,
+            StringComparison.Ordinal);
     }
 
     [Fact]

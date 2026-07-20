@@ -94,6 +94,14 @@ foreach ($contract in $forbiddenInstallerContracts) {
 if ($installerText.Contains('PurgeAccessRules')) {
     throw "The service installer must preserve inherited and unrelated access rules."
 }
+if ($installerText.Contains(
+        '(Get-ItemProperty -LiteralPath $serviceKey -Name Environment -ErrorAction SilentlyContinue).Environment') -or
+    -not $installerText.Contains(
+        '$serviceProperties = Get-ItemProperty -LiteralPath $serviceKey -ErrorAction Stop') -or
+    -not $installerText.Contains(
+        '$existing = if ($null -eq $serviceProperties.Environment)')) {
+    throw "Fresh Windows service installation must treat a missing Environment registry value as empty."
+}
 
 $recoveryWriteIndex = $installerText.LastIndexOf('Write-BootstrapAdminRecovery `')
 $activationIndex = $installerText.IndexOf('Write-Step "Activating staged deployment"')
@@ -101,7 +109,7 @@ $effectiveAclIndex = $installerText.IndexOf('Write-Step "Configuring effective s
 $aclSnapshotIndex = $installerText.IndexOf('Get-DirectoryAclSnapshots $managedAccessDirectories')
 $obsoleteAclRemovalIndex = $installerText.LastIndexOf('Remove-ServiceFileSystemAccess `')
 $deploymentFailureIndex = $installerText.IndexOf(
-    'Write-Warning "Deployment validation failed. Restoring the previous deployment."')
+    'Write-Warning "Deployment validation failed: $deploymentErrorMessage Restoring the previous deployment."')
 $aclRestoreIndex = $installerText.IndexOf(
     'Restore-DirectoryAclSnapshots $directoryAclSnapshots')
 $rollbackPossibleIndex = $installerText.LastIndexOf('Assert-ServiceAccountRollbackPossible')
@@ -112,6 +120,13 @@ $serviceStartIndex = $installerText.IndexOf('Write-Step "Starting Windows servic
 $credentialPrintIndex = $installerText.LastIndexOf('bootstrap admin password:')
 $recoveryRemoveIndex = $installerText.LastIndexOf(
     'Remove-BootstrapAdminRecovery $bootstrapAdminRecoveryPath')
+$systemSecurityLoadIndex = $installerText.IndexOf(
+    'Add-Type -AssemblyName System.Security -ErrorAction Stop')
+$protectedDataUseIndex = $installerText.IndexOf('[Security.Cryptography.ProtectedData]')
+
+if ($systemSecurityLoadIndex -lt 0 -or $systemSecurityLoadIndex -ge $protectedDataUseIndex) {
+    throw "The Windows installer must load System.Security before using DPAPI."
+}
 
 if ($recoveryWriteIndex -lt 0 -or $recoveryWriteIndex -ge $serviceStartIndex) {
     throw "Bootstrap admin recovery must be persisted before Windows services start."
@@ -129,6 +144,12 @@ if ($aclSnapshotIndex -lt 0 -or
 if ($deploymentFailureIndex -le $effectiveAclIndex -or
     $aclRestoreIndex -le $deploymentFailureIndex) {
     throw "Managed directory ACLs must be restored during deployment rollback."
+}
+if (-not $installerText.Contains('$deploymentError = $_') -or
+    -not $installerText.Contains(
+        'Deployment failed: $deploymentErrorMessage The previous deployment was restored.') -or
+    -not $installerText.Contains('sc.exe failed with exit code $LASTEXITCODE`: $details')) {
+    throw "Deployment rollback must retain the primary Windows service failure message."
 }
 if ($rightGrantIndex -le $rollbackPossibleIndex -or
     $rightRollbackIndex -le $deploymentFailureIndex) {
@@ -151,6 +172,11 @@ if (-not $bootstrapText.Contains('& $FilePath @Arguments 2>&1 | ForEach-Object')
 }
 if ($bootstrapText.Contains('$output = & $FilePath @Arguments')) {
     throw "The Windows bootstrapper must not buffer generated bootstrap credentials until child exit."
+}
+if ($bootstrapText.Contains('"-RequireAuthentication", $RequireAuthentication.ToString()') -or
+    -not $bootstrapText.Contains('if (-not $RequireAuthentication)') -or
+    -not $bootstrapText.Contains('Windows Server production deployments require authentication.')) {
+    throw "The Windows bootstrapper must not forward Boolean authentication through powershell.exe -File."
 }
 if (-not $bootstrapText.Contains(
         '$healthEndpoint = if ($SkipRunnerHealthCheck) { "live" } else { "ready" }') -or

@@ -45,6 +45,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Windows PowerShell 5.1 does not load the .NET Framework System.Security
+# assembly before resolving the DPAPI types used for recoverable bootstrap
+# credentials. Load it explicitly before any ProtectedData call.
+Add-Type -AssemblyName System.Security -ErrorAction Stop
+
 # The bootstrapper passes secrets through its child-process environment so they
 # never appear in the powershell.exe command line. Read them once, then remove
 # them before git, dotnet, or the automation runner can inherit them.
@@ -518,9 +523,14 @@ function Stop-ServiceIfExists {
 
 function Invoke-Sc {
     param([string[]]$Arguments)
-    $output = & sc.exe @Arguments 2>&1
+    $output = @(& sc.exe @Arguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "sc.exe failed with exit code $LASTEXITCODE."
+        $details = ($output | ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " "
+        if ([string]::IsNullOrWhiteSpace($details)) {
+            $details = "No diagnostic output was returned."
+        }
+        throw "sc.exe failed with exit code $LASTEXITCODE`: $details"
     }
 }
 
@@ -1205,7 +1215,16 @@ function Set-ServiceEnvironmentVariable {
         throw "Registry configuration for Windows service '$ServiceName' was not found."
     }
 
-    $existing = @((Get-ItemProperty -LiteralPath $serviceKey -Name Environment -ErrorAction SilentlyContinue).Environment)
+    # A newly created Windows service has no Environment registry value yet.
+    # Read the key itself so a clean installation produces an empty collection
+    # instead of dereferencing the null result of Get-ItemProperty -Name.
+    $serviceProperties = Get-ItemProperty -LiteralPath $serviceKey -ErrorAction Stop
+    $existing = if ($null -eq $serviceProperties.Environment) {
+        @()
+    }
+    else {
+        @($serviceProperties.Environment)
+    }
     $prefix = "$VariableName="
     $updated = @($existing | Where-Object { -not $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
     $updated += "$VariableName=$Value"
@@ -2301,7 +2320,12 @@ try {
         $deploymentSucceeded = $true
     }
     catch {
-        Write-Warning "Deployment validation failed. Restoring the previous deployment."
+        $deploymentError = $_
+        $deploymentErrorMessage = [string]$deploymentError.Exception.Message
+        if ([string]::IsNullOrWhiteSpace($deploymentErrorMessage)) {
+            $deploymentErrorMessage = "Unknown deployment validation error."
+        }
+        Write-Warning "Deployment validation failed: $deploymentErrorMessage Restoring the previous deployment."
 
         if (-not $SkipServiceInstall) {
             try { Stop-ServiceIfExists $WorkerServiceName } catch { $rollbackSucceeded = $false }
@@ -2376,10 +2400,10 @@ try {
         }
 
         if (-not $rollbackSucceeded) {
-            throw "Deployment failed and automatic rollback was incomplete. Recovery files were preserved in '$rollbackRoot'."
+            throw "Deployment failed: $deploymentErrorMessage Automatic rollback was incomplete. Recovery files were preserved in '$rollbackRoot'."
         }
 
-        throw "Deployment failed after staging validation. The previous deployment was restored."
+        throw "Deployment failed: $deploymentErrorMessage The previous deployment was restored."
     }
 }
 finally {
