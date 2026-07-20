@@ -18,6 +18,10 @@ public sealed class DrawingQueueOptions
 {
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(2);
+
+    public TimeSpan LeaseHeartbeatInterval { get; set; } = TimeSpan.FromSeconds(20);
+
     public int MaxActiveJobs { get; set; } = 50;
 
     public int MaxActiveJobsPerUser { get; set; } = 5;
@@ -45,4 +49,10 @@ public sealed class TFlexAutomationOptions
     public int TimeoutSeconds { get; set; } = 600;
 
     public bool WriteParameterFile { get; set; } = true;
+
+    public bool HealthCheckEnabled { get; set; } = true;
+
+    public int HealthCheckIntervalSeconds { get; set; } = 300;
+
+    public int HealthCheckTimeoutSeconds { get; set; } = 60;
 }

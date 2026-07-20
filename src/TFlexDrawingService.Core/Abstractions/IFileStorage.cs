@@ -8,5 +8,5 @@ public interface IFileStorage
 
     Task<string> CopyTemplateToWorkingDirectoryAsync(DrawingTemplate template, string workingDirectory, CancellationToken cancellationToken = default);
 
-    string CreateGeneratedDirectory(string jobId);
+    string CreateGeneratedDirectory(DrawingJob job);
 }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Базовая цена — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260625-smec-series-1">
+  <link rel="stylesheet" href="/styles.css?v=20260720-ui-hardening-3">
 </head>
 <body>
   <div class="app-shell">
@@ -97,6 +97,12 @@
         <section class="intro">
           <h1>Расчет базовой цены</h1>
         </section>
+
+        <aside class="pricing-mobile-summary" aria-live="polite">
+          <span id="mobilePricingStatus">Не рассчитано</span>
+          <strong id="mobileTotalCny">0 CNY</strong>
+          <small id="mobileTotalConverted">0 RUB</small>
+        </aside>
 
         <section class="panel panel--wide pricing-workspace">
           <div class="pricing-grid">
@@ -680,7 +686,7 @@
 
               <div class="pricing-section">
                 <div class="panel__header">
-                  <h2><span data-xizi-only>Опции и комплектация</span><span data-smec-only>Опции и комплектация</span></h2>
+                  <h2>Опции и комплектация</h2>
                 </div>
                 <div class="pricing-fields pricing-fields--two" data-xizi-only>
                   <label class="field">
@@ -736,7 +742,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260619-home-1"></script>
-    <script type="module" src="/pricing.js?v=20260625-smec-series-1"></script>
+  <script type="module" src="/shell.js?v=20260720-ui-hardening-4"></script>
+  <script type="module" src="/pricing.js?v=20260720-ui-hardening-5"></script>
 </body>
 </html>

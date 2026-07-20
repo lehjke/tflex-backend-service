@@ -52,7 +52,10 @@ public sealed class StorageCleanupHostedService(
                     DeleteDirectoryIfEmptyUnderRoot(Path.GetDirectoryName(file.Path), generatedRoot);
                 }
 
-                DeleteDirectoryIfExistsUnderRoot(job.WorkingDirectory, jobsRoot);
+                // A failed runner can leave files that were never registered in GeneratedFiles.
+                // Remove the complete job-owned directory before deleting its database row.
+                DeleteDirectoryIfExistsUnderRoot(Path.Combine(generatedRoot, job.Id), generatedRoot);
+                DeleteDirectoryIfExistsUnderRoot(Path.Combine(jobsRoot, job.Id), jobsRoot);
                 await repository.DeleteAsync(job.Id, cancellationToken);
             }
 

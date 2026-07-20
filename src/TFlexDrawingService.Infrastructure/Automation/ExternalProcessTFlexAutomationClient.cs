@@ -12,6 +12,8 @@ namespace TFlexDrawingService.Infrastructure.Automation;
 
 public sealed class ExternalProcessTFlexAutomationClient(
     IOptions<TFlexAutomationOptions> options,
+    TFlexAutomationExecutionGate executionGate,
+    TFlexAutomationReadinessState readinessState,
     ILogger<ExternalProcessTFlexAutomationClient> logger) : ITFlexAutomationClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -24,6 +26,27 @@ public sealed class ExternalProcessTFlexAutomationClient(
     public async Task<IReadOnlyList<GeneratedFile>> GenerateAsync(
         TFlexGenerationRequest request,
         CancellationToken cancellationToken = default)
+    {
+        await executionGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!readinessState.GetSnapshot().Ready)
+            {
+                throw new InvalidOperationException(
+                    "T-FLEX automation is not ready; generation was not started.");
+            }
+
+            return await GenerateUnderGateAsync(request, cancellationToken);
+        }
+        finally
+        {
+            executionGate.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<GeneratedFile>> GenerateUnderGateAsync(
+        TFlexGenerationRequest request,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.CommandPath))
         {
@@ -86,18 +109,25 @@ public sealed class ExternalProcessTFlexAutomationClient(
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         var timeout = TimeSpan.FromSeconds(Math.Max(1, _options.TimeoutSeconds));
 
+        string stdout;
+        string stderr;
         try
         {
             await process.WaitForExitAsync(cancellationToken).WaitAsync(timeout, cancellationToken);
+            stdout = await stdoutTask;
+            stderr = await stderrTask;
         }
         catch (TimeoutException)
         {
-            TryKill(process);
+            await TerminateProcessTreeAsync(process);
             throw new TimeoutException($"External T-FLEX automation timed out after {timeout}.");
         }
+        catch
+        {
+            await TerminateProcessTreeAsync(process);
+            throw;
+        }
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(
@@ -150,7 +180,31 @@ public sealed class ExternalProcessTFlexAutomationClient(
 
     private static string Quote(string value)
     {
-        return $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+        var builder = new StringBuilder(value.Length + 2);
+        builder.Append('"');
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\r':
+                    builder.Append("\\u000D");
+                    break;
+                case '\n':
+                    builder.Append("\\u000A");
+                    break;
+                default:
+                    builder.Append(character);
+                    break;
+            }
+        }
+
+        return builder.Append('"').ToString();
     }
 
     private static string ReplaceTokens(
@@ -273,18 +327,21 @@ public sealed class ExternalProcessTFlexAutomationClient(
         return format.Trim().TrimStart('.').ToLowerInvariant();
     }
 
-    private static void TryKill(Process process)
+    private async Task TerminateProcessTreeAsync(Process process)
     {
         try
         {
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
             }
         }
-        catch
+        catch (Exception exception)
         {
-            // The process may have exited between the timeout and kill attempt.
+            // Preserve the original timeout/cancellation while making termination failures visible.
+            logger.LogError(exception, "Failed to terminate the external T-FLEX process tree.");
         }
     }
 

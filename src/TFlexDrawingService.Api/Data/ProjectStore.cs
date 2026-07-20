@@ -73,6 +73,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         await command.ExecuteNonQueryAsync(cancellationToken);
         await EnsureColumnAsync(connection, "UserProjects", "Address", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await EnsureColumnAsync(connection, "UserProjects", "FactoryRequestNumber", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await RepairForeignKeyViolationsAsync(connection, cancellationToken);
     }
 
     public async Task<IReadOnlyList<UserProject>> ListProjectsAsync(
@@ -508,11 +509,27 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
             return null;
         }
 
+        var normalizedConfigurationId = string.IsNullOrWhiteSpace(projectConfigurationId)
+            ? null
+            : projectConfigurationId.Trim();
+        if (normalizedConfigurationId is not null)
+        {
+            var configuration = await GetConfigurationAsync(
+                normalizedConfigurationId,
+                ownerUserName,
+                cancellationToken);
+            if (configuration is null
+                || !string.Equals(configuration.ProjectId, projectId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var specification = new PricingSpecification(
             Guid.NewGuid().ToString("n"),
             projectId,
-            string.IsNullOrWhiteSpace(projectConfigurationId) ? null : projectConfigurationId,
+            normalizedConfigurationId,
             NormalizeName(name, "Спецификация"),
             calculation.Supplier,
             calculation.Series,
@@ -557,14 +574,56 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         command.Parameters.AddWithValue("$calculationJson", specification.CalculationJson);
         command.Parameters.AddWithValue("$createdAt", FormatDate(specification.CreatedAt));
         command.Parameters.AddWithValue("$updatedAt", FormatDate(specification.UpdatedAt));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            // The project or configuration may have been deleted after the
+            // ownership check. Treat that race as a missing relation instead
+            // of surfacing a database exception as HTTP 500.
+            return null;
+        }
 
         return specification;
     }
 
     private SqliteConnection CreateConnection()
     {
-        return new SqliteConnection($"Data Source={_storageOptions.DatabasePath}");
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = _storageOptions.DatabasePath,
+            ForeignKeys = true
+        };
+
+        return new SqliteConnection(connectionString.ToString());
+    }
+
+    private static async Task RepairForeignKeyViolationsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE PricingSpecifications
+            SET ProjectConfigurationId = NULL
+            WHERE ProjectConfigurationId IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ProjectConfigurations configuration
+                  WHERE configuration.Id = PricingSpecifications.ProjectConfigurationId
+                    AND configuration.ProjectId = PricingSpecifications.ProjectId
+              );
+
+            DELETE FROM PricingSpecifications
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM UserProjects project
+                WHERE project.Id = PricingSpecifications.ProjectId
+            );
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static UserProject MapProject(SqliteDataReader reader)

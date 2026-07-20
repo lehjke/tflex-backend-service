@@ -10,6 +10,64 @@ namespace TFlexDrawingService.Tests;
 public sealed class SecurityAndAccountStoreTests
 {
     [Fact]
+    public void ProductionSecurityOptions_FailClosed()
+    {
+        var authenticationDisabled = new SecurityOptions
+        {
+            RequireAuthentication = false
+        };
+        var csrfDisabled = new SecurityOptions
+        {
+            RequireCsrfHeader = false
+        };
+        var sensitiveDetailsExposed = new SecurityOptions
+        {
+            RedactJobErrors = false,
+            ExposeWorkingDirectory = true
+        };
+
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(authenticationDisabled, isDevelopment: false));
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(csrfDisabled, isDevelopment: false));
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(sensitiveDetailsExposed, isDevelopment: false));
+
+        SecurityOptionsValidation.Validate(authenticationDisabled, isDevelopment: true);
+        SecurityOptionsValidation.Validate(csrfDisabled, isDevelopment: true);
+    }
+
+    [Fact]
+    public void SecurityOptions_RejectUnsafeResourceAndSessionRanges()
+    {
+        var oversizedBody = new SecurityOptions
+        {
+            MaxRequestBodyBytes = SecurityOptionsValidation.MaximumRequestBodyBytes + 1
+        };
+        var unboundedLoginRate = new SecurityOptions
+        {
+            LoginRateLimitPermitLimit = SecurityOptionsValidation.MaximumRateLimitPermits + 1
+        };
+        var shortLoginWindow = new SecurityOptions
+        {
+            LoginRateLimitWindowSeconds = 1
+        };
+        var excessiveSession = new SecurityOptions
+        {
+            SessionMinutes = SecurityOptionsValidation.MaximumSessionMinutes + 1
+        };
+
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(oversizedBody, isDevelopment: false));
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(unboundedLoginRate, isDevelopment: false));
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(shortLoginWindow, isDevelopment: false));
+        Assert.Throws<InvalidOperationException>(
+            () => SecurityOptionsValidation.Validate(excessiveSession, isDevelopment: false));
+    }
+
+    [Fact]
     public async Task PendingUser_CannotValidateCredentialsUntilApproved()
     {
         var storageOptions = CreateStorageOptions();
@@ -36,6 +94,134 @@ public sealed class SecurityAndAccountStoreTests
         Assert.True(approvedUser.Enabled);
         Assert.Equal("Approved", approvedUser.ApprovalStatus);
         Assert.Contains("Operator", approvedUser.Roles);
+    }
+
+    [Fact]
+    public async Task DeletedUser_RemainsReservedAndCannotAccessPreviousAccount()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ConfiguredUserStore(
+            storageOptions,
+            new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions()),
+            NullLogger<ConfiguredUserStore>.Instance);
+
+        await store.InitializeAsync();
+        Assert.True((await store.RegisterPendingUserAsync("operator", "Original operator", "old-password")).Created);
+        Assert.True(await store.ApproveUserAsync("operator", "admin", ["Operator", "Viewer"]));
+        Assert.NotNull(await store.ValidateCredentialsAsync("operator", "old-password"));
+
+        Assert.True(await store.DeleteUserAsync("operator"));
+        Assert.Null(await store.FindUserAsync("operator"));
+        Assert.Null(await store.ValidateCredentialsAsync("operator", "old-password"));
+        Assert.Empty(await store.ListUsersAsync());
+
+        var repeatedRegistration = await store.RegisterPendingUserAsync(
+            "OPERATOR",
+            "Another person",
+            "new-password");
+
+        Assert.False(repeatedRegistration.Created);
+        Assert.Equal("Deleted", repeatedRegistration.Status);
+        Assert.Null(await store.ValidateCredentialsAsync("operator", "new-password"));
+        Assert.Empty(await store.ListUsersAsync());
+    }
+
+    [Fact]
+    public async Task UserUpsert_CannotRemoveTheLastEnabledAdmin()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ConfiguredUserStore(
+            storageOptions,
+            new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions()),
+            NullLogger<ConfiguredUserStore>.Instance);
+        await store.InitializeAsync();
+
+        var admin = CreateAdmin("admin");
+        await store.UpsertUserAsync(admin);
+
+        var result = await store.TryUpsertUserPreservingLastAdminAsync(Demote(admin));
+
+        Assert.Equal(ConfiguredUserUpsertResult.LastEnabledAdminWouldBeRemoved, result);
+        var persistedAdmin = await store.FindUserAsync(admin.UserName);
+        Assert.NotNull(persistedAdmin);
+        Assert.True(persistedAdmin.Enabled);
+        Assert.Contains("Admin", persistedAdmin.Roles);
+    }
+
+    [Fact]
+    public async Task ConcurrentUserUpserts_AlwaysPreserveOneEnabledAdmin()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ConfiguredUserStore(
+            storageOptions,
+            new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions()),
+            NullLogger<ConfiguredUserStore>.Instance);
+        await store.InitializeAsync();
+
+        var firstAdmin = CreateAdmin("admin-a");
+        var secondAdmin = CreateAdmin("admin-b");
+        await store.UpsertUserAsync(firstAdmin);
+        await store.UpsertUserAsync(secondAdmin);
+
+        var results = await Task.WhenAll(
+            store.TryUpsertUserPreservingLastAdminAsync(Demote(firstAdmin)),
+            store.TryUpsertUserPreservingLastAdminAsync(Demote(secondAdmin)));
+
+        Assert.Single(results, result => result == ConfiguredUserUpsertResult.Succeeded);
+        Assert.Single(
+            results,
+            result => result == ConfiguredUserUpsertResult.LastEnabledAdminWouldBeRemoved);
+
+        var enabledAdmins = (await store.ListUsersAsync()).Where(user =>
+            user.Enabled
+            && string.Equals(user.ApprovalStatus, "Approved", StringComparison.OrdinalIgnoreCase)
+            && user.Roles.Contains("Admin", StringComparer.OrdinalIgnoreCase));
+        Assert.Single(enabledAdmins);
+    }
+
+    [Fact]
+    public async Task ActiveAdmin_CannotBeRewrittenThroughApproveOrRejectActions()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ConfiguredUserStore(
+            storageOptions,
+            new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions()),
+            NullLogger<ConfiguredUserStore>.Instance);
+        await store.InitializeAsync();
+
+        var admin = CreateAdmin("admin");
+        await store.UpsertUserAsync(admin);
+
+        Assert.False(await store.ApproveUserAsync(admin.UserName, "other-admin", ["Viewer"]));
+        Assert.False(await store.RejectUserAsync(admin.UserName, "other-admin"));
+
+        var persistedAdmin = await store.FindUserAsync(admin.UserName);
+        Assert.NotNull(persistedAdmin);
+        Assert.True(persistedAdmin.Enabled);
+        Assert.Equal("Approved", persistedAdmin.ApprovalStatus);
+        Assert.Contains("Admin", persistedAdmin.Roles);
+    }
+
+    [Fact]
+    public async Task ActiveAdmin_CannotBeDeletedThroughStoreSink()
+    {
+        var storageOptions = CreateStorageOptions();
+        var store = new ConfiguredUserStore(
+            storageOptions,
+            new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions()),
+            NullLogger<ConfiguredUserStore>.Instance);
+        await store.InitializeAsync();
+
+        var admin = CreateAdmin("admin");
+        await store.UpsertUserAsync(admin);
+
+        Assert.False(await store.DeleteUserAsync(admin.UserName));
+
+        var persistedAdmin = await store.FindUserAsync(admin.UserName);
+        Assert.NotNull(persistedAdmin);
+        Assert.True(persistedAdmin.Enabled);
+        Assert.Equal("Approved", persistedAdmin.ApprovalStatus);
+        Assert.Contains("Admin", persistedAdmin.Roles);
     }
 
     [Fact]
@@ -194,6 +380,32 @@ public sealed class SecurityAndAccountStoreTests
             RootPath = Path.Combine(root, "storage"),
             DatabasePath = Path.Combine(root, "storage", "drawings.db")
         });
+    }
+
+    private static ConfiguredUser CreateAdmin(string userName)
+    {
+        return new ConfiguredUser
+        {
+            UserName = userName,
+            DisplayName = userName,
+            PasswordHash = PasswordHashing.HashPassword("password"),
+            Enabled = true,
+            ApprovalStatus = "Approved",
+            Roles = ["Admin", "Operator", "Viewer"]
+        };
+    }
+
+    private static ConfiguredUser Demote(ConfiguredUser user)
+    {
+        return new ConfiguredUser
+        {
+            UserName = user.UserName,
+            DisplayName = user.DisplayName,
+            PasswordHash = user.PasswordHash,
+            Enabled = true,
+            ApprovalStatus = "Approved",
+            Roles = ["Operator", "Viewer"]
+        };
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

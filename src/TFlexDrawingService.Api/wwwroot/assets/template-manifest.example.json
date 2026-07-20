@@ -1,0 +1,43 @@
+{
+  "id": "example_lift",
+  "code": "EXAMPLE-LIFT",
+  "name": "Пример шаблона лифта",
+  "description": "Замените пример реальными параметрами и правилами шаблона T-FLEX.",
+  "outputFormats": [
+    "pdf",
+    "dwg",
+    "dxf"
+  ],
+  "parameters": [
+    {
+      "name": "AH",
+      "displayName": "Ширина шахты",
+      "type": "number",
+      "unit": "мм",
+      "isRequired": true,
+      "minValue": 1200,
+      "maxValue": 5000,
+      "defaultValue": 1800
+    }
+  ],
+  "calculatedVariables": [
+    {
+      "name": "HALF_AH",
+      "displayName": "Половина ширины шахты",
+      "type": "number",
+      "isReadOnly": true,
+      "expression": "AH / 2"
+    }
+  ],
+  "validationRules": [
+    {
+      "name": "shaft_width",
+      "expression": "AH >= 1200 && AH <= 5000",
+      "message": "Ширина шахты должна быть от 1200 до 5000 мм.",
+      "fieldNames": [
+        "AH"
+      ]
+    }
+  ],
+  "lookupTables": {}
+}

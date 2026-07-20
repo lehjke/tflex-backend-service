@@ -8,6 +8,12 @@ public interface IDrawingJobRepository
 
     Task CreateAsync(DrawingJob job, CancellationToken cancellationToken = default);
 
+    Task<DrawingJobEnqueueResult> TryCreateAsync(
+        DrawingJob job,
+        int maxActiveJobs,
+        int maxActiveJobsPerUser,
+        CancellationToken cancellationToken = default);
+
     Task<DrawingJob?> GetAsync(string id, CancellationToken cancellationToken = default);
 
     Task<DrawingJob?> GetAsync(string id, string ownerUserName, CancellationToken cancellationToken = default);
@@ -28,15 +34,44 @@ public interface IDrawingJobRepository
 
     Task DeleteAsync(string id, CancellationToken cancellationToken = default);
 
-    Task<DrawingJob?> TryClaimNextPendingAsync(CancellationToken cancellationToken = default);
+    Task<DrawingJob?> TryClaimNextPendingAsync(
+        string leaseToken,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
 
-    Task UpdateWorkingDirectoryAsync(string id, string workingDirectory, CancellationToken cancellationToken = default);
+    Task<int> RequeueExpiredRunningAsync(
+        DateTimeOffset utcNow,
+        CancellationToken cancellationToken = default);
 
-    Task AddGeneratedFileAsync(GeneratedFile file, CancellationToken cancellationToken = default);
+    Task<bool> RenewLeaseAsync(
+        string id,
+        string leaseToken,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> UpdateWorkingDirectoryAsync(
+        string id,
+        string workingDirectory,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null);
+
+    Task<bool> AddGeneratedFileAsync(
+        GeneratedFile file,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null);
 
     Task<GeneratedFile?> GetGeneratedFileAsync(string jobId, string fileId, CancellationToken cancellationToken = default);
 
-    Task MarkCompletedAsync(string id, DateTimeOffset finishedAt, CancellationToken cancellationToken = default);
+    Task<bool> MarkCompletedAsync(
+        string id,
+        DateTimeOffset finishedAt,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null);
 
-    Task MarkFailedAsync(string id, string errorMessage, DateTimeOffset finishedAt, CancellationToken cancellationToken = default);
+    Task<bool> MarkFailedAsync(
+        string id,
+        string errorMessage,
+        DateTimeOffset finishedAt,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null);
 }

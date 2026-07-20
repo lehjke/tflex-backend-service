@@ -1,3 +1,6 @@
+import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
+import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+
 const state = {
   currentUser: null,
   catalog: null,
@@ -8,6 +11,7 @@ const state = {
   lastRequest: null,
   xiziInitialized: false
 };
+const sessionRequests = createSessionRequestGuard();
 
 const LIVE_CALCULATION_DELAY_MS = 450;
 let liveCalculationTimer = 0;
@@ -27,6 +31,7 @@ const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
+const globalSearchInput = document.querySelector(".global-search input");
 const pricingForm = document.querySelector("#pricingForm");
 const pricingProjectSelect = document.querySelector("#pricingProjectSelect");
 const drawingConfigurationSelect = document.querySelector("#drawingConfigurationSelect");
@@ -157,9 +162,17 @@ const rateInfo = document.querySelector("#rateInfo");
 const pricingLines = document.querySelector("#pricingLines");
 const pricingWarnings = document.querySelector("#pricingWarnings");
 const savedPricingList = document.querySelector("#savedPricingList");
+const mobilePricingStatus = document.querySelector("#mobilePricingStatus");
+const mobileTotalCny = document.querySelector("#mobileTotalCny");
+const mobileTotalConverted = document.querySelector("#mobileTotalConverted");
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
+}
+
+function canSavePricing() {
+  const roles = state.currentUser?.roles || [];
+  return roles.includes("Admin") || roles.includes("Operator");
 }
 
 function getRoleLabel() {
@@ -176,6 +189,8 @@ function updateAuthView() {
   if (loginForm) loginForm.hidden = authenticated;
   if (userPanel) userPanel.hidden = !authenticated;
   if (pricingMain) pricingMain.hidden = !authenticated;
+  if (savePricingButton) savePricingButton.hidden = !authenticated || !canSavePricing();
+  if (downloadTkpButton) downloadTkpButton.hidden = !authenticated || !canSavePricing();
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
@@ -186,6 +201,10 @@ function updateAuthView() {
     }
   } else {
     currentUserName.textContent = "";
+    if (currentUserRole) {
+      currentUserRole.hidden = true;
+      currentUserRole.textContent = "";
+    }
   }
 }
 
@@ -196,13 +215,14 @@ async function apiFetch(url, options = {}) {
     headers.set("X-TFlex-Requested-With", "fetch");
   }
 
-  const response = await fetch(url, {
+  const response = await sessionRequests.fetch(url, {
     credentials: "same-origin",
     ...options,
     headers
   });
 
-  if (response.status === 401) {
+  if (sessionRequests.isCurrent(response) && response.status === 401) {
+    clearPricingSessionState();
     state.currentUser = null;
     updateAuthView();
   }
@@ -211,8 +231,11 @@ async function apiFetch(url, options = {}) {
 }
 
 async function readProblem(response, fallback) {
+  if (!sessionRequests.isCurrent(response)) return [];
+
   try {
-    const problem = await response.json();
+    const problem = await sessionRequests.readJson(response);
+    if (problem === sessionRequests.stalePayload) return [];
     return problem.errors?.request || problem.errors?.name || [problem.detail || problem.title || fallback];
   } catch {
     return [fallback];
@@ -229,10 +252,123 @@ function escapeHtml(value) {
 }
 
 function money(value, currency = "CNY") {
-  return `${new Intl.NumberFormat("ru-RU", {
+  return `${new Intl.NumberFormat(getLanguage() === "en" ? "en-GB" : "ru-RU", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(Number(value || 0))} ${currency}`;
+}
+
+function syncMobilePricingSummary() {
+  if (mobilePricingStatus) {
+    mobilePricingStatus.textContent = pricingStatus?.textContent || t("Не рассчитано");
+    mobilePricingStatus.className = pricingStatus?.className || "pricing-status";
+  }
+  if (mobileTotalCny) mobileTotalCny.textContent = totalCny?.textContent || "0 CNY";
+  if (mobileTotalConverted) mobileTotalConverted.textContent = totalConverted?.textContent || "0 RUB";
+}
+
+function clearPricingSessionState() {
+  sessionRequests.invalidate();
+  window.clearTimeout(liveCalculationTimer);
+  liveCalculationTimer = 0;
+  calculationRequestId += 1;
+
+  state.catalog = null;
+  state.projects = [];
+  state.configurationsByProjectId = new Map();
+  state.pricingByProjectId = new Map();
+  state.lastCalculation = null;
+  state.lastRequest = null;
+  state.xiziInitialized = false;
+
+  loginForm?.reset();
+  registerForm?.reset();
+  pricingForm?.reset();
+  loginPassword?.setCustomValidity("");
+  if (registerStatus) {
+    registerStatus.hidden = true;
+    registerStatus.textContent = "";
+  }
+  if (globalSearchInput) globalSearchInput.value = "";
+
+  pricingProjectSelect?.replaceChildren();
+  drawingConfigurationSelect?.replaceChildren();
+  savedPricingList?.replaceChildren();
+  pricingLines?.replaceChildren();
+  optionsList?.querySelectorAll("input").forEach(input => {
+    input.checked = false;
+  });
+  if (decorationPreview) {
+    decorationPreview.hidden = true;
+    decorationPreview.replaceChildren();
+  }
+  if (pricingWarnings) {
+    pricingWarnings.hidden = true;
+    pricingWarnings.className = "pricing-warnings";
+    pricingWarnings.replaceChildren();
+  }
+  if (pricingStatus) {
+    pricingStatus.textContent = t("Не рассчитано");
+    pricingStatus.className = "pricing-status";
+  }
+  if (totalCny) totalCny.textContent = "0 CNY";
+  if (totalConverted) totalConverted.textContent = "0 RUB";
+  if (rateInfo) rateInfo.textContent = "";
+  if (savePricingButton) savePricingButton.disabled = true;
+  if (downloadTkpButton) downloadTkpButton.disabled = true;
+
+  syncAllVisualSelects();
+  syncMobilePricingSummary();
+}
+
+function setupPricingSearch() {
+  if (!globalSearchInput || !pricingForm) return;
+
+  const status = document.createElement("span");
+  status.className = "global-search__status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  globalSearchInput.closest(".global-search")?.append(status);
+  let matches = [];
+  let matchIndex = -1;
+
+  const applySearch = () => {
+    const query = globalSearchInput.value.trim().toLocaleLowerCase();
+    const candidates = [...pricingForm.querySelectorAll(".field, .pricing-option, .pricing-section .panel__header h2")];
+    candidates.forEach(candidate => candidate.classList.remove("is-search-match"));
+    matches = query
+      ? candidates.filter(candidate =>
+        !candidate.closest("[hidden]")
+        && candidate.textContent.trim().toLocaleLowerCase().includes(query))
+      : [];
+    matches.forEach(candidate => candidate.classList.add("is-search-match"));
+    matchIndex = -1;
+    status.textContent = query
+      ? (matches.length ? `${t("Найдено:")} ${matches.length}` : t("Ничего не найдено"))
+      : "";
+  };
+
+  globalSearchInput.addEventListener("input", applySearch);
+  globalSearchInput.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      globalSearchInput.value = "";
+      applySearch();
+      return;
+    }
+    if (event.key !== "Enter" || matches.length === 0) return;
+
+    event.preventDefault();
+    matchIndex = (matchIndex + 1) % matches.length;
+    const target = matches[matchIndex];
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    const control = target.matches("input, select, textarea, button")
+      ? target
+      : target.querySelector("input, select, textarea, button");
+    control?.focus({ preventScroll: true });
+  });
+
+  window.addEventListener("tflex:languagechange", applySearch);
 }
 
 function numberValue(input, fallback = 0) {
@@ -382,7 +518,7 @@ function fillVisualSelect(select, codes, fallback = [], selectedValue = null) {
   select.replaceChildren();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = "Не выбрано";
+  empty.textContent = t("Не выбрано");
   select.append(empty);
   for (const code of values) {
     const option = document.createElement("option");
@@ -453,8 +589,8 @@ function renderVisualSelectOption(meta, selected = false) {
   return `
     ${meta.imageUrl ? `<img src="${escapeHtml(meta.imageUrl)}" alt="${escapeHtml(meta.code)}">` : `<span class="visual-select__fallback">${escapeHtml(String(meta.code).slice(0, 2))}</span>`}
     <span>
-      <strong>${escapeHtml(meta.code || "Не выбрано")}</strong>
-      <small>${escapeHtml(meta.description || "Без описания")}</small>
+      <strong>${escapeHtml(meta.code || t("Не выбрано"))}</strong>
+      <small>${escapeHtml(meta.description ? t(meta.description) : t("Без описания"))}</small>
     </span>
     ${selected ? `<b aria-hidden="true">✓</b>` : ""}
   `;
@@ -628,34 +764,55 @@ async function loadCurrentUser() {
     return false;
   }
 
-  state.currentUser = await response.json();
-  updateAuthView();
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return false;
+  state.currentUser = currentUser;
   return isAuthenticated();
 }
 
 async function loadCatalog() {
   const response = await apiFetch("/api/pricing/catalog");
   if (!response.ok) return;
-  state.catalog = await response.json();
+  const catalog = await sessionRequests.readJson(response);
+  if (catalog === sessionRequests.stalePayload) return;
+  state.catalog = catalog;
   renderCatalogControls();
 }
 
 async function loadProjects() {
   const response = await apiFetch("/api/projects");
   if (!response.ok) return;
-  state.projects = await response.json();
-  state.configurationsByProjectId = new Map();
-  state.pricingByProjectId = new Map();
+  const projects = await sessionRequests.readJson(response);
+  if (projects === sessionRequests.stalePayload) return;
 
-  await Promise.all(state.projects.map(async project => {
+  const projectEntries = await Promise.all(projects.map(async project => {
     const [configurationsResponse, pricingResponse] = await Promise.all([
       apiFetch(`/api/projects/${project.id}/configurations`),
       apiFetch(`/api/projects/${project.id}/pricing-specifications`)
     ]);
-    state.configurationsByProjectId.set(project.id, configurationsResponse.ok ? await configurationsResponse.json() : []);
-    state.pricingByProjectId.set(project.id, pricingResponse.ok ? await pricingResponse.json() : []);
-  }));
+    const configurations = configurationsResponse.ok
+      ? await sessionRequests.readJson(configurationsResponse)
+      : [];
+    const pricing = pricingResponse.ok
+      ? await sessionRequests.readJson(pricingResponse)
+      : [];
+    if (configurations === sessionRequests.stalePayload
+        || pricing === sessionRequests.stalePayload) {
+      return sessionRequests.stalePayload;
+    }
 
+    return [project.id, configurations, pricing];
+  }));
+  if (!sessionRequests.isCurrent(response)
+      || projectEntries.includes(sessionRequests.stalePayload)) {
+    return;
+  }
+
+  state.projects = projects;
+  state.configurationsByProjectId = new Map(
+    projectEntries.map(([projectId, configurations]) => [projectId, configurations]));
+  state.pricingByProjectId = new Map(
+    projectEntries.map(([projectId, , pricing]) => [projectId, pricing]));
   renderProjects();
 }
 
@@ -1079,7 +1236,7 @@ function collectRequest() {
 
 function markCalculationPending() {
   if (!state.currentUser || !state.catalog) return;
-  pricingStatus.textContent = "Считается...";
+  pricingStatus.textContent = t("Считается...");
   pricingStatus.className = "pricing-status is-loading";
   savePricingButton.disabled = true;
   downloadTkpButton.disabled = true;
@@ -1114,7 +1271,7 @@ async function calculate(event) {
     if (!response.ok) {
       const messages = await readProblem(response, "Не удалось выполнить расчет");
       renderWarnings(messages, true);
-      pricingStatus.textContent = "Ошибка расчета";
+      pricingStatus.textContent = t("Ошибка расчета");
       pricingStatus.className = "pricing-status is-blocked";
       state.lastCalculation = null;
       state.lastRequest = null;
@@ -1123,13 +1280,18 @@ async function calculate(event) {
       return;
     }
 
+    const calculation = await sessionRequests.readJson(response);
+    if (calculation === sessionRequests.stalePayload
+        || requestId !== calculationRequestId) {
+      return;
+    }
     state.lastRequest = request;
-    state.lastCalculation = await response.json();
+    state.lastCalculation = calculation;
     renderCalculation();
   } catch {
     if (requestId !== calculationRequestId) return;
     renderWarnings(["Не удалось выполнить расчет. Проверьте соединение с API."], true);
-    pricingStatus.textContent = "Ошибка расчета";
+    pricingStatus.textContent = t("Ошибка расчета");
     pricingStatus.className = "pricing-status is-blocked";
     state.lastCalculation = null;
     state.lastRequest = null;
@@ -1142,14 +1304,14 @@ function renderCalculation() {
   const calculation = state.lastCalculation;
   if (!calculation) return;
   pricingStatus.textContent = calculation.status === "ready"
-    ? "Расчет готов"
+    ? t("Расчет готов")
     : calculation.status === "warning"
-      ? "Предварительный расчет"
-      : "Недоступно";
+      ? t("Предварительный расчет")
+      : t("Недоступно");
   pricingStatus.className = `pricing-status is-${calculation.status}`;
   totalCny.textContent = money(calculation.totalCny, "CNY");
   totalConverted.textContent = money(calculation.totalConverted, calculation.targetCurrency);
-  rateInfo.textContent = `Курс: 1 CNY = ${calculation.exchangeRate} ${calculation.targetCurrency} · ${calculation.exchangeRateSource}`;
+  rateInfo.textContent = `${t("Курс:")} 1 CNY = ${calculation.exchangeRate} ${calculation.targetCurrency} · ${calculation.exchangeRateSource}`;
 
   pricingLines.replaceChildren();
   for (const line of calculation.lines || []) {
@@ -1171,7 +1333,9 @@ function renderCalculation() {
   }
 
   renderWarnings([...(calculation.blockers || []), ...(calculation.warnings || [])], calculation.status === "blocked");
-  const saveDisabled = calculation.status === "blocked" || !pricingProjectSelect.value;
+  const saveDisabled = !canSavePricing()
+    || calculation.status === "blocked"
+    || !pricingProjectSelect.value;
   savePricingButton.disabled = saveDisabled;
   downloadTkpButton.disabled = saveDisabled;
 }
@@ -1183,7 +1347,7 @@ function renderWarnings(messages, isError = false) {
 }
 
 async function savePricing() {
-  if (!state.lastRequest || !pricingProjectSelect.value) return;
+  if (!canSavePricing() || !state.lastRequest || !pricingProjectSelect.value) return;
   const response = await apiFetch(`/api/projects/${encodeURIComponent(pricingProjectSelect.value)}/pricing-specifications`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1199,8 +1363,10 @@ async function savePricing() {
     return;
   }
 
-  const savedSpecification = await response.json();
+  const savedSpecification = await sessionRequests.readJson(response);
+  if (savedSpecification === sessionRequests.stalePayload) return;
   await loadProjects();
+  if (!sessionRequests.isCurrent(response)) return;
   savePricingButton.disabled = true;
   downloadTkpButton.disabled = true;
   return savedSpecification;
@@ -1231,44 +1397,50 @@ async function register(event) {
   registerStatus.hidden = false;
   if (!response.ok) {
     registerStatus.className = "error";
-    registerStatus.textContent = (await readProblem(response, "Не удалось отправить заявку")).join(" ");
+    registerStatus.textContent = (await readProblem(response, t("Не удалось отправить заявку"))).join(" ");
     return;
   }
 
   registerForm.reset();
   registerStatus.className = "empty";
-  registerStatus.textContent = "Заявка отправлена. Доступ появится после подтверждения администратором.";
+  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
   event.preventDefault();
+  loginPassword.setCustomValidity("");
+  const credentials = {
+    userName: loginUserName.value,
+    password: loginPassword.value
+  };
+  loginPassword.value = "";
   const response = await apiFetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userName: loginUserName.value,
-      password: loginPassword.value
-    })
+    body: JSON.stringify(credentials)
   });
 
   if (!response.ok) {
-    loginPassword.setCustomValidity("Неверный логин или пароль");
+    loginPassword.setCustomValidity(t("Неверный логин или пароль"));
     loginPassword.reportValidity();
     return;
   }
 
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return;
+  clearPricingSessionState();
   loginPassword.setCustomValidity("");
-  state.currentUser = await response.json();
+  state.currentUser = currentUser;
+  await Promise.allSettled([loadCatalog(), loadProjects()]);
   updateAuthView();
-  await Promise.all([loadCatalog(), loadProjects()]);
-  scheduleLiveCalculation();
+  if (isAuthenticated()) scheduleLiveCalculation();
 }
 
 async function logout() {
-  window.clearTimeout(liveCalculationTimer);
-  await apiFetch("/api/auth/logout", { method: "POST" });
+  clearPricingSessionState();
   state.currentUser = null;
   updateAuthView();
+  await apiFetch("/api/auth/logout", { method: "POST" });
 }
 
 supplierSelect.addEventListener("change", renderCatalogControls);
@@ -1317,8 +1489,30 @@ userPanel?.addEventListener("click", event => {
   if (logoutButton?.contains(event.target)) return;
   window.location.assign("/account");
 });
+setupPricingSearch();
+syncMobilePricingSummary();
+const pricingSummary = pricingStatus?.closest(".pricing-total");
+if (pricingSummary) {
+  new MutationObserver(syncMobilePricingSummary).observe(pricingSummary, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["class"]
+  });
+}
+window.addEventListener("tflex:languagechange", () => {
+  document.querySelectorAll("[data-visual-select] option[value='']").forEach(option => {
+    option.textContent = t("Не выбрано");
+  });
+  syncAllVisualSelects();
+  if (state.lastCalculation) renderCalculation();
+  renderSavedPricing();
+  syncMobilePricingSummary();
+});
 
 if (await loadCurrentUser()) {
-  await Promise.all([loadCatalog(), loadProjects()]);
-  scheduleLiveCalculation();
+  await Promise.allSettled([loadCatalog(), loadProjects()]);
+  updateAuthView();
+  if (isAuthenticated()) scheduleLiveCalculation();
 }

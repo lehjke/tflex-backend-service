@@ -198,6 +198,72 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
+    public async Task MissingBasePrice_BlocksCalculation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var dataDirectory = Path.Combine(root, "Data");
+        Directory.CreateDirectory(dataDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(dataDirectory, "pricing-catalog.json"),
+            """
+            {
+              "generatedAt": "2026-06-24T00:00:00Z",
+              "currency": "CNY",
+              "xizi": { "basePrices": [] },
+              "smec": {}
+            }
+            """);
+
+        try
+        {
+            var store = new PricingCatalogStore(
+                new TestWebHostEnvironment(root),
+                new TestHttpClientFactory());
+            var result = await store.CalculateAsync(
+                new PricingCalculationRequest(
+                    "XIZI",
+                    "UNKNOWN",
+                    1000,
+                    1m,
+                    5,
+                    900,
+                    "CO",
+                    "FERMATOR",
+                    5,
+                    0,
+                    null,
+                    [],
+                    false,
+                    false,
+                    "CNY",
+                    null,
+                    null,
+                    new Dictionary<string, string>(),
+                    null));
+
+            Assert.Equal("blocked", result.Status);
+            Assert.Contains(
+                result.Blockers,
+                blocker => blocker.Contains("обязательная цена", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Lines, line => line.Code == "base" && line.Status == "blocked");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("XIZI", true)]
+    [InlineData("smec", true)]
+    [InlineData("BOGUS", false)]
+    [InlineData(null, false)]
+    public void SupplierWhitelist_OnlyAllowsKnownCatalogs(string? supplier, bool expected)
+    {
+        Assert.Equal(expected, PricingCatalogStore.IsSupportedSupplier(supplier));
+    }
+
+    [Fact]
     public async Task SmecControlAndDisplays_UseKipQuantities()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));

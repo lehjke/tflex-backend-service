@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Личный кабинет — METEOR Engineering Center</title>
   <link rel="icon" href="/assets/meteor-logo-eng-dark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260625-main-sync-1">
+  <link rel="stylesheet" href="/styles.css?v=20260720-ui-hardening-3">
 </head>
 <body>
   <div class="app-shell">
@@ -246,6 +246,35 @@
             </div>
           </section>
 
+          <section class="panel panel--wide template-import">
+            <div class="panel__header">
+              <div>
+                <h2>Импорт шаблона</h2>
+                <p class="panel__subtitle">Добавление новых шаблонов доступно только администраторам.</p>
+              </div>
+              <a
+                class="secondary-link template-import__example"
+                href="/assets/template-manifest.example.json"
+                download="template-manifest.example.json">Скачать пример JSON</a>
+            </div>
+            <form id="templateImportForm" class="template-import__form">
+              <label class="field">
+                <span class="field__label">Манифест JSON</span>
+                <input id="templateManifestFile" name="manifest" type="file" accept=".json,application/json" required>
+              </label>
+              <label class="field">
+                <span class="field__label">Файл шаблона GRB</span>
+                <input id="templateGrbFile" name="template" type="file" accept=".grb,application/octet-stream" required>
+              </label>
+              <label class="field">
+                <span class="field__label">Фрагменты ZIP (необязательно)</span>
+                <input id="templateFragmentsFile" name="fragments" type="file" accept=".zip,application/zip">
+              </label>
+              <button id="templateImportButton" class="primary" type="submit">Импортировать</button>
+            </form>
+            <div id="templateImportStatus" class="template-import__status" role="status" aria-live="polite" hidden></div>
+          </section>
+
           <section class="panel panel--wide admin-users-section">
             <div class="panel__header">
               <h2>Пользователи</h2>
@@ -269,7 +298,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260614-meteor-shell-14"></script>
-  <script type="module" src="/account.js?v=20260625-main-sync-1"></script>
+  <script type="module" src="/shell.js?v=20260720-ui-hardening-4"></script>
+  <script type="module" src="/account.js?v=20260720-ui-hardening-4"></script>
 </body>
 </html>

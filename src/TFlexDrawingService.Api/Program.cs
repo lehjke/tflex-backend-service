@@ -21,6 +21,12 @@ const string AdminPolicy = "Admin";
 const string JobCreateRateLimitPolicy = "job-create";
 const string LoginRateLimitPolicy = "login";
 const string CsrfHeaderName = "X-TFlex-Requested-With";
+const string InlineGeneratedFileItemKey = "TFlexDrawingService.InlineGeneratedFile";
+const long MaxTemplateImportRequestBodyBytes =
+    TemplateImportService.MaxManifestBytes
+    + TemplateImportService.MaxTemplateBytes
+    + TemplateImportService.MaxFragmentsArchiveBytes
+    + (2L * 1024 * 1024);
 
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 {
@@ -29,17 +35,21 @@ var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 
 var builder = WebApplication.CreateBuilder(args);
 var securityOptions = builder.Configuration.GetSection("Security").Get<SecurityOptions>() ?? new SecurityOptions();
+SecurityOptionsValidation.Validate(securityOptions, builder.Environment.IsDevelopment());
 
 builder.Host.UseWindowsService(options => options.ServiceName = "TFlexDrawingService.Api");
 builder.WebHost.ConfigureKestrel(options =>
 {
-    if (securityOptions.MaxRequestBodyBytes > 0)
-    {
-        options.Limits.MaxRequestBodySize = securityOptions.MaxRequestBodyBytes;
-    }
+    options.Limits.MaxRequestBodySize = Math.Max(
+        securityOptions.MaxRequestBodyBytes,
+        MaxTemplateImportRequestBodyBytes);
 });
 
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = MaxTemplateImportRequestBodyBytes;
+});
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -53,6 +63,8 @@ builder.Services.AddSingleton<ConfiguredUserStore>();
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<TemplateAccessStore>();
 builder.Services.AddSingleton<PricingCatalogStore>();
+builder.Services.AddSingleton<TemplateImportService>();
+builder.Services.AddSingleton<ServiceReadinessProbe>();
 builder.Services.AddHttpClient();
 builder.Services.AddDrawingInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 
@@ -174,14 +186,20 @@ app.Use(async (context, next) =>
     context.Response.OnStarting(() =>
     {
         var headers = context.Response.Headers;
+        var isInlineGeneratedFile = context.Items.ContainsKey(InlineGeneratedFileItemKey);
         headers["X-Content-Type-Options"] = "nosniff";
-        headers["X-Frame-Options"] = "DENY";
+        headers["X-Frame-Options"] = isInlineGeneratedFile ? "SAMEORIGIN" : "DENY";
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-        headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
-        headers["Content-Security-Policy"] =
-            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; " +
-            "font-src 'self'; img-src 'self' data:; " +
-            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+        if (context.Request.IsHttps)
+        {
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+        }
+
+        headers["Content-Security-Policy"] = isInlineGeneratedFile
+            ? "default-src 'none'; frame-ancestors 'self'"
+            : "default-src 'self'; script-src 'self'; style-src 'self'; " +
+              "font-src 'self'; img-src 'self' data:; " +
+              "object-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
         return Task.CompletedTask;
     });
 
@@ -190,8 +208,16 @@ app.Use(async (context, next) =>
 
 app.Use(async (context, next) =>
 {
-    if (securityOptions.MaxRequestBodyBytes > 0
-        && context.Request.ContentLength > securityOptions.MaxRequestBodyBytes)
+    var requestBodyLimit = IsTemplateImportRequest(context.Request)
+        ? MaxTemplateImportRequestBodyBytes
+        : securityOptions.MaxRequestBodyBytes;
+    var maxRequestBodySizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (maxRequestBodySizeFeature is { IsReadOnly: false })
+    {
+        maxRequestBodySizeFeature.MaxRequestBodySize = requestBodyLimit;
+    }
+
+    if (context.Request.ContentLength > requestBodyLimit)
     {
         context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
         await Results.Problem(
@@ -333,11 +359,31 @@ app.MapGet("/api/auth/me", async (
 })
 .AllowAnonymous();
 
-app.MapGet("/api/health", () => Results.Ok(new
+var livenessHandler = () => Results.Ok(new
 {
     Status = "ok",
     Time = DateTimeOffset.UtcNow
-}))
+});
+
+app.MapGet("/api/health", livenessHandler)
+.AllowAnonymous();
+
+app.MapGet("/api/health/live", livenessHandler)
+.AllowAnonymous();
+
+app.MapGet("/api/health/ready", async (
+    ServiceReadinessProbe readinessProbe,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    var readiness = await readinessProbe.CheckAsync(cancellationToken);
+    return Results.Json(
+        readiness,
+        statusCode: readiness.Ready
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status503ServiceUnavailable);
+})
 .AllowAnonymous();
 
 var adminUsersEndpoint = app.MapGet("/api/admin/users", async (
@@ -356,13 +402,31 @@ var adminApproveUserEndpoint = app.MapPost("/api/admin/users/{userName}/approve"
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
+    var existing = await users.FindUserAsync(userName, cancellationToken);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (!string.Equals(existing.ApprovalStatus, "Pending", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(existing.ApprovalStatus, "Rejected", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["approvalStatus"] = ["Only pending or rejected users can be approved."]
+        });
+    }
+
     return await users.ApproveUserAsync(
         userName,
         GetUserName(context.User),
         request.Roles,
         cancellationToken)
         ? Results.NoContent()
-        : Results.NotFound();
+        : Results.Conflict(new
+        {
+            Message = "The user state changed before the approval was saved."
+        });
 });
 RequirePolicy(adminApproveUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
@@ -380,9 +444,31 @@ var adminRejectUserEndpoint = app.MapPost("/api/admin/users/{userName}/reject", 
         });
     }
 
+    var existing = await users.FindUserAsync(userName, cancellationToken);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (existing.Enabled
+        && IsApprovedUser(existing)
+        && existing.Roles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["userName"] =
+            [
+                "An active admin cannot be rejected. Demote the user through the guarded edit operation first."
+            ]
+        });
+    }
+
     return await users.RejectUserAsync(userName, GetUserName(context.User), cancellationToken)
         ? Results.NoContent()
-        : Results.NotFound();
+        : Results.Conflict(new
+        {
+            Message = "The user state changed before the rejection was saved."
+        });
 });
 RequirePolicy(adminRejectUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
@@ -390,6 +476,7 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
     string userName,
     UserUpsertRequest request,
     ConfiguredUserStore users,
+    HttpContext context,
     CancellationToken cancellationToken) =>
 {
     var normalizedUserName = userName.Trim();
@@ -410,6 +497,31 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
         });
     }
 
+    var normalizedRoles = NormalizeRoles(request.Roles ?? existing?.Roles ?? ["Viewer"]);
+    var enabled = request.Enabled ?? existing?.Enabled ?? true;
+    var removesAdministrativeAccess = existing is not null
+        && existing.Enabled
+        && IsApprovedUser(existing)
+        && existing.Roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        && (!enabled || !normalizedRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase));
+    if (removesAdministrativeAccess)
+    {
+        var isSelf = string.Equals(
+            normalizedUserName,
+            GetUserName(context.User),
+            StringComparison.OrdinalIgnoreCase);
+        if (isSelf)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["roles"] =
+                [
+                    "You cannot disable or remove the Admin role from your own user."
+                ]
+            });
+        }
+    }
+
     var updated = new ConfiguredUser
     {
         UserName = normalizedUserName,
@@ -419,12 +531,29 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
         PasswordHash = string.IsNullOrWhiteSpace(request.Password)
             ? existing!.PasswordHash
             : PasswordHashing.HashPassword(request.Password),
-        Enabled = request.Enabled ?? existing?.Enabled ?? true,
-        Roles = NormalizeRoles(request.Roles ?? existing?.Roles ?? ["Viewer"]).ToList()
+        Enabled = enabled,
+        ApprovalStatus = existing?.ApprovalStatus ?? "Approved",
+        RequestedAt = existing?.RequestedAt,
+        ApprovedAt = existing?.ApprovedAt,
+        ApprovedByUserName = existing?.ApprovedByUserName,
+        Roles = normalizedRoles.ToList()
     };
 
-    await users.UpsertUserAsync(updated, cancellationToken);
-    return Results.Ok(ToPublicUserDto(updated));
+    var upsertResult = await users.TryUpsertUserPreservingLastAdminAsync(updated, cancellationToken);
+    return upsertResult switch
+    {
+        ConfiguredUserUpsertResult.Succeeded => Results.Ok(ToPublicUserDto(updated)),
+        ConfiguredUserUpsertResult.LastEnabledAdminWouldBeRemoved =>
+            Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["roles"] = ["The last enabled admin user cannot be disabled or demoted."]
+            }),
+        ConfiguredUserUpsertResult.UserNameReserved => Results.Conflict(new
+        {
+            Message = "This user name is reserved and cannot be reused."
+        }),
+        _ => Results.StatusCode(StatusCodes.Status500InternalServerError)
+    };
 });
 RequirePolicy(adminUpsertUserEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
@@ -472,12 +601,13 @@ var templatesEndpoint = app.MapGet("/api/templates", async (
     var templates = await catalog.ListAsync(cancellationToken);
     if (!securityOptions.RequireAuthentication || context.User.IsInRole("Admin"))
     {
-        return Results.Ok(templates);
+        return Results.Ok(templates.Select(ToPublicTemplateDto));
     }
 
     var states = await templateAccess.GetStatesAsync(cancellationToken);
-    return Results.Ok(templates.Where(template =>
-        !states.TryGetValue(template.Id, out var enabled) || enabled));
+    return Results.Ok(templates
+        .Where(template => !states.TryGetValue(template.Id, out var enabled) || enabled)
+        .Select(ToPublicTemplateDto));
 });
 RequirePolicy(templatesEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
@@ -497,7 +627,7 @@ var templateEndpoint = app.MapGet("/api/templates/{id}", async (
         return Results.NotFound();
     }
 
-    return template is null ? Results.NotFound() : Results.Ok(template);
+    return template is null ? Results.NotFound() : Results.Ok(ToPublicTemplateDto(template));
 });
 RequirePolicy(templateEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
@@ -518,6 +648,73 @@ var adminTemplatesEndpoint = app.MapGet("/api/admin/templates", async (
     }));
 });
 RequirePolicy(adminTemplatesEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var adminTemplateImportEndpoint = app.MapPost("/api/admin/templates/import", async (
+    HttpRequest request,
+    TemplateImportService templateImporter,
+    TemplateAccessStore templateAccess,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["A multipart/form-data request is required."]
+        });
+    }
+
+    IFormCollection form;
+    try
+    {
+        form = await request.ReadFormAsync(cancellationToken);
+    }
+    catch (InvalidDataException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["The multipart form is invalid or exceeds the configured limit."]
+        });
+    }
+    catch (BadHttpRequestException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["The multipart form could not be read."]
+        });
+    }
+    catch (IOException) when (!cancellationToken.IsCancellationRequested)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["The multipart upload was interrupted or could not be read."]
+        });
+    }
+
+    var result = await templateImporter.ImportAsync(
+        form.Files.GetFile("manifest"),
+        form.Files.GetFile("template"),
+        form.Files.GetFile("fragments"),
+        cancellationToken);
+    if (!result.IsSuccess || result.Template is null)
+    {
+        return Results.ValidationProblem(result.Errors.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase));
+    }
+
+    await templateAccess.SetEnabledAsync(
+        result.Template.Id,
+        enabled: true,
+        GetUserName(context.User),
+        cancellationToken);
+
+    return Results.Created(
+        $"/api/templates/{Uri.EscapeDataString(result.Template.Id)}",
+        ToPublicTemplateDto(result.Template));
+});
+RequirePolicy(adminTemplateImportEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
 var adminTemplateEnabledEndpoint = app.MapPut("/api/admin/templates/{templateId}/enabled", async (
     string templateId,
@@ -541,7 +738,6 @@ RequirePolicy(adminTemplateEnabledEndpoint, securityOptions.RequireAuthenticatio
 var createJobEndpoint = app.MapPost("/api/jobs", async (
     CreateDrawingJobRequest request,
     IDrawingRequestValidator validator,
-    IDrawingJobRepository repository,
     IDrawingJobQueue queue,
     TemplateAccessStore templateAccess,
     IOptions<DrawingQueueOptions> queueOptions,
@@ -550,24 +746,6 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
 {
     var ownerUserName = securityOptions.RequireAuthentication ? GetUserName(context.User) : "local";
     var queueLimits = queueOptions.Value;
-    var activeTotal = await repository.CountActiveAsync(cancellationToken: cancellationToken);
-    if (activeTotal >= queueLimits.MaxActiveJobs)
-    {
-        return Results.Problem(
-            title: "Queue is full.",
-            detail: "Try again after current drawing jobs finish.",
-            statusCode: StatusCodes.Status429TooManyRequests);
-    }
-
-    var activeForUser = await repository.CountActiveAsync(ownerUserName, cancellationToken);
-    if (activeForUser >= queueLimits.MaxActiveJobsPerUser)
-    {
-        return Results.Problem(
-            title: "User queue limit reached.",
-            detail: "Wait for one of your drawing jobs to finish before creating another.",
-            statusCode: StatusCodes.Status429TooManyRequests);
-    }
-
     var validation = await validator.ValidateAsync(request, cancellationToken);
     if (!validation.IsValid || validation.Template is null || validation.OutputFormat is null)
     {
@@ -597,7 +775,27 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
         CreatedAt = DateTimeOffset.UtcNow
     };
 
-    await queue.EnqueueAsync(job, cancellationToken);
+    var enqueueResult = await queue.TryEnqueueAsync(
+        job,
+        queueLimits.MaxActiveJobs,
+        queueLimits.MaxActiveJobsPerUser,
+        cancellationToken);
+    if (enqueueResult == DrawingJobEnqueueResult.TotalLimitReached)
+    {
+        return Results.Problem(
+            title: "Queue is full.",
+            detail: "Try again after current drawing jobs finish.",
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
+    if (enqueueResult == DrawingJobEnqueueResult.UserLimitReached)
+    {
+        return Results.Problem(
+            title: "User queue limit reached.",
+            detail: "Wait for one of your drawing jobs to finish before creating another.",
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
     return Results.Created($"/api/jobs/{job.Id}", ToJobDto(job, context.User, securityOptions));
 })
 .RequireRateLimiting(JobCreateRateLimitPolicy);
@@ -636,6 +834,7 @@ RequirePolicy(jobEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 var downloadEndpoint = app.MapGet("/api/jobs/{jobId}/files/{fileId}/download", async (
     string jobId,
     string fileId,
+    bool? inline,
     IDrawingJobRepository repository,
     IOptions<DrawingStorageOptions> storageOptions,
     HttpContext context,
@@ -652,7 +851,22 @@ var downloadEndpoint = app.MapGet("/api/jobs/{jobId}/files/{fileId}/download", a
         return Results.NotFound();
     }
 
-    return Results.File(file.Path, ContentTypeFor(file.Format), file.FileName);
+    var contentType = ContentTypeFor(file.Format);
+    context.Response.Headers.CacheControl = "private, no-store";
+    if (inline == true && string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Items[InlineGeneratedFileItemKey] = true;
+        return Results.File(
+            file.Path,
+            contentType,
+            enableRangeProcessing: true);
+    }
+
+    return Results.File(
+        file.Path,
+        contentType,
+        fileDownloadName: file.FileName,
+        enableRangeProcessing: true);
 });
 RequirePolicy(downloadEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
@@ -690,7 +904,7 @@ var createProjectEndpoint = app.MapPost("/api/projects", async (
         cancellationToken);
     return Results.Created($"/api/projects/{project.Id}", project);
 });
-RequirePolicy(createProjectEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(createProjectEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var updateProjectEndpoint = app.MapPut("/api/projects/{projectId}", async (
     string projectId,
@@ -720,7 +934,7 @@ var updateProjectEndpoint = app.MapPut("/api/projects/{projectId}", async (
         ? Results.NotFound()
         : Results.Ok(project);
 });
-RequirePolicy(updateProjectEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(updateProjectEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
     string projectId,
@@ -735,7 +949,7 @@ var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
         ? Results.NoContent()
         : Results.NotFound();
 });
-RequirePolicy(deleteProjectEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(deleteProjectEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var projectConfigurationsEndpoint = app.MapGet("/api/projects/{projectId}/configurations", async (
     string projectId,
@@ -772,31 +986,30 @@ var saveConfigurationEndpoint = app.MapPost("/api/projects/{projectId}/configura
     string projectId,
     ProjectConfigurationSaveRequest request,
     ProjectStore projects,
-    ITemplateCatalog catalog,
+    IDrawingRequestValidator validator,
     TemplateAccessStore templateAccess,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var template = await catalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
-    if (template is null)
+    var validation = await validator.ValidateAsync(
+        new CreateDrawingJobRequest
+        {
+            TemplateId = request.TemplateId,
+            OutputFormat = request.OutputFormat,
+            Parameters = request.Parameters ?? new Dictionary<string, JsonElement>()
+        },
+        cancellationToken);
+    if (!validation.IsValid || validation.Template is null || validation.OutputFormat is null)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["templateId"] = ["Template was not found."]
-        });
-    }
-
-    if (!template.OutputFormats.Contains(request.OutputFormat, StringComparer.OrdinalIgnoreCase))
-    {
-        return Results.ValidationProblem(new Dictionary<string, string[]>
-        {
-            ["outputFormat"] = ["Output format is not available for this template."]
+            ["request"] = validation.Errors.ToArray()
         });
     }
 
     if (securityOptions.RequireAuthentication
         && !context.User.IsInRole("Admin")
-        && !await templateAccess.IsEnabledAsync(template.Id, cancellationToken))
+        && !await templateAccess.IsEnabledAsync(validation.Template.Id, cancellationToken))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
@@ -808,9 +1021,9 @@ var saveConfigurationEndpoint = app.MapPost("/api/projects/{projectId}/configura
         GetProjectOwnerScope(context.User, securityOptions),
         projectId,
         request.Name,
-        template.Id,
-        request.OutputFormat,
-        request.Parameters ?? new Dictionary<string, JsonElement>(),
+        validation.Template.Id,
+        validation.OutputFormat,
+        ToJsonElements(validation.NormalizedParameters),
         cancellationToken);
 
     return configuration is null
@@ -819,37 +1032,36 @@ var saveConfigurationEndpoint = app.MapPost("/api/projects/{projectId}/configura
             $"/api/projects/{projectId}/configurations/{configuration.Id}",
             ToProjectConfigurationDto(configuration));
 });
-RequirePolicy(saveConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(saveConfigurationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var updateConfigurationEndpoint = app.MapPut("/api/project-configurations/{configurationId}", async (
     string configurationId,
     ProjectConfigurationSaveRequest request,
     ProjectStore projects,
-    ITemplateCatalog catalog,
+    IDrawingRequestValidator validator,
     TemplateAccessStore templateAccess,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var template = await catalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
-    if (template is null)
+    var validation = await validator.ValidateAsync(
+        new CreateDrawingJobRequest
+        {
+            TemplateId = request.TemplateId,
+            OutputFormat = request.OutputFormat,
+            Parameters = request.Parameters ?? new Dictionary<string, JsonElement>()
+        },
+        cancellationToken);
+    if (!validation.IsValid || validation.Template is null || validation.OutputFormat is null)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["templateId"] = ["Template was not found."]
-        });
-    }
-
-    if (!template.OutputFormats.Contains(request.OutputFormat, StringComparer.OrdinalIgnoreCase))
-    {
-        return Results.ValidationProblem(new Dictionary<string, string[]>
-        {
-            ["outputFormat"] = ["Output format is not available for this template."]
+            ["request"] = validation.Errors.ToArray()
         });
     }
 
     if (securityOptions.RequireAuthentication
         && !context.User.IsInRole("Admin")
-        && !await templateAccess.IsEnabledAsync(template.Id, cancellationToken))
+        && !await templateAccess.IsEnabledAsync(validation.Template.Id, cancellationToken))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
@@ -861,16 +1073,16 @@ var updateConfigurationEndpoint = app.MapPut("/api/project-configurations/{confi
         GetProjectOwnerScope(context.User, securityOptions),
         configurationId,
         request.Name,
-        template.Id,
-        request.OutputFormat,
-        request.Parameters ?? new Dictionary<string, JsonElement>(),
+        validation.Template.Id,
+        validation.OutputFormat,
+        ToJsonElements(validation.NormalizedParameters),
         cancellationToken);
 
     return configuration is null
         ? Results.NotFound()
         : Results.Ok(ToProjectConfigurationDto(configuration));
 });
-RequirePolicy(updateConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(updateConfigurationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{configurationId}", async (
     string configurationId,
@@ -885,7 +1097,7 @@ var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{co
         ? Results.NoContent()
         : Results.NotFound();
 });
-RequirePolicy(deleteConfigurationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(deleteConfigurationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var pricingCatalogEndpoint = app.MapGet("/api/pricing/catalog", (
     PricingCatalogStore pricing) =>
@@ -895,23 +1107,20 @@ var pricingCatalogEndpoint = app.MapGet("/api/pricing/catalog", (
 RequirePolicy(pricingCatalogEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 var pricingCalculateEndpoint = app.MapPost("/api/pricing/calculate", async (
-    PricingCalculationRequest request,
+    PricingCalculationRequest? request,
     PricingCatalogStore pricing,
     CancellationToken cancellationToken) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Supplier)
-        || string.IsNullOrWhiteSpace(request.Series)
-        || request.CapacityKg <= 0
-        || request.Speed <= 0
-        || request.Stops <= 0)
+    var validationErrors = ValidatePricingRequest(request);
+    if (validationErrors.Count > 0)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["request"] = ["Supplier, series, capacity, speed and stops are required."]
+            ["request"] = validationErrors.ToArray()
         });
     }
 
-    return Results.Ok(await pricing.CalculateAsync(request, cancellationToken));
+    return Results.Ok(await pricing.CalculateAsync(request!, cancellationToken));
 });
 RequirePolicy(pricingCalculateEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
@@ -931,13 +1140,46 @@ RequirePolicy(pricingSpecificationsEndpoint, securityOptions.RequireAuthenticati
 
 var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pricing-specifications", async (
     string projectId,
-    PricingSpecificationSaveRequest request,
+    PricingSpecificationSaveRequest? request,
     ProjectStore projects,
     PricingCatalogStore pricing,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var calculation = await pricing.CalculateAsync(request.Request, cancellationToken);
+    var validationErrors = ValidatePricingRequest(request?.Request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = validationErrors.ToArray()
+        });
+    }
+
+    var pricingRequest = request!.Request!;
+    if (!string.IsNullOrWhiteSpace(pricingRequest.ProjectConfigurationId))
+    {
+        var projectConfiguration = await projects.GetConfigurationAsync(
+            pricingRequest.ProjectConfigurationId,
+            GetProjectOwnerScope(context.User, securityOptions),
+            cancellationToken);
+        if (projectConfiguration is null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["projectConfigurationId"] = ["Project configuration was not found."]
+            });
+        }
+
+        if (!string.Equals(projectConfiguration.ProjectId, projectId, StringComparison.Ordinal))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["projectConfigurationId"] = ["Project configuration does not belong to the target project."]
+            });
+        }
+    }
+
+    var calculation = await pricing.CalculateAsync(pricingRequest, cancellationToken);
     if (calculation.Status == "blocked")
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -947,14 +1189,14 @@ var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pr
     }
 
     var name = string.IsNullOrWhiteSpace(request.Name)
-        ? request.Request.Name ?? $"{calculation.Series} {request.Request.CapacityKg} кг"
+        ? pricingRequest.Name ?? $"{calculation.Series} {pricingRequest.CapacityKg} кг"
         : request.Name;
     var specification = await projects.SavePricingSpecificationAsync(
         GetEffectiveUserName(context.User, securityOptions),
         projectId,
-        request.Request.ProjectConfigurationId,
+        pricingRequest.ProjectConfigurationId,
         name,
-        request.Request,
+        pricingRequest,
         calculation,
         cancellationToken);
 
@@ -962,7 +1204,7 @@ var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pr
         ? Results.NotFound()
         : Results.Created($"/api/pricing-specifications/{specification.Id}", ToPricingSpecificationDto(specification));
 });
-RequirePolicy(savePricingSpecificationEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+RequirePolicy(savePricingSpecificationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
 var pricingSpecificationEndpoint = app.MapGet("/api/pricing-specifications/{specificationId}", async (
     string specificationId,
@@ -1000,12 +1242,17 @@ var pricingTkpEndpoint = app.MapGet("/api/pricing-specifications/{specificationI
         cancellationToken);
     var bytes = pricing.BuildTkpDocx(specification, project);
     var fileName = $"{SanitizeFileName(specification.Name)}-tkp.docx";
+    context.Response.Headers.CacheControl = "private, no-store";
     return Results.File(
         bytes,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         fileName);
 });
 RequirePolicy(pricingTkpEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+app.Map("/api/{**path}", () => Results.Problem(
+    statusCode: StatusCodes.Status404NotFound,
+    title: "API endpoint not found."));
 
 app.MapFallbackToFile("index.html");
 
@@ -1015,6 +1262,35 @@ static IResult ServeHtml(IWebHostEnvironment environment, string fileName)
 {
     var webRootPath = environment.WebRootPath ?? Path.Combine(environment.ContentRootPath, "wwwroot");
     return Results.File(Path.Combine(webRootPath, fileName), "text/html");
+}
+
+static List<string> ValidatePricingRequest(PricingCalculationRequest? request)
+{
+    if (request is null)
+    {
+        return ["Request body is required."];
+    }
+
+    var errors = new List<string>();
+    if (!PricingCatalogStore.IsSupportedSupplier(request.Supplier))
+    {
+        errors.Add("Supplier must be XIZI or SMEC.");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Series)
+        || request.CapacityKg <= 0
+        || request.Speed <= 0
+        || request.Stops <= 0)
+    {
+        errors.Add("Series, capacity, speed and stops are required.");
+    }
+
+    if (request.DoorCount <= 0)
+    {
+        errors.Add("Door count must be greater than zero.");
+    }
+
+    return errors;
 }
 
 static RouteHandlerBuilder RequirePolicy(
@@ -1104,6 +1380,22 @@ static object ToPublicUserDto(ConfiguredUser user)
         user.ApprovedAt,
         user.ApprovedByUserName,
         Roles = NormalizeRoles(user.Roles)
+    };
+}
+
+static object ToPublicTemplateDto(DrawingTemplate template)
+{
+    return new
+    {
+        template.Id,
+        template.Code,
+        template.Name,
+        template.Description,
+        template.OutputFormats,
+        template.Parameters,
+        template.CalculatedVariables,
+        template.ValidationRules,
+        template.LookupTables
     };
 }
 
@@ -1275,6 +1567,15 @@ static bool IsApiRequest(HttpRequest request)
     return request.Path.StartsWithSegments("/api");
 }
 
+static bool IsTemplateImportRequest(HttpRequest request)
+{
+    return HttpMethods.IsPost(request.Method)
+        && string.Equals(
+            request.Path.Value,
+            "/api/admin/templates/import",
+            StringComparison.OrdinalIgnoreCase);
+}
+
 static bool IsUnsafeApiRequest(HttpRequest request)
 {
     if (!IsApiRequest(request))
@@ -1311,6 +1612,15 @@ static IReadOnlyDictionary<string, JsonElement> DeserializeParameters(string par
         ?? new Dictionary<string, JsonElement>();
 }
 
+static IReadOnlyDictionary<string, JsonElement> ToJsonElements(
+    IReadOnlyDictionary<string, object?> parameters)
+{
+    return parameters.ToDictionary(
+        pair => pair.Key,
+        pair => JsonSerializer.SerializeToElement(pair.Value),
+        StringComparer.OrdinalIgnoreCase);
+}
+
 public sealed record LoginRequest(string UserName, string Password);
 
 public sealed record RegisterRequest(string UserName, string? DisplayName, string Password);
@@ -1345,4 +1655,4 @@ public sealed record ProjectConfigurationSaveRequest(
 
 public sealed record PricingSpecificationSaveRequest(
     string? Name,
-    PricingCalculationRequest Request);
+    PricingCalculationRequest? Request);

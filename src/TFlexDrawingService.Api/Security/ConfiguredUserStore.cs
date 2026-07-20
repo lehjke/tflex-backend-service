@@ -6,6 +6,13 @@ using TFlexDrawingService.Infrastructure.Configuration;
 
 namespace TFlexDrawingService.Api.Security;
 
+public enum ConfiguredUserUpsertResult
+{
+    Succeeded,
+    LastEnabledAdminWouldBeRemoved,
+    UserNameReserved
+}
+
 public sealed class ConfiguredUserStore(
     IOptions<DrawingStorageOptions> storageOptions,
     IOptionsMonitor<SecurityOptions> securityOptions,
@@ -34,6 +41,7 @@ public sealed class ConfiguredUserStore(
                     RequestedAt TEXT NULL,
                     ApprovedAt TEXT NULL,
                     ApprovedByUserName TEXT NULL,
+                    DeletedAt TEXT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL
                 );
@@ -45,6 +53,7 @@ public sealed class ConfiguredUserStore(
         await EnsureColumnExistsAsync(connection, "RequestedAt", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(connection, "ApprovedAt", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(connection, "ApprovedByUserName", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(connection, "DeletedAt", "TEXT NULL", cancellationToken);
 
         foreach (var user in securityOptions.CurrentValue.Users)
         {
@@ -89,7 +98,8 @@ public sealed class ConfiguredUserStore(
             SELECT UserName, DisplayName, PasswordHash, RolesJson, Enabled
                  , ApprovalStatus, RequestedAt, ApprovedAt, ApprovedByUserName
             FROM SecurityUsers
-            WHERE UserName = $userName;
+            WHERE UserName = $userName
+              AND DeletedAt IS NULL;
             """;
         command.Parameters.AddWithValue("$userName", userName.Trim());
 
@@ -108,6 +118,7 @@ public sealed class ConfiguredUserStore(
             SELECT UserName, DisplayName, PasswordHash, RolesJson, Enabled
                  , ApprovalStatus, RequestedAt, ApprovedAt, ApprovedByUserName
             FROM SecurityUsers
+            WHERE DeletedAt IS NULL
             ORDER BY UserName;
             """;
 
@@ -125,50 +136,14 @@ public sealed class ConfiguredUserStore(
         ConfiguredUser user,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(user.UserName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(user.PasswordHash);
+        _ = await UpsertUserCoreAsync(user, preserveLastEnabledAdmin: false, cancellationToken);
+    }
 
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-
-        var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO SecurityUsers (
-                UserName, DisplayName, PasswordHash, RolesJson, Enabled,
-                ApprovalStatus, RequestedAt, ApprovedAt, ApprovedByUserName,
-                CreatedAt, UpdatedAt
-            )
-            VALUES (
-                $userName, $displayName, $passwordHash, $rolesJson, $enabled,
-                $approvalStatus, $requestedAt, $approvedAt, $approvedByUserName,
-                $createdAt, $updatedAt
-            )
-            ON CONFLICT(UserName) DO UPDATE SET
-                DisplayName = excluded.DisplayName,
-                PasswordHash = excluded.PasswordHash,
-                RolesJson = excluded.RolesJson,
-                Enabled = excluded.Enabled,
-                ApprovalStatus = excluded.ApprovalStatus,
-                RequestedAt = excluded.RequestedAt,
-                ApprovedAt = excluded.ApprovedAt,
-                ApprovedByUserName = excluded.ApprovedByUserName,
-                UpdatedAt = excluded.UpdatedAt;
-            """;
-        command.Parameters.AddWithValue("$userName", user.UserName.Trim());
-        command.Parameters.AddWithValue(
-            "$displayName",
-            string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName.Trim() : user.DisplayName.Trim());
-        command.Parameters.AddWithValue("$passwordHash", user.PasswordHash);
-        command.Parameters.AddWithValue("$rolesJson", JsonSerializer.Serialize(NormalizeRoles(user.Roles), JsonOptions));
-        command.Parameters.AddWithValue("$enabled", user.Enabled ? 1 : 0);
-        command.Parameters.AddWithValue("$approvalStatus", NormalizeApprovalStatus(user.ApprovalStatus));
-        command.Parameters.AddWithValue("$requestedAt", ToDbValue(user.RequestedAt));
-        command.Parameters.AddWithValue("$approvedAt", ToDbValue(user.ApprovedAt));
-        command.Parameters.AddWithValue("$approvedByUserName", ToDbValue(user.ApprovedByUserName));
-        command.Parameters.AddWithValue("$createdAt", now);
-        command.Parameters.AddWithValue("$updatedAt", now);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+    public Task<ConfiguredUserUpsertResult> TryUpsertUserPreservingLastAdminAsync(
+        ConfiguredUser user,
+        CancellationToken cancellationToken = default)
+    {
+        return UpsertUserCoreAsync(user, preserveLastEnabledAdmin: true, cancellationToken);
     }
 
     public async Task<(bool Created, string Status)> RegisterPendingUserAsync(
@@ -214,8 +189,7 @@ public sealed class ConfiguredUserStore(
             return (true, "Pending");
         }
 
-        var existing = await FindUserAsync(userName, cancellationToken);
-        return (false, existing?.ApprovalStatus ?? "Existing");
+        return (false, await GetRegistrationConflictStatusAsync(connection, userName, cancellationToken));
     }
 
     public async Task<bool> ApproveUserAsync(
@@ -243,7 +217,9 @@ public sealed class ConfiguredUserStore(
                 ApprovedAt = $approvedAt,
                 ApprovedByUserName = $approvedByUserName,
                 UpdatedAt = $updatedAt
-            WHERE UserName = $userName;
+            WHERE UserName = $userName
+              AND DeletedAt IS NULL
+              AND ApprovalStatus IN ('Pending', 'Rejected');
             """;
         var now = DateTimeOffset.UtcNow;
         command.Parameters.AddWithValue("$rolesJson", JsonSerializer.Serialize(effectiveRoles, JsonOptions));
@@ -275,7 +251,13 @@ public sealed class ConfiguredUserStore(
                 ApprovedAt = $approvedAt,
                 ApprovedByUserName = $approvedByUserName,
                 UpdatedAt = $updatedAt
-            WHERE UserName = $userName;
+            WHERE UserName = $userName
+              AND DeletedAt IS NULL
+              AND NOT (
+                  Enabled = 1
+                  AND ApprovalStatus = 'Approved' COLLATE NOCASE
+                  AND RolesJson LIKE '%"Admin"%' COLLATE NOCASE
+              );
             """;
         var now = DateTimeOffset.UtcNow;
         command.Parameters.AddWithValue("$approvedAt", FormatDate(now));
@@ -304,7 +286,8 @@ public sealed class ConfiguredUserStore(
             SET Enabled = $enabled,
                 ApprovalStatus = CASE WHEN $enabled = 1 THEN 'Approved' ELSE ApprovalStatus END,
                 UpdatedAt = $updatedAt
-            WHERE UserName = $userName;
+            WHERE UserName = $userName
+              AND DeletedAt IS NULL;
             """;
         command.Parameters.AddWithValue("$enabled", enabled ? 1 : 0);
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
@@ -326,7 +309,21 @@ public sealed class ConfiguredUserStore(
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM SecurityUsers WHERE UserName = $userName;";
+        command.CommandText = """
+            UPDATE SecurityUsers
+            SET Enabled = 0,
+                ApprovalStatus = 'Deleted',
+                DeletedAt = $deletedAt,
+                UpdatedAt = $deletedAt
+            WHERE UserName = $userName
+              AND DeletedAt IS NULL
+              AND NOT (
+                  Enabled = 1
+                  AND ApprovalStatus = 'Approved' COLLATE NOCASE
+                  AND RolesJson LIKE '%"Admin"%' COLLATE NOCASE
+              );
+            """;
+        command.Parameters.AddWithValue("$deletedAt", FormatDate(DateTimeOffset.UtcNow));
         command.Parameters.AddWithValue("$userName", userName.Trim());
 
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
@@ -374,13 +371,164 @@ public sealed class ConfiguredUserStore(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task<ConfiguredUserUpsertResult> UpsertUserCoreAsync(
+        ConfiguredUser user,
+        bool preserveLastEnabledAdmin,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(user.UserName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(user.PasswordHash);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+
+        if (preserveLastEnabledAdmin
+            && await WouldRemoveLastEnabledAdminAsync(connection, transaction, user, cancellationToken))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return ConfiguredUserUpsertResult.LastEnabledAdminWouldBeRemoved;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO SecurityUsers (
+                UserName, DisplayName, PasswordHash, RolesJson, Enabled,
+                ApprovalStatus, RequestedAt, ApprovedAt, ApprovedByUserName,
+                CreatedAt, UpdatedAt
+            )
+            VALUES (
+                $userName, $displayName, $passwordHash, $rolesJson, $enabled,
+                $approvalStatus, $requestedAt, $approvedAt, $approvedByUserName,
+                $createdAt, $updatedAt
+            )
+            ON CONFLICT(UserName) DO UPDATE SET
+                DisplayName = excluded.DisplayName,
+                PasswordHash = excluded.PasswordHash,
+                RolesJson = excluded.RolesJson,
+                Enabled = excluded.Enabled,
+                ApprovalStatus = excluded.ApprovalStatus,
+                RequestedAt = excluded.RequestedAt,
+                ApprovedAt = excluded.ApprovedAt,
+                ApprovedByUserName = excluded.ApprovedByUserName,
+                UpdatedAt = excluded.UpdatedAt
+            WHERE SecurityUsers.DeletedAt IS NULL;
+            """;
+        command.Parameters.AddWithValue("$userName", user.UserName.Trim());
+        command.Parameters.AddWithValue(
+            "$displayName",
+            string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName.Trim() : user.DisplayName.Trim());
+        command.Parameters.AddWithValue("$passwordHash", user.PasswordHash);
+        command.Parameters.AddWithValue("$rolesJson", JsonSerializer.Serialize(NormalizeRoles(user.Roles), JsonOptions));
+        command.Parameters.AddWithValue("$enabled", user.Enabled ? 1 : 0);
+        command.Parameters.AddWithValue("$approvalStatus", NormalizeApprovalStatus(user.ApprovalStatus));
+        command.Parameters.AddWithValue("$requestedAt", ToDbValue(user.RequestedAt));
+        command.Parameters.AddWithValue("$approvedAt", ToDbValue(user.ApprovedAt));
+        command.Parameters.AddWithValue("$approvedByUserName", ToDbValue(user.ApprovedByUserName));
+        command.Parameters.AddWithValue("$createdAt", now);
+        command.Parameters.AddWithValue("$updatedAt", now);
+
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return ConfiguredUserUpsertResult.UserNameReserved;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return ConfiguredUserUpsertResult.Succeeded;
+    }
+
+    private static async Task<bool> WouldRemoveLastEnabledAdminAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ConfiguredUser updatedUser,
+        CancellationToken cancellationToken)
+    {
+        string? currentRolesJson = null;
+        var currentEnabled = false;
+        string? currentApprovalStatus = null;
+
+        await using (var currentCommand = connection.CreateCommand())
+        {
+            currentCommand.Transaction = transaction;
+            currentCommand.CommandText = """
+                SELECT RolesJson, Enabled, ApprovalStatus
+                FROM SecurityUsers
+                WHERE UserName = $userName
+                  AND DeletedAt IS NULL;
+                """;
+            currentCommand.Parameters.AddWithValue("$userName", updatedUser.UserName.Trim());
+
+            await using var reader = await currentCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                currentRolesJson = reader.GetString(0);
+                currentEnabled = reader.GetInt32(1) == 1;
+                currentApprovalStatus = reader.GetString(2);
+            }
+        }
+
+        var currentIsAdmin = currentRolesJson is not null
+            && IsActiveAdmin(currentEnabled, currentApprovalStatus, DeserializeRoles(currentRolesJson));
+        var updatedIsAdmin = IsActiveAdmin(
+            updatedUser.Enabled,
+            updatedUser.ApprovalStatus,
+            NormalizeRoles(updatedUser.Roles));
+        if (!currentIsAdmin || updatedIsAdmin)
+        {
+            return false;
+        }
+
+        var enabledAdminCount = 0;
+        await using var countCommand = connection.CreateCommand();
+        countCommand.Transaction = transaction;
+        countCommand.CommandText = """
+            SELECT RolesJson
+            FROM SecurityUsers
+            WHERE Enabled = 1
+              AND ApprovalStatus = 'Approved' COLLATE NOCASE
+              AND DeletedAt IS NULL;
+            """;
+        await using var adminReader = await countCommand.ExecuteReaderAsync(cancellationToken);
+        while (await adminReader.ReadAsync(cancellationToken))
+        {
+            if (DeserializeRoles(adminReader.GetString(0))
+                .Contains("Admin", StringComparer.OrdinalIgnoreCase))
+            {
+                enabledAdminCount++;
+            }
+        }
+
+        return enabledAdminCount <= 1;
+    }
+
     private static async Task<int> CountUsersAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM SecurityUsers WHERE Enabled = 1;";
+        command.CommandText = "SELECT COUNT(*) FROM SecurityUsers WHERE Enabled = 1 AND DeletedAt IS NULL;";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string> GetRegistrationConflictStatusAsync(
+        SqliteConnection connection,
+        string userName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CASE WHEN DeletedAt IS NULL THEN ApprovalStatus ELSE 'Deleted' END
+            FROM SecurityUsers
+            WHERE UserName = $userName;
+            """;
+        command.Parameters.AddWithValue("$userName", userName.Trim());
+        return Convert.ToString(
+                await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture)
+            ?? "Existing";
     }
 
     private SqliteConnection CreateConnection()
@@ -466,6 +614,7 @@ public sealed class ConfiguredUserStore(
         {
             "pending" => "Pending",
             "rejected" => "Rejected",
+            "deleted" => "Deleted",
             _ => "Approved"
         };
     }
@@ -476,6 +625,19 @@ public sealed class ConfiguredUserStore(
             NormalizeApprovalStatus(user.ApprovalStatus),
             "Approved",
             StringComparison.Ordinal);
+    }
+
+    private static bool IsActiveAdmin(
+        bool enabled,
+        string? approvalStatus,
+        IReadOnlyCollection<string> roles)
+    {
+        return enabled
+            && string.Equals(
+                NormalizeApprovalStatus(approvalStatus),
+                "Approved",
+                StringComparison.Ordinal)
+            && roles.Contains("Admin", StringComparer.OrdinalIgnoreCase);
     }
 
     private static string FormatDate(DateTimeOffset value)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 
 namespace TFlexAutomationRunner
 {
@@ -42,7 +43,47 @@ namespace TFlexAutomationRunner
             if (value.Length >= 2 && value[0] == '"' && value[value.Length - 1] == '"')
             {
                 value = value.Substring(1, value.Length - 2);
-                value = value.Replace("\\\"", "\"").Replace("\\\\", "\\");
+                var builder = new StringBuilder(value.Length);
+                for (var index = 0; index < value.Length; index++)
+                {
+                    var character = value[index];
+                    if (character != '\\' || index + 1 >= value.Length)
+                    {
+                        builder.Append(character);
+                        continue;
+                    }
+
+                    var escaped = value[index + 1];
+                    if (escaped == '\\' || escaped == '"')
+                    {
+                        builder.Append(escaped);
+                        index++;
+                        continue;
+                    }
+
+                    if (escaped == 'u' && index + 5 < value.Length)
+                    {
+                        var code = value.Substring(index + 2, 4);
+                        if (string.Equals(code, "000D", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            builder.Append('\r');
+                            index += 5;
+                            continue;
+                        }
+
+                        if (string.Equals(code, "000A", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            builder.Append('\n');
+                            index += 5;
+                            continue;
+                        }
+                    }
+
+                    // Preserve unknown escape sequences for compatibility with manually-authored .par files.
+                    builder.Append('\\');
+                }
+
+                value = builder.ToString();
             }
 
             return value;

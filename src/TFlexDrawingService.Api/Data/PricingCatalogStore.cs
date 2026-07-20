@@ -20,6 +20,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
     public PricingCatalog Catalog => _catalog.Value;
 
+    public static bool IsSupportedSupplier(string? supplier)
+    {
+        return string.Equals(supplier, "XIZI", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(supplier, "SMEC", StringComparison.OrdinalIgnoreCase);
+    }
+
     public PricingCatalogSummary GetSummary()
     {
         var catalog = Catalog;
@@ -105,9 +111,13 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         {
             CalculateXizi(request, lines, warnings, blockers, out container);
         }
-        else
+        else if (string.Equals(request.Supplier, "SMEC", StringComparison.OrdinalIgnoreCase))
         {
             CalculateSmec(request, lines, warnings, blockers, out container);
+        }
+        else
+        {
+            blockers.Add("Поставщик должен быть XIZI или SMEC.");
         }
 
         var totalCny = lines.Sum(line => line.AmountCny ?? 0m);
@@ -168,7 +178,15 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             && item.Capacity == request.CapacityKg
             && SameNumber(item.Speed, request.Speed)
             && item.Stops == request.Stops);
-        AddCatalogValue(lines, warnings, blockers, "base", "Базовая цена", baseEntry?.Price, true);
+        AddCatalogValue(
+            lines,
+            warnings,
+            blockers,
+            "base",
+            "Базовая цена",
+            baseEntry?.Price,
+            true,
+            required: true);
 
         AddXiziExtraRise(request, baseEntry, lines, warnings, blockers);
         AddXiziShaftSurcharge(request, lines);
@@ -853,7 +871,15 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             var groupControl = catalog.GroupControl.FirstOrDefault(item => CodeMatches(item.Code, operation));
             AddCatalogValue(lines, warnings, blockers, "group-control", $"Групповое управление {operation}", groupControl?.Price, false);
         }
-        AddCatalogValue(lines, warnings, blockers, "base", "Базовая цена", baseEntry?.BasicPrice, false);
+        AddCatalogValue(
+            lines,
+            warnings,
+            blockers,
+            "base",
+            "Базовая цена",
+            baseEntry?.BasicPrice,
+            false,
+            required: true);
 
         if (baseEntry is not null)
         {
@@ -1633,10 +1659,18 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         object? rawValue,
         bool blockNegativeOne,
         int quantity = 1,
-        int sign = 1)
+        int sign = 1,
+        bool required = false)
     {
         if (rawValue is null)
         {
+            if (required)
+            {
+                blockers.Add($"{label}: обязательная цена не найдена в прайсе.");
+                lines.Add(new PricingLine(code, label, quantity, null, null, "blocked"));
+                return;
+            }
+
             warnings.Add($"{label}: цена не найдена в прайсе, требуется ручная проверка.");
             lines.Add(new PricingLine(code, label, quantity, null, null, "warning"));
             return;
@@ -1664,8 +1698,16 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             return;
         }
 
-        warnings.Add($"{label}: значение прайса \"{text}\" требует ручной проверки.");
-        lines.Add(new PricingLine(code, label, quantity, null, null, "warning"));
+        if (required)
+        {
+            blockers.Add($"{label}: обязательное значение прайса \"{text}\" нельзя использовать в расчёте.");
+            lines.Add(new PricingLine(code, label, quantity, null, null, "blocked"));
+        }
+        else
+        {
+            warnings.Add($"{label}: значение прайса \"{text}\" требует ручной проверки.");
+            lines.Add(new PricingLine(code, label, quantity, null, null, "warning"));
+        }
     }
 
     private static decimal? TryEvaluateStopsFormula(string text, int stops)
@@ -1686,7 +1728,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         return null;
     }
 
-    private static bool TryReadDecimal(object value, out decimal result)
+    private static bool TryReadDecimal(object? value, out decimal result)
     {
         switch (value)
         {

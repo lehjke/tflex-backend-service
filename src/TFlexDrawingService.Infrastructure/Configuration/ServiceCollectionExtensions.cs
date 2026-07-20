@@ -38,6 +38,25 @@ public static class ServiceCollectionExtensions
                 options.PollInterval = TimeSpan.FromSeconds(seconds);
             }
 
+            if (double.TryParse(configuration["Queue:LeaseDurationSeconds"], out var leaseDurationSeconds)
+                && leaseDurationSeconds >= 10)
+            {
+                options.LeaseDuration = TimeSpan.FromSeconds(leaseDurationSeconds);
+            }
+
+            if (double.TryParse(
+                    configuration["Queue:LeaseHeartbeatIntervalSeconds"],
+                    out var leaseHeartbeatSeconds)
+                && leaseHeartbeatSeconds > 0)
+            {
+                options.LeaseHeartbeatInterval = TimeSpan.FromSeconds(leaseHeartbeatSeconds);
+            }
+
+            if (options.LeaseHeartbeatInterval >= options.LeaseDuration / 2)
+            {
+                options.LeaseHeartbeatInterval = options.LeaseDuration / 3;
+            }
+
             if (int.TryParse(configuration["Queue:MaxActiveJobs"], out var maxActiveJobs)
                 && maxActiveJobs > 0)
             {
@@ -93,6 +112,29 @@ public static class ServiceCollectionExtensions
             {
                 options.WriteParameterFile = writeParameterFile;
             }
+
+            if (bool.TryParse(
+                    configuration["TFlexAutomation:HealthCheckEnabled"],
+                    out var healthCheckEnabled))
+            {
+                options.HealthCheckEnabled = healthCheckEnabled;
+            }
+
+            if (int.TryParse(
+                    configuration["TFlexAutomation:HealthCheckIntervalSeconds"],
+                    out var healthCheckIntervalSeconds)
+                && healthCheckIntervalSeconds > 0)
+            {
+                options.HealthCheckIntervalSeconds = healthCheckIntervalSeconds;
+            }
+
+            if (int.TryParse(
+                    configuration["TFlexAutomation:HealthCheckTimeoutSeconds"],
+                    out var healthCheckTimeoutSeconds)
+                && healthCheckTimeoutSeconds > 0)
+            {
+                options.HealthCheckTimeoutSeconds = healthCheckTimeoutSeconds;
+            }
         });
 
         services.AddSingleton<ITemplateCatalog, JsonTemplateCatalog>();
@@ -100,6 +142,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDrawingJobRepository, SqliteDrawingJobRepository>();
         services.AddSingleton<IDrawingJobQueue, SqliteDrawingJobQueue>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<TFlexAutomationExecutionGate>();
+        services.AddSingleton<TFlexAutomationReadinessState>();
+        services.AddSingleton<ITFlexAutomationHealthProbe, TFlexAutomationHealthProbe>();
         services.AddSingleton<ITFlexAutomationClient>(provider =>
         {
             var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<TFlexAutomationOptions>>().Value;
@@ -120,6 +165,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDrawingGenerationWorker(this IServiceCollection services)
     {
         services.AddSingleton<DrawingJobProcessor>();
+        services.AddHostedService<TFlexAutomationStartupHostedService>();
+        services.AddHostedService<WorkerHeartbeatHostedService>();
         services.AddHostedService<DrawingGenerationBackgroundService>();
         services.AddHostedService<StorageCleanupHostedService>();
         return services;

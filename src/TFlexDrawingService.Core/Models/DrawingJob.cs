@@ -24,5 +24,9 @@ public sealed class DrawingJob
 
     public string? WorkingDirectory { get; set; }
 
+    public string? LeaseToken { get; set; }
+
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+
     public List<GeneratedFile> ResultFiles { get; set; } = [];
 }

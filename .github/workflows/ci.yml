@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-and-deployment:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install PowerShell analyzer
+        shell: powershell
+        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force -Repository PSGallery
+
+      - name: Test PowerShell deployment scripts
+        shell: powershell
+        run: .\scripts\Test-PowerShellScripts.ps1 -RunScriptAnalyzer
+
+      - name: Test browser expression and session contracts
+        run: node --test tests/frontend/*.test.mjs
+
+      - name: Restore portable projects
+        run: dotnet restore tests/TFlexDrawingService.Tests/TFlexDrawingService.Tests.csproj
+
+      - name: Build and test portable projects
+        run: dotnet test tests/TFlexDrawingService.Tests/TFlexDrawingService.Tests.csproj --configuration Release --no-restore --verbosity minimal
+
+      - name: Publish Windows API and Worker
+        shell: powershell
+        run: |
+          dotnet publish src/TFlexDrawingService.Api/TFlexDrawingService.Api.csproj -c Release -r win-x64 --self-contained false -o artifacts/api
+          if ($LASTEXITCODE -ne 0) { throw "API publish failed." }
+          dotnet publish src/TFlexDrawingService.Worker/TFlexDrawingService.Worker.csproj -c Release -r win-x64 --self-contained false -o artifacts/worker
+          if ($LASTEXITCODE -ne 0) { throw "Worker publish failed." }
+
+      - name: Verify production publish contents
+        shell: powershell
+        run: |
+          $required = @(
+            "artifacts/api/TFlexDrawingService.Api.exe",
+            "artifacts/worker/TFlexDrawingService.Worker.exe"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Missing publish artifact '$path'."
+            }
+          }
+          $developmentSettings = @(
+            "artifacts/api/appsettings.Development.json",
+            "artifacts/worker/appsettings.Development.json"
+          )
+          foreach ($path in $developmentSettings) {
+            if (Test-Path -LiteralPath $path) {
+              throw "Development settings leaked into production publish: '$path'."
+            }
+          }
+
+      - name: Audit NuGet dependencies
+        run: >
+          dotnet restore tests/TFlexDrawingService.Tests/TFlexDrawingService.Tests.csproj
+          --force-evaluate
+          --no-http-cache
+          -p:NuGetAudit=true
+          -p:NuGetAuditMode=all
+          -p:NuGetAuditLevel=high
+          -warnaserror:NU1903,NU1904
+          --verbosity minimal

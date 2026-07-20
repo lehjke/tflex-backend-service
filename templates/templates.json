@@ -177,7 +177,7 @@
               "value": 2100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? AA_1 : find(TH.AA, (TH.cap == cap)&&(TH.car_type == $car_type))"
+          "expression": "$car_type == \"PXX\" ? AA_1 : 0"
         },
         {
           "isRequired": false,
@@ -274,7 +274,7 @@
               "value": 1100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? BB_1 : find(TH.BB, (TH.cap == cap)&&(TH.car_type == $car_type))"
+          "expression": "$car_type == \"PXX\" ? BB_1 : 0"
         },
         {
           "isRequired": false,
@@ -3516,7 +3516,7 @@
           "name": "BS",
           "type": "integer",
           "defaultValue": 1671,
-          "expression": "NE == 1 ? DK+BB+bb : 2*DK+BB"
+          "expression": "NE == 1 ? DK+BB+BB_CLEARANCE : 2*DK+BB"
         },
         {
           "name": "C",
@@ -4539,7 +4539,7 @@
           "expression": "cap < 630 ? WW_1 : (cwt_sg == 1 ? WW_3 : WW_2)"
         },
         {
-          "name": "bb",
+          "name": "BB_CLEARANCE",
           "type": "integer",
           "defaultValue": 30,
           "expression": "30"
@@ -5298,7 +5298,7 @@
           "name": "min_BH_2",
           "type": "integer",
           "defaultValue": 1900,
-          "expression": "B1+30+DK+BB+bb+min_B2"
+          "expression": "B1+30+DK+BB+BB_CLEARANCE+min_B2"
         },
         {
           "name": "min_BH_3",
@@ -8947,7 +8947,7 @@
               "value": 2100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? AA_1 : find(TX.AA, (TX.cap == cap)&&(TX.car_type == $car_type))"
+          "expression": "$car_type == \"PXX\" ? AA_1 : 0"
         },
         {
           "isRequired": false,
@@ -9100,7 +9100,7 @@
               "value": 2300
             }
           ],
-          "expression": "$car_type == \"PXX\" ? BB_1 : find(TX.BB, (TX.cap == cap)&&(TX.car_type == $car_type))"
+          "expression": "$car_type == \"PXX\" ? BB_1 : 0"
         },
         {
           "isRequired": false,
@@ -12407,7 +12407,7 @@
           "name": "AS",
           "type": "integer",
           "defaultValue": 1562,
-          "expression": "AA+2*aa"
+          "expression": "AA+2*AA_CLEARANCE"
         },
         {
           "name": "B1",
@@ -12437,7 +12437,7 @@
           "name": "BS",
           "type": "integer",
           "defaultValue": 1945,
-          "expression": "NE == 1 ? DK+BB+bb : 2*DK+BB"
+          "expression": "NE == 1 ? DK+BB+BB_CLEARANCE : 2*DK+BB"
         },
         {
           "name": "C",
@@ -13532,13 +13532,13 @@
           "expression": "roller==1 ? WW_31 : WW_32"
         },
         {
-          "name": "aa",
+          "name": "AA_CLEARANCE",
           "type": "integer",
           "defaultValue": 31,
           "expression": "31"
         },
         {
-          "name": "bb",
+          "name": "BB_CLEARANCE",
           "type": "integer",
           "defaultValue": 30,
           "expression": "30"
@@ -14303,7 +14303,7 @@
           "name": "min_BH_2",
           "type": "integer",
           "defaultValue": 2135,
-          "expression": "B1+30+(DK+BB+bb)+min_B2"
+          "expression": "B1+30+(DK+BB+BB_CLEARANCE)+min_B2"
         },
         {
           "name": "min_BH_3",
@@ -27798,7 +27798,7 @@
           "name": "min_BH_1",
           "type": "integer",
           "defaultValue": 1786,
-          "expression": "B1+30+DK+BB+bb+min_B2"
+          "expression": "B1+30+DK+BB+BB_CLEARANCE+min_B2"
         },
         {
           "name": "min_BH_2",
@@ -27816,7 +27816,7 @@
           "name": "min_CB_2",
           "type": "integer",
           "defaultValue": 940,
-          "expression": "select(\r\n(cap<=1350)&&(speed<3), (AA/2+aa+209),\r\n(cap<=1350)&&(speed==3), (AA/2+aa+229),\r\n(cap==1600)&&(speed<3), (AA/2+aa+239),\r\n(cap==1600)&&(speed==3), (AA/2+aa+259),\r\n(cap>1600), AA/2+aa+239\r\n)"
+          "expression": "select(\r\n(cap<=1350)&&(speed<3), (AA/2+AA_CLEARANCE+209),\r\n(cap<=1350)&&(speed==3), (AA/2+AA_CLEARANCE+229),\r\n(cap==1600)&&(speed<3), (AA/2+AA_CLEARANCE+239),\r\n(cap==1600)&&(speed==3), (AA/2+AA_CLEARANCE+259),\r\n(cap>1600), AA/2+AA_CLEARANCE+239\r\n)"
         },
         {
           "name": "speed",
@@ -30519,7 +30519,7 @@
           "expression": "$door_type == \"ЦО\" ? 140 : 141"
         },
         {
-          "name": "bb",
+          "name": "BB_CLEARANCE",
           "type": "integer",
           "defaultValue": 30,
           "expression": "30"
@@ -30531,7 +30531,7 @@
           "expression": "65"
         },
         {
-          "name": "aa",
+          "name": "AA_CLEARANCE",
           "type": "integer",
           "defaultValue": 31,
           "expression": "31"
@@ -32280,7 +32280,7 @@
           "name": "AS",
           "type": "integer",
           "defaultValue": 1462,
-          "expression": "AA+2*aa"
+          "expression": "AA+2*AA_CLEARANCE"
         },
         {
           "name": "A3",
@@ -46315,7 +46315,7 @@
       "id": "lehy_pro_rear_cwt",
       "code": "lehy_pro_rear_cwt",
       "name": "LEHY-PRO [REAR CWT]",
-      "description": "??????? T-FLEX ?????? LEHY-PRO [REAR CWT] ? ??????????? ?????? ??????????",
+      "description": "Главный T-FLEX шаблон LEHY-PRO с задним расположением противовеса",
       "templateFilePath": "templates/LEHY-PRO [REAR CWT].grb",
       "outputFormats": [
         "pdf",
@@ -46401,10 +46401,14 @@
         },
         {
           "name": "NE",
-          "displayName": "Кабина / Входы",
+          "displayName": "Кабина / Количество входов",
           "type": "integer",
           "isRequired": true,
           "defaultValue": 1,
+          "allowedValues": [
+            "1",
+            "2"
+          ],
           "expression": "1"
         },
         {
@@ -46675,7 +46679,7 @@
         },
         {
           "name": "$s_1",
-          "displayName": "Противовес / Направление",
+          "displayName": "Двери / Открывание дверей",
           "type": "enum",
           "isRequired": true,
           "defaultValue": "Налево",
@@ -46841,7 +46845,7 @@
         },
         {
           "name": "CJ",
-          "displayName": "Двери / CJ",
+          "displayName": "Двери / Эксцентриситет дверей",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 325,
@@ -46862,7 +46866,7 @@
         },
         {
           "name": "dim",
-          "displayName": "Шахта / Вручную",
+          "displayName": "Шахта / Ввести размеры вручную",
           "type": "boolean",
           "isRequired": false,
           "defaultValue": false,
@@ -46892,7 +46896,7 @@
         },
         {
           "name": "min_CB",
-          "displayName": "Шахта / CB",
+          "displayName": "Шахта / От оси кабины до правой стены шахты",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 1025,
@@ -46923,7 +46927,7 @@
         },
         {
           "name": "CB_1",
-          "displayName": "Шахта / CB",
+          "displayName": "Шахта / От оси кабины до правой стены шахты",
           "type": "integer",
           "isRequired": false,
           "defaultValue": 1100,
@@ -47128,7 +47132,7 @@
         },
         {
           "name": "TR",
-          "displayName": "Вертикальный разрез / Высота",
+          "displayName": "Вертикальный разрез / Высота подъема",
           "type": "number",
           "isRequired": true,
           "defaultValue": 20,
@@ -49894,7 +49898,7 @@
           "name": "min_CB_2",
           "type": "integer",
           "defaultValue": 1025,
-          "expression": "select(\r\n(cap==630), (AA/2+aa+169),\r\n(cap==825)&&(speed<2), (AA/2+aa+169),\r\n(cap==825)&&(speed<3), (AA/2+aa+194),\r\n(cap==825)&&(speed==3), (AA/2+aa+229),\r\n(cap==1050)&&(speed<3), (AA/2+aa+194),\r\n(cap==1050)&&(speed==3), (AA/2+aa+229),\r\n(cap==1200)&&(speed<3), (AA/2+aa+209),\r\n(cap==1200)&&(speed==3), (AA/2+aa+229),\r\n(cap==1350)&&(speed<3), (AA/2+aa+209),\r\n(cap==1350)&&(speed==3), (AA/2+aa+229),\r\n(cap==1600)&&(speed<3), (AA/2+aa+239),\r\n(cap==1600)&&(speed==3), (AA/2+aa+259),\r\n(cap>1600), (AA/2+aa+239)\r\n)"
+          "expression": "select(\r\n(cap==630), (AA/2+AA_CLEARANCE+169),\r\n(cap==825)&&(speed<2), (AA/2+AA_CLEARANCE+169),\r\n(cap==825)&&(speed<3), (AA/2+AA_CLEARANCE+194),\r\n(cap==825)&&(speed==3), (AA/2+AA_CLEARANCE+229),\r\n(cap==1050)&&(speed<3), (AA/2+AA_CLEARANCE+194),\r\n(cap==1050)&&(speed==3), (AA/2+AA_CLEARANCE+229),\r\n(cap==1200)&&(speed<3), (AA/2+AA_CLEARANCE+209),\r\n(cap==1200)&&(speed==3), (AA/2+AA_CLEARANCE+229),\r\n(cap==1350)&&(speed<3), (AA/2+AA_CLEARANCE+209),\r\n(cap==1350)&&(speed==3), (AA/2+AA_CLEARANCE+229),\r\n(cap==1600)&&(speed<3), (AA/2+AA_CLEARANCE+239),\r\n(cap==1600)&&(speed==3), (AA/2+AA_CLEARANCE+259),\r\n(cap>1600), (AA/2+AA_CLEARANCE+239)\r\n)"
         },
         {
           "name": "speed",
@@ -52525,13 +52529,13 @@
           "expression": "$door_type == \"ЦО\" ? 140 : 141"
         },
         {
-          "name": "bb",
+          "name": "BB_CLEARANCE",
           "type": "integer",
           "defaultValue": 30,
           "expression": "30"
         },
         {
-          "name": "aa",
+          "name": "AA_CLEARANCE",
           "type": "integer",
           "defaultValue": 31,
           "expression": "31"
@@ -54010,7 +54014,7 @@
           "name": "AS",
           "type": "integer",
           "defaultValue": 1662,
-          "expression": "AA+2*aa"
+          "expression": "AA+2*AA_CLEARANCE"
         },
         {
           "name": "r_AA_2250_min",
@@ -54046,7 +54050,7 @@
           "name": "BS",
           "type": "integer",
           "defaultValue": 1671,
-          "expression": "NE == 1 ? DK+BB+bb : 2*DK+BB"
+          "expression": "NE == 1 ? DK+BB+BB_CLEARANCE : 2*DK+BB"
         },
         {
           "name": "EE",

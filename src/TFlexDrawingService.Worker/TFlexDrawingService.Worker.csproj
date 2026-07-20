@@ -16,4 +16,9 @@
     <ProjectReference Include="..\TFlexDrawingService.Core\TFlexDrawingService.Core.csproj" />
     <ProjectReference Include="..\TFlexDrawingService.Infrastructure\TFlexDrawingService.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Local Mock settings are intentionally excluded from production publish. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 </Project>

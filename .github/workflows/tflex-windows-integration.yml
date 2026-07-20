@@ -1,0 +1,62 @@
+name: T-FLEX Windows integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      tflex_cad_program_dir:
+        description: Absolute directory containing TFlexAPI.dll and TFlexAPI3D.dll
+        required: true
+        default: C:\Program Files\T-FLEX CAD 17\Program
+
+permissions:
+  contents: read
+
+jobs:
+  real-tflex-runner:
+    runs-on: [self-hosted, Windows, X64, tflex-cad]
+    timeout-minutes: 45
+    env:
+      TFLEX_CAD_PROGRAM_DIR: ${{ inputs.tflex_cad_program_dir }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify T-FLEX SDK and activated runtime
+        shell: powershell
+        run: |
+          $required = @("TFlexAPI.dll", "TFlexAPI3D.dll")
+          foreach ($fileName in $required) {
+            $path = Join-Path $env:TFLEX_CAD_PROGRAM_DIR $fileName
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required T-FLEX SDK assembly was not found: '$path'."
+            }
+          }
+
+      - name: Test deployment scripts
+        shell: powershell
+        run: .\scripts\Test-PowerShellScripts.ps1
+
+      - name: Restore and publish real runner
+        shell: powershell
+        run: |
+          dotnet restore src/TFlexAutomationRunner/TFlexAutomationRunner.csproj -p:TFlexCadProgramDir="$env:TFLEX_CAD_PROGRAM_DIR"
+          if ($LASTEXITCODE -ne 0) { throw "Runner restore failed." }
+          dotnet publish src/TFlexAutomationRunner/TFlexAutomationRunner.csproj -c Release -p:TFlexCadProgramDir="$env:TFLEX_CAD_PROGRAM_DIR" -o artifacts/runner --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "Runner publish failed." }
+
+      - name: Open and close a real T-FLEX Open API session
+        shell: powershell
+        run: |
+          & .\artifacts\runner\TFlexAutomationRunner.exe --health-check
+          if ($LASTEXITCODE -ne 0) {
+            throw "T-FLEX runner health check failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Run portable tests
+        run: dotnet test tests/TFlexDrawingService.Tests/TFlexDrawingService.Tests.csproj --configuration Release --verbosity minimal

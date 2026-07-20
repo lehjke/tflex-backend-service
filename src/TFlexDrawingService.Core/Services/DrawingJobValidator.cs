@@ -6,20 +6,46 @@ using TFlexDrawingService.Core.Requests;
 
 namespace TFlexDrawingService.Core.Services;
 
-public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDrawingRequestValidator
+public sealed class DrawingJobValidator : IDrawingRequestValidator
 {
+    private const int MaxStringParameterLength = 16 * 1024;
+    private readonly ITemplateCatalog _templateCatalog;
+    private readonly int _maxLookupRowEvaluations;
+
+    public DrawingJobValidator(ITemplateCatalog templateCatalog)
+        : this(
+            templateCatalog,
+            TemplateExpressionContextBuilder.MaxLookupRowEvaluations)
+    {
+    }
+
+    internal DrawingJobValidator(
+        ITemplateCatalog templateCatalog,
+        int maxLookupRowEvaluations)
+    {
+        ArgumentNullException.ThrowIfNull(templateCatalog);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxLookupRowEvaluations);
+        _templateCatalog = templateCatalog;
+        _maxLookupRowEvaluations = maxLookupRowEvaluations;
+    }
+
     public async Task<DrawingJobValidationResult> ValidateAsync(
         CreateDrawingJobRequest request,
         CancellationToken cancellationToken = default)
     {
         var errors = new List<string>();
 
+        if (request.Parameters is null)
+        {
+            return DrawingJobValidationResult.Failure(["Parameters are required."]);
+        }
+
         if (string.IsNullOrWhiteSpace(request.TemplateId))
         {
             return DrawingJobValidationResult.Failure(["TemplateId is required."]);
         }
 
-        var template = await templateCatalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
+        var template = await _templateCatalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
         if (template is null)
         {
             return DrawingJobValidationResult.Failure([$"Template '{request.TemplateId}' was not found."]);
@@ -47,6 +73,13 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
         var normalized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var definition in template.Parameters)
         {
+            if (definition.IsReadOnly)
+            {
+                // Browser-calculated values are display hints, not trusted inputs.
+                // Required disabled values are derived below from the catalogue.
+                continue;
+            }
+
             if (!request.Parameters.TryGetValue(definition.Name, out var value) || IsMissing(value))
             {
                 if (definition.IsRequired)
@@ -70,6 +103,16 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
             {
                 normalized[definition.Name] = normalizedValue;
             }
+        }
+
+        if (errors.Count == 0)
+        {
+            var expressionContext = TemplateExpressionContextBuilder.BuildRuntimeContext(
+                template,
+                normalized,
+                _maxLookupRowEvaluations);
+            ValidateTemplateRules(template, expressionContext, errors);
+            AddTrustedReadOnlyParameters(template, expressionContext.Values, normalized, errors);
         }
 
         return errors.Count == 0
@@ -135,6 +178,11 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
             return Fail(errors, $"Parameter '{definition.Name}' must be less than or equal to {definition.MaxValue.Value}.");
         }
 
+        if (!IsAllowedNumericValue(definition, number))
+        {
+            return Fail(errors, $"Parameter '{definition.Name}' has value '{number}', which is not allowed.");
+        }
+
         normalizedValue = number;
         return true;
     }
@@ -159,6 +207,11 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
         if (definition.MaxValue.HasValue && number > definition.MaxValue.Value)
         {
             return Fail(errors, $"Parameter '{definition.Name}' must be less than or equal to {definition.MaxValue.Value}.");
+        }
+
+        if (!IsAllowedNumericValue(definition, number))
+        {
+            return Fail(errors, $"Parameter '{definition.Name}' has value '{number}', which is not allowed.");
         }
 
         normalizedValue = number;
@@ -201,6 +254,13 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
             return Fail(errors, $"Parameter '{definition.Name}' is required.");
         }
 
+        if (text.Length > MaxStringParameterLength)
+        {
+            return Fail(
+                errors,
+                $"Parameter '{definition.Name}' must not exceed {MaxStringParameterLength} characters.");
+        }
+
         if (definition.AllowedValues.Count > 0
             && !definition.AllowedValues.Any(allowed => string.Equals(allowed, text, StringComparison.OrdinalIgnoreCase)))
         {
@@ -209,6 +269,68 @@ public sealed class DrawingJobValidator(ITemplateCatalog templateCatalog) : IDra
 
         normalizedValue = text;
         return true;
+    }
+
+    private static bool IsAllowedNumericValue(DrawingParameterDefinition definition, decimal value)
+    {
+        if (definition.AllowedValues.Count == 0)
+        {
+            return true;
+        }
+
+        return definition.AllowedValues.Any(allowed =>
+            decimal.TryParse(allowed, NumberStyles.Number, CultureInfo.InvariantCulture, out var allowedValue)
+            && allowedValue == value);
+    }
+
+    private static void ValidateTemplateRules(
+        DrawingTemplate template,
+        TemplateExpressionContextBuilder.RuntimeExpressionContext expressionContext,
+        List<string> errors)
+    {
+        foreach (var rule in template.ValidationRules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Expression)
+                || !expressionContext.TryEvaluateRule(
+                    rule.Expression,
+                    out var passed))
+            {
+                errors.Add(
+                    $"Validation rule '{rule.Name}' could not be evaluated safely. "
+                    + "The template catalogue must be corrected before this request can be generated.");
+                continue;
+            }
+
+            if (passed)
+            {
+                continue;
+            }
+
+            errors.Add(string.IsNullOrWhiteSpace(rule.Message)
+                ? $"Validation rule '{rule.Name}' failed."
+                : rule.Message);
+        }
+    }
+
+    private static void AddTrustedReadOnlyParameters(
+        DrawingTemplate template,
+        IReadOnlyDictionary<string, object?> expressionContext,
+        IDictionary<string, object?> normalizedParameters,
+        ICollection<string> errors)
+    {
+        foreach (var definition in template.Parameters.Where(parameter =>
+                     parameter.IsReadOnly && parameter.SubmitWhenDisabled))
+        {
+            if (!expressionContext.TryGetValue(definition.Name, out var value) || value is null)
+            {
+                errors.Add(
+                    $"Read-only parameter '{definition.Name}' could not be calculated safely. "
+                    + "The template catalogue must be corrected before this request can be generated.");
+                continue;
+            }
+
+            normalizedParameters[definition.Name] = value;
+        }
     }
 
     private static bool TryReadDecimal(JsonElement value, out decimal number)

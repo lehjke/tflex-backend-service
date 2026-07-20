@@ -1,3 +1,5 @@
+import { t } from "./i18n.js?v=20260720-ui-hardening-4";
+
 const state = {
   currentUser: null
 };
@@ -17,6 +19,7 @@ const currentUserName = document.querySelector("#currentUserName");
 const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
 const activeTemplateCount = document.querySelector("#activeTemplateCount");
+const globalSearchInput = document.querySelector(".global-search input");
 const templateCardCloseTimers = new WeakMap();
 
 function isAuthenticated() {
@@ -125,7 +128,7 @@ async function register(event) {
   });
 
   if (!response.ok) {
-    const messages = await readProblem(response, "Не удалось отправить заявку");
+    const messages = await readProblem(response, t("Не удалось отправить заявку"));
     registerStatus.hidden = false;
     registerStatus.className = "error";
     registerStatus.textContent = messages.join(" ");
@@ -135,7 +138,7 @@ async function register(event) {
   registerForm.reset();
   registerStatus.hidden = false;
   registerStatus.className = "empty";
-  registerStatus.textContent = "Заявка отправлена. Доступ появится после подтверждения администратором.";
+  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
@@ -152,7 +155,7 @@ async function login(event) {
   });
 
   if (!response.ok) {
-    loginPassword.setCustomValidity("Неверный логин или пароль");
+    loginPassword.setCustomValidity(t("Неверный логин или пароль"));
     loginPassword.reportValidity();
     return;
   }
@@ -160,6 +163,7 @@ async function login(event) {
   state.currentUser = await response.json();
   loginPassword.value = "";
   updateAuthView();
+  await loadActiveTemplateCount();
 }
 
 async function logout() {
@@ -226,10 +230,51 @@ function setupTemplateCard() {
 
     const button = card.querySelector(".home-template-card__button");
     button?.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.isPrimary === false) return;
       event.preventDefault();
       window.location.assign(card.href);
     });
   }
+}
+
+function setupHomeSearch() {
+  if (!globalSearchInput) return;
+
+  const cards = [...document.querySelectorAll("[data-template-card]")];
+  const status = document.createElement("span");
+  status.className = "global-search__status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  globalSearchInput.closest(".global-search")?.append(status);
+
+  const applySearch = () => {
+    const query = globalSearchInput.value.trim().toLocaleLowerCase();
+    let visibleCount = 0;
+    for (const card of cards) {
+      const matches = !query || card.textContent.toLocaleLowerCase().includes(query);
+      card.hidden = !matches;
+      if (matches) visibleCount += 1;
+    }
+    status.textContent = query && visibleCount === 0 ? t("Ничего не найдено") : "";
+    return cards.filter(card => !card.hidden);
+  };
+
+  globalSearchInput.addEventListener("input", applySearch);
+  globalSearchInput.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      globalSearchInput.value = "";
+      applySearch();
+      return;
+    }
+
+    if (event.key !== "Enter") return;
+    const visibleCards = applySearch();
+    if (visibleCards.length === 1) {
+      event.preventDefault();
+      window.location.assign(visibleCards[0].href);
+    }
+  });
+  window.addEventListener("tflex:languagechange", applySearch);
 }
 
 registerForm?.addEventListener("submit", register);
@@ -242,6 +287,7 @@ userPanel?.addEventListener("click", event => {
 
 setupHomeCards();
 setupTemplateCard();
+setupHomeSearch();
 if (await loadCurrentUser()) {
   await loadActiveTemplateCount();
 }

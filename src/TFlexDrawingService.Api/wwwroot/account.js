@@ -1,3 +1,7 @@
+import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
+import { openGeneratedFilePreview } from "./file-preview.js?v=20260720-ui-hardening-4";
+import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+
 const state = {
   currentUser: null,
   projects: [],
@@ -7,6 +11,7 @@ const state = {
   adminUsers: [],
   adminTemplates: []
 };
+const sessionRequests = createSessionRequestGuard();
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
@@ -46,6 +51,13 @@ const adminAccessCard = document.querySelector("#adminAccessCard");
 const adminPanel = document.querySelector("#adminPanel");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
+const accountCreateSection = document.querySelector(".account-create");
+const templateImportForm = document.querySelector("#templateImportForm");
+const templateManifestFile = document.querySelector("#templateManifestFile");
+const templateGrbFile = document.querySelector("#templateGrbFile");
+const templateFragmentsFile = document.querySelector("#templateFragmentsFile");
+const templateImportButton = document.querySelector("#templateImportButton");
+const templateImportStatus = document.querySelector("#templateImportStatus");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
 
@@ -77,7 +89,7 @@ function escapeHtml(value) {
 
 function formatDate(value) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("ru-RU", {
+  return new Intl.DateTimeFormat(getLanguage() === "en" ? "en-GB" : "ru-RU", {
     dateStyle: "short",
     timeStyle: "medium"
   }).format(new Date(value));
@@ -92,6 +104,44 @@ function showAccountStatus(message, kind = "empty") {
 function hideAccountStatus() {
   accountStatus.hidden = true;
   accountStatus.textContent = "";
+}
+
+function clearAccountSessionState() {
+  sessionRequests.invalidate();
+  state.projects = [];
+  state.configurationsByProjectId = new Map();
+  state.templates = [];
+  state.jobs = [];
+  state.adminUsers = [];
+  state.adminTemplates = [];
+
+  loginForm?.reset();
+  guestLoginForm?.reset();
+  registerForm?.reset();
+  templateImportForm?.reset();
+  loginPassword?.setCustomValidity("");
+  guestLoginForm?.querySelector("[name='password']")?.setCustomValidity("");
+  if (registerStatus) {
+    registerStatus.hidden = true;
+    registerStatus.textContent = "";
+  }
+  if (templateImportStatus) {
+    templateImportStatus.hidden = true;
+    templateImportStatus.textContent = "";
+  }
+
+  projectNameInput.value = "";
+  projectAddressInput.value = "";
+  projectFactoryRequestNumberInput.value = "";
+  if (projectSearchInput) projectSearchInput.value = "";
+  if (globalSearchInput) globalSearchInput.value = "";
+
+  projectsList.replaceChildren();
+  savedConfigurationsList?.replaceChildren();
+  adminUsersTableBody.replaceChildren();
+  adminTemplatesTableBody.replaceChildren();
+  hideAccountStatus();
+  updateMetrics();
 }
 
 function getTemplate(templateId) {
@@ -252,7 +302,7 @@ function updateMetrics() {
     const status = String(job.status).toLowerCase();
     return status === "pending" || status === "running";
   });
-  const resultFilesCount = completedJobs.reduce((total, job) => total + Math.max(1, (job.resultFiles || []).length), 0);
+  const resultFilesCount = completedJobs.reduce((total, job) => total + (job.resultFiles || []).length, 0);
 
   if (projectsMetric) projectsMetric.textContent = String(state.projects.length);
   if (configurationsMetric) configurationsMetric.textContent = String(allConfigurations.length);
@@ -281,6 +331,7 @@ function updateAuthView() {
     link.hidden = !isAdmin;
   });
   if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
+  if (accountCreateSection) accountCreateSection.hidden = !canCreateJobs();
 
   if (showAdminPanel) {
     requestAnimationFrame(() => {
@@ -322,13 +373,14 @@ async function apiFetch(url, options = {}) {
     headers.set("X-TFlex-Requested-With", "fetch");
   }
 
-  const response = await fetch(url, {
+  const response = await sessionRequests.fetch(url, {
     credentials: "same-origin",
     ...options,
     headers
   });
 
-  if (response.status === 401) {
+  if (sessionRequests.isCurrent(response) && response.status === 401) {
+    clearAccountSessionState();
     state.currentUser = null;
     updateAuthView();
   }
@@ -337,9 +389,17 @@ async function apiFetch(url, options = {}) {
 }
 
 async function readProblem(response, fallback) {
+  if (!sessionRequests.isCurrent(response)) return [];
+
   try {
-    const problem = await response.json();
-    return problem.errors?.request || [problem.detail || problem.title || fallback];
+    const problem = await sessionRequests.readJson(response);
+    if (problem === sessionRequests.stalePayload) return [];
+    const validationMessages = Object.values(problem.errors || {})
+      .flatMap(value => Array.isArray(value) ? value : [value])
+      .filter(Boolean);
+    return validationMessages.length > 0
+      ? validationMessages
+      : [problem.detail || problem.title || fallback];
   } catch {
     return [fallback];
   }
@@ -353,7 +413,9 @@ async function loadCurrentUser() {
     return false;
   }
 
-  state.currentUser = await response.json();
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return false;
+  state.currentUser = currentUser;
   updateAuthView();
   return isAuthenticated();
 }
@@ -361,29 +423,42 @@ async function loadCurrentUser() {
 async function loadTemplates() {
   const response = await apiFetch("/api/templates");
   if (!response.ok) return;
-  state.templates = await response.json();
+  const templates = await sessionRequests.readJson(response);
+  if (templates === sessionRequests.stalePayload) return;
+  state.templates = templates;
 }
 
 async function loadProjects() {
   const response = await apiFetch("/api/projects");
   if (!response.ok) return;
 
-  state.projects = await response.json();
-  state.configurationsByProjectId = new Map();
-  await Promise.all(state.projects.map(async project => {
-    const configurationsResponse = await apiFetch(`/api/projects/${project.id}/configurations`);
-    state.configurationsByProjectId.set(
-      project.id,
-      configurationsResponse.ok ? await configurationsResponse.json() : []);
-  }));
+  const projects = await sessionRequests.readJson(response);
+  if (projects === sessionRequests.stalePayload) return;
 
+  const configurationEntries = await Promise.all(projects.map(async project => {
+    const configurationsResponse = await apiFetch(`/api/projects/${project.id}/configurations`);
+    if (!configurationsResponse.ok) return [project.id, []];
+    const configurations = await sessionRequests.readJson(configurationsResponse);
+    return configurations === sessionRequests.stalePayload
+      ? sessionRequests.stalePayload
+      : [project.id, configurations];
+  }));
+  if (!sessionRequests.isCurrent(response)
+      || configurationEntries.includes(sessionRequests.stalePayload)) {
+    return;
+  }
+
+  state.projects = projects;
+  state.configurationsByProjectId = new Map(configurationEntries);
   renderAccountData();
 }
 
 async function loadAccountJobs() {
   const response = await apiFetch("/api/jobs?take=100");
   if (!response.ok) return;
-  state.jobs = await response.json();
+  const jobs = await sessionRequests.readJson(response);
+  if (jobs === sessionRequests.stalePayload) return;
+  state.jobs = jobs;
   updateMetrics();
 }
 
@@ -465,10 +540,12 @@ function createProjectEditForm(project) {
       <span class="field__label">Номер запроса на завод</span>
       <input data-project-field="factoryRequestNumber" value="${escapeHtml(getProjectFactoryRequestNumber(project))}">
     </label>
-    <div class="project-edit-form__actions">
-      <button class="secondary" type="button" data-action="update-project" data-project-id="${escapeHtml(project.id)}">Сохранить проект</button>
-      <button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>
-    </div>
+    ${canCreateJobs() ? `
+      <div class="project-edit-form__actions">
+        <button class="secondary" type="button" data-action="update-project" data-project-id="${escapeHtml(project.id)}">Сохранить проект</button>
+        <button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>
+      </div>
+    ` : ""}
   `;
   return form;
 }
@@ -510,7 +587,8 @@ function renderSavedConfigurations() {
       </select>
       <div class="inline-actions">
         <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
-        <button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>
+        ${formats.includes("pdf") && canCreateJobs() ? `<button class="secondary" type="button" data-action="preview" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Просмотреть</button>` : ""}
+        ${canCreateJobs() ? `<button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>` : ""}
       </div>
     `;
     savedConfigurationsList.append(item);
@@ -553,9 +631,10 @@ function createConfigurationsTable(project, configurations) {
       <td>${formatDate(configuration.updatedAt)}</td>
       <td>
         <div class="inline-actions">
-          <button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>
+          ${formats.includes("pdf") && canCreateJobs() ? `<button class="secondary" type="button" data-action="preview" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Просмотреть</button>` : ""}
+          ${canCreateJobs() ? `<button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>` : ""}
           <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Редактировать</a>
-          <button class="secondary" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить</button>
+          ${canCreateJobs() ? `<button class="secondary" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить</button>` : ""}
         </div>
       </td>
     `;
@@ -569,7 +648,7 @@ function createConfigurationsTable(project, configurations) {
 async function createProject() {
   const name = projectNameInput.value.trim();
   if (!name) {
-    projectNameInput.setCustomValidity("Укажите название проекта");
+    projectNameInput.setCustomValidity(t("Укажите название проекта"));
     projectNameInput.reportValidity();
     return;
   }
@@ -612,7 +691,7 @@ function getProjectFormValues(button) {
 async function updateProject(projectId, button) {
   const values = getProjectFormValues(button);
   if (!values.name) {
-    values.nameInput?.setCustomValidity("Укажите название проекта");
+    values.nameInput?.setCustomValidity(t("Укажите название проекта"));
     values.nameInput?.reportValidity();
     return;
   }
@@ -641,7 +720,10 @@ async function updateProject(projectId, button) {
 async function deleteProject(projectId) {
   const project = state.projects.find(item => item.id === projectId);
   const label = project?.name ? ` "${project.name}"` : "";
-  if (!confirm(`Удалить проект${label} и все сохраненные конфигурации внутри него? Это действие нельзя отменить.`)) {
+  const confirmation = getLanguage() === "en"
+    ? `Delete project${label} and every saved configuration inside it? This action cannot be undone.`
+    : `Удалить проект${label} и все сохраненные конфигурации внутри него? Это действие нельзя отменить.`;
+  if (!confirm(confirmation)) {
     return;
   }
 
@@ -672,7 +754,7 @@ async function deleteConfiguration(projectId, configurationId) {
   await loadProjects();
 }
 
-async function downloadConfiguration(projectId, configurationId, format) {
+async function downloadConfiguration(projectId, configurationId, format, options = {}) {
   if (!canCreateJobs()) {
     showAccountStatus("Недостаточно прав для генерации файла.", "error");
     return;
@@ -698,18 +780,21 @@ async function downloadConfiguration(projectId, configurationId, format) {
     return;
   }
 
-  const job = await createResponse.json();
-  await waitForDownload(job.id, format);
+  const job = await sessionRequests.readJson(createResponse);
+  if (job === sessionRequests.stalePayload) return;
+  await waitForDownload(job.id, format, options);
 }
 
-async function waitForDownload(jobId, format) {
+async function waitForDownload(jobId, format, options = {}) {
   for (let attempt = 0; attempt < 600; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     const response = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+    if (!sessionRequests.isCurrent(response)) return;
     if (!response.ok) continue;
 
-    const job = await response.json();
+    const job = await sessionRequests.readJson(response);
+    if (job === sessionRequests.stalePayload) return;
     if (job.status === "Completed") {
       const file = (job.resultFiles || []).find(candidate =>
         String(candidate.format).toLowerCase() === String(format).toLowerCase())
@@ -720,8 +805,12 @@ async function waitForDownload(jobId, format) {
         return;
       }
 
-      showAccountStatus("Файл готов. Скачивание началось.");
-      window.location.href = file.downloadUrl;
+      if (options.preview && openGeneratedFilePreview(file, options.trigger)) {
+        showAccountStatus(getLanguage() === "en" ? "PDF is ready for preview." : "PDF готов к просмотру.");
+      } else {
+        showAccountStatus(t("Файл готов. Скачивание началось."));
+        window.location.href = file.downloadUrl;
+      }
       return;
     }
 
@@ -744,7 +833,9 @@ async function loadAdminData() {
 async function loadAdminUsers() {
   const response = await apiFetch("/api/admin/users");
   if (!response.ok) return;
-  state.adminUsers = await response.json();
+  const users = await sessionRequests.readJson(response);
+  if (users === sessionRequests.stalePayload) return;
+  state.adminUsers = users;
   renderAdminUsers();
 }
 
@@ -853,7 +944,9 @@ async function handleAdminUserAction(action, userName, button) {
 async function loadAdminTemplates() {
   const response = await apiFetch("/api/admin/templates");
   if (!response.ok) return;
-  state.adminTemplates = await response.json();
+  const templates = await sessionRequests.readJson(response);
+  if (templates === sessionRequests.stalePayload) return;
+  state.adminTemplates = templates;
   renderAdminTemplates();
 }
 
@@ -865,7 +958,12 @@ function renderAdminTemplates() {
     row.innerHTML = `
       <td>${escapeHtml(template.name || template.code || template.id)}<br><span class="muted">${escapeHtml(template.code || template.id)}</span></td>
       <td>${escapeHtml((template.outputFormats || []).map(format => format.toUpperCase()).join(", "))}</td>
-      <td><input class="mini-toggle" type="checkbox" data-template-id="${escapeHtml(template.id)}" ${template.enabled ? "checked" : ""}></td>
+      <td>
+        <label class="mini-toggle-hit">
+          <input class="mini-toggle" type="checkbox" data-template-id="${escapeHtml(template.id)}" ${template.enabled ? "checked" : ""}>
+          <span class="sr-only">${escapeHtml(template.name || template.code || template.id)}</span>
+        </label>
+      </td>
     `;
     adminTemplatesTableBody.append(row);
   }
@@ -888,6 +986,57 @@ async function setTemplateEnabled(templateId, enabled) {
   await loadAdminTemplates();
 }
 
+function showTemplateImportStatus(message, kind = "empty") {
+  if (!templateImportStatus) return;
+  templateImportStatus.hidden = false;
+  templateImportStatus.className = `template-import__status ${kind}`;
+  templateImportStatus.textContent = message;
+}
+
+async function importTemplate(event) {
+  event.preventDefault();
+  const manifest = templateManifestFile?.files?.[0];
+  const template = templateGrbFile?.files?.[0];
+  const fragments = templateFragmentsFile?.files?.[0];
+
+  if (!manifest || !template) {
+    showTemplateImportStatus(t("Выберите манифест и файл шаблона."), "error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("manifest", manifest);
+  formData.append("template", template);
+  if (fragments) formData.append("fragments", fragments);
+
+  templateImportButton.disabled = true;
+  showTemplateImportStatus(t("Импорт выполняется..."));
+  try {
+    const response = await apiFetch("/api/admin/templates/import", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!response.ok) {
+      const messages = await readProblem(response, t("Не удалось импортировать шаблон"));
+      showTemplateImportStatus(messages.join(" "), "error");
+      return;
+    }
+
+    const importedTemplate = await sessionRequests.readJson(response);
+    if (importedTemplate === sessionRequests.stalePayload) return;
+    templateImportForm.reset();
+    showTemplateImportStatus(
+      `${t("Шаблон импортирован.")} ${importedTemplate.name || importedTemplate.code || importedTemplate.id || ""}`.trim(),
+      "success");
+    await Promise.all([loadTemplates(), loadAdminTemplates()]);
+  } catch {
+    showTemplateImportStatus(t("Не удалось импортировать шаблон"), "error");
+  } finally {
+    templateImportButton.disabled = false;
+  }
+}
+
 async function register(event) {
   event.preventDefault();
   registerStatus.hidden = true;
@@ -904,7 +1053,7 @@ async function register(event) {
   });
 
   if (!response.ok) {
-    const messages = await readProblem(response, "Не удалось отправить заявку");
+    const messages = await readProblem(response, t("Не удалось отправить заявку"));
     registerStatus.hidden = false;
     registerStatus.className = "error";
     registerStatus.textContent = messages.join(" ");
@@ -914,7 +1063,7 @@ async function register(event) {
   registerForm.reset();
   registerStatus.hidden = false;
   registerStatus.className = "empty";
-  registerStatus.textContent = "Заявка отправлена. Доступ появится после подтверждения администратором.";
+  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
@@ -934,12 +1083,15 @@ async function login(event) {
   });
 
   if (!response.ok) {
-    passwordInput.setCustomValidity("Неверный логин или пароль");
+    passwordInput.setCustomValidity(t("Неверный логин или пароль"));
     passwordInput.reportValidity();
     return;
   }
 
-  state.currentUser = await response.json();
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return;
+  clearAccountSessionState();
+  state.currentUser = currentUser;
   passwordInput.value = "";
   updateAuthView();
   await loadTemplates();
@@ -950,20 +1102,10 @@ async function login(event) {
 }
 
 async function logout() {
-  await apiFetch("/api/auth/logout", { method: "POST" });
+  clearAccountSessionState();
   state.currentUser = null;
-  state.projects = [];
-  state.configurationsByProjectId = new Map();
-  state.jobs = [];
-  state.adminUsers = [];
-  state.adminTemplates = [];
-  projectsList.replaceChildren();
-  savedConfigurationsList?.replaceChildren();
-  adminUsersTableBody.replaceChildren();
-  adminTemplatesTableBody.replaceChildren();
-  hideAccountStatus();
-  updateMetrics();
   updateAuthView();
+  await apiFetch("/api/auth/logout", { method: "POST" });
 }
 
 async function boot() {
@@ -1007,6 +1149,11 @@ projectsList.addEventListener("click", event => {
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+  } else if (button.dataset.action === "preview") {
+    downloadConfiguration(button.dataset.projectId, button.dataset.id, "pdf", {
+      preview: true,
+      trigger: button
+    });
   } else if (button.dataset.action === "update-project") {
     updateProject(button.dataset.projectId, button);
   } else if (button.dataset.action === "delete-project") {
@@ -1020,6 +1167,11 @@ savedConfigurationsList?.addEventListener("click", event => {
   if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+  } else if (button.dataset.action === "preview") {
+    downloadConfiguration(button.dataset.projectId, button.dataset.id, "pdf", {
+      preview: true,
+      trigger: button
+    });
   }
 });
 adminUsersTableBody.addEventListener("click", event => {
@@ -1031,6 +1183,14 @@ adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");
   if (!input) return;
   setTemplateEnabled(input.dataset.templateId, input.checked);
+});
+templateImportForm?.addEventListener("submit", importTemplate);
+window.addEventListener("tflex:languagechange", () => {
+  renderAccountData();
+  if (canAdmin()) {
+    renderAdminUsers();
+    renderAdminTemplates();
+  }
 });
 
 await boot();

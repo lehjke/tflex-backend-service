@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Core.Abstractions;
 using TFlexDrawingService.Core.Models;
@@ -9,8 +11,12 @@ public sealed class LocalFileStorage(IOptions<DrawingStorageOptions> options) : 
 {
     public Task<string> CreateWorkingDirectoryAsync(DrawingJob job, CancellationToken cancellationToken = default)
     {
-        var directory = Path.Combine(options.Value.RootPath, "jobs", job.Id);
-        Directory.CreateDirectory(directory);
+        var directory = Path.Combine(
+            options.Value.RootPath,
+            "jobs",
+            job.Id,
+            GetAttemptDirectoryName(job));
+        ResetDirectory(directory, cancellationToken);
         return Task.FromResult(directory);
     }
 
@@ -41,11 +47,39 @@ public sealed class LocalFileStorage(IOptions<DrawingStorageOptions> options) : 
         return Task.FromResult(destination);
     }
 
-    public string CreateGeneratedDirectory(string jobId)
+    public string CreateGeneratedDirectory(DrawingJob job)
     {
-        var directory = Path.Combine(options.Value.RootPath, "generated", jobId);
-        Directory.CreateDirectory(directory);
+        var directory = Path.Combine(
+            options.Value.RootPath,
+            "generated",
+            job.Id,
+            GetAttemptDirectoryName(job));
+        ResetDirectory(directory, CancellationToken.None);
         return directory;
+    }
+
+    private static string GetAttemptDirectoryName(DrawingJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.LeaseToken))
+        {
+            throw new InvalidOperationException(
+                $"Drawing job '{job.Id}' does not have an attempt lease token.");
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(job.LeaseToken));
+        return $"attempt-{Convert.ToHexStringLower(hash.AsSpan(0, 16))}";
+    }
+
+    private static void ResetDirectory(string directory, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Directory.CreateDirectory(directory);
     }
 
     private static void CopyDirectory(

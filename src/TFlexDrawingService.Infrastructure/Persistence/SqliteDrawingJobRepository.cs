@@ -36,7 +36,9 @@ public sealed class SqliteDrawingJobRepository(
                 StartedAt TEXT NULL,
                 FinishedAt TEXT NULL,
                 ErrorMessage TEXT NULL,
-                WorkingDirectory TEXT NULL
+                WorkingDirectory TEXT NULL,
+                LeaseToken TEXT NULL,
+                LeaseExpiresAt TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_DrawingJobs_Status_CreatedAt
@@ -62,12 +64,31 @@ public sealed class SqliteDrawingJobRepository(
             "OwnerUserName",
             "TEXT NOT NULL DEFAULT 'legacy'",
             cancellationToken);
+        await EnsureColumnExistsAsync(
+            connection,
+            "DrawingJobs",
+            "LeaseToken",
+            "TEXT NULL",
+            cancellationToken);
+        await EnsureColumnExistsAsync(
+            connection,
+            "DrawingJobs",
+            "LeaseExpiresAt",
+            "TEXT NULL",
+            cancellationToken);
 
         await ExecuteAsync(
             connection,
             """
             CREATE INDEX IF NOT EXISTS IX_DrawingJobs_OwnerUserName_CreatedAt
                 ON DrawingJobs(OwnerUserName, CreatedAt);
+            """,
+            cancellationToken);
+        await ExecuteAsync(
+            connection,
+            """
+            CREATE INDEX IF NOT EXISTS IX_DrawingJobs_Status_LeaseExpiresAt
+                ON DrawingJobs(Status, LeaseExpiresAt);
             """,
             cancellationToken);
 
@@ -80,19 +101,52 @@ public sealed class SqliteDrawingJobRepository(
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO DrawingJobs (
-                Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
-            )
-            VALUES (
-                $id, $templateId, $status, $inputParametersJson, $outputFormat, $ownerUserName, $createdAt,
-                $startedAt, $finishedAt, $errorMessage, $workingDirectory
-            );
-            """;
-        AddJobParameters(command, job);
+        ConfigureInsertCommand(command, job);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<DrawingJobEnqueueResult> TryCreateAsync(
+        DrawingJob job,
+        int maxActiveJobs,
+        int maxActiveJobsPerUser,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxActiveJobs);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxActiveJobsPerUser);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        // An immediate transaction takes the SQLite write lock before either count is read.
+        // Concurrent API requests therefore cannot all pass the limits and insert afterwards.
+        await using var transaction = connection.BeginTransaction(deferred: false);
+
+        var activeTotal = await CountActiveCoreAsync(connection, transaction, null, cancellationToken);
+        if (activeTotal >= maxActiveJobs)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return DrawingJobEnqueueResult.TotalLimitReached;
+        }
+
+        var activeForUser = await CountActiveCoreAsync(
+            connection,
+            transaction,
+            job.OwnerUserName,
+            cancellationToken);
+        if (activeForUser >= maxActiveJobsPerUser)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return DrawingJobEnqueueResult.UserLimitReached;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        ConfigureInsertCommand(command, job);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return DrawingJobEnqueueResult.Enqueued;
     }
 
     public async Task<DrawingJob?> GetAsync(string id, CancellationToken cancellationToken = default)
@@ -134,7 +188,7 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             ORDER BY CreatedAt DESC
             LIMIT $take;
@@ -167,7 +221,7 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE OwnerUserName = $ownerUserName
             ORDER BY CreatedAt DESC
@@ -197,29 +251,7 @@ public sealed class SqliteDrawingJobRepository(
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = string.IsNullOrWhiteSpace(ownerUserName)
-            ? """
-              SELECT COUNT(*)
-              FROM DrawingJobs
-              WHERE Status IN ($pending, $running);
-              """
-            : """
-              SELECT COUNT(*)
-              FROM DrawingJobs
-              WHERE Status IN ($pending, $running)
-                AND OwnerUserName = $ownerUserName;
-              """;
-
-        command.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
-        command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
-        if (!string.IsNullOrWhiteSpace(ownerUserName))
-        {
-            command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
-        }
-
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        return await CountActiveCoreAsync(connection, null, ownerUserName, cancellationToken);
     }
 
     public async Task<IReadOnlyList<DrawingJob>> ListFinishedBeforeAsync(
@@ -233,7 +265,7 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Status IN ($completed, $failed, $cancelled)
               AND FinishedAt IS NOT NULL
@@ -288,16 +320,24 @@ public sealed class SqliteDrawingJobRepository(
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task<DrawingJob?> TryClaimNextPendingAsync(CancellationToken cancellationToken = default)
+    public async Task<DrawingJob?> TryClaimNextPendingAsync(
+        string leaseToken,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaseToken);
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
+        var startedAt = DateTimeOffset.UtcNow;
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE DrawingJobs
             SET Status = $running,
-                StartedAt = $startedAt
+                StartedAt = $startedAt,
+                LeaseToken = $leaseToken,
+                LeaseExpiresAt = $leaseExpiresAt
             WHERE Id = (
                 SELECT Id
                 FROM DrawingJobs
@@ -305,42 +345,147 @@ public sealed class SqliteDrawingJobRepository(
                 ORDER BY CreatedAt
                 LIMIT 1
             )
+              AND Status = $pending
             RETURNING Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                      StartedAt, FinishedAt, ErrorMessage, WorkingDirectory;
+                      StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt;
             """;
         command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
-        command.Parameters.AddWithValue("$startedAt", FormatDate(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue("$startedAt", FormatDate(startedAt));
+        command.Parameters.AddWithValue("$leaseToken", leaseToken);
+        command.Parameters.AddWithValue("$leaseExpiresAt", FormatDate(leaseExpiresAt));
         command.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapJob(reader) : null;
     }
 
-    public async Task UpdateWorkingDirectoryAsync(
-        string id,
-        string workingDirectory,
+    public async Task<int> RequeueExpiredRunningAsync(
+        DateTimeOffset utcNow,
         CancellationToken cancellationToken = default)
     {
-        await ExecuteAsync(
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+
+        await using (var filesCommand = connection.CreateCommand())
+        {
+            filesCommand.Transaction = transaction;
+            filesCommand.CommandText = """
+                DELETE FROM GeneratedFiles
+                WHERE JobId IN (
+                    SELECT Id
+                    FROM DrawingJobs
+                    WHERE Status = $running
+                      AND (LeaseExpiresAt IS NULL OR LeaseExpiresAt <= $utcNow)
+                );
+                """;
+            filesCommand.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+            filesCommand.Parameters.AddWithValue("$utcNow", FormatDate(utcNow));
+            await filesCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        int recoveredCount;
+        await using (var jobsCommand = connection.CreateCommand())
+        {
+            jobsCommand.Transaction = transaction;
+            jobsCommand.CommandText = """
+                UPDATE DrawingJobs
+                SET Status = $pending,
+                    StartedAt = NULL,
+                    FinishedAt = NULL,
+                    ErrorMessage = NULL,
+                    WorkingDirectory = NULL,
+                    LeaseToken = NULL,
+                    LeaseExpiresAt = NULL
+                WHERE Status = $running
+                  AND (LeaseExpiresAt IS NULL OR LeaseExpiresAt <= $utcNow);
+                """;
+            jobsCommand.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+            jobsCommand.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+            jobsCommand.Parameters.AddWithValue("$utcNow", FormatDate(utcNow));
+            recoveredCount = await jobsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return recoveredCount;
+    }
+
+    public async Task<bool> RenewLeaseAsync(
+        string id,
+        string leaseToken,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaseToken);
+
+        return await ExecuteAsync(
+            """
+            UPDATE DrawingJobs
+            SET LeaseExpiresAt = $leaseExpiresAt
+            WHERE Id = $id
+              AND Status = $running
+              AND LeaseToken = $leaseToken
+              AND LeaseExpiresAt > $utcNow;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$id", id);
+                command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+                command.Parameters.AddWithValue("$leaseToken", leaseToken);
+                command.Parameters.AddWithValue("$leaseExpiresAt", FormatDate(leaseExpiresAt));
+                command.Parameters.AddWithValue("$utcNow", FormatDate(DateTimeOffset.UtcNow));
+            },
+            cancellationToken) > 0;
+    }
+
+    public async Task<bool> UpdateWorkingDirectoryAsync(
+        string id,
+        string workingDirectory,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null)
+    {
+        return await ExecuteAsync(
             """
             UPDATE DrawingJobs
             SET WorkingDirectory = $workingDirectory
-            WHERE Id = $id;
+            WHERE Id = $id
+              AND (
+                  $leaseToken IS NULL
+                  OR (
+                      Status = $running
+                      AND LeaseToken = $leaseToken
+                      AND LeaseExpiresAt > $utcNow
+                  )
+              );
             """,
             command =>
             {
                 command.Parameters.AddWithValue("$id", id);
                 command.Parameters.AddWithValue("$workingDirectory", workingDirectory);
+                AddLeaseGuardParameters(command, leaseToken);
             },
-            cancellationToken);
+            cancellationToken) > 0;
     }
 
-    public async Task AddGeneratedFileAsync(GeneratedFile file, CancellationToken cancellationToken = default)
+    public async Task<bool> AddGeneratedFileAsync(
+        GeneratedFile file,
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null)
     {
-        await ExecuteAsync(
+        return await ExecuteAsync(
             """
             INSERT INTO GeneratedFiles (Id, JobId, FileName, Format, Path, CreatedAt, SizeBytes)
-            VALUES ($id, $jobId, $fileName, $format, $path, $createdAt, $sizeBytes);
+            SELECT $id, $jobId, $fileName, $format, $path, $createdAt, $sizeBytes
+            WHERE $leaseToken IS NULL
+               OR EXISTS (
+                    SELECT 1
+                    FROM DrawingJobs
+                    WHERE Id = $jobId
+                      AND Status = $running
+                      AND LeaseToken = $leaseToken
+                      AND LeaseExpiresAt > $utcNow
+               );
             """,
             command =>
             {
@@ -351,8 +496,9 @@ public sealed class SqliteDrawingJobRepository(
                 command.Parameters.AddWithValue("$path", file.Path);
                 command.Parameters.AddWithValue("$createdAt", FormatDate(file.CreatedAt));
                 command.Parameters.AddWithValue("$sizeBytes", file.SizeBytes);
+                AddLeaseGuardParameters(command, leaseToken);
             },
-            cancellationToken);
+            cancellationToken) > 0;
     }
 
     public async Task<GeneratedFile?> GetGeneratedFileAsync(
@@ -376,41 +522,64 @@ public sealed class SqliteDrawingJobRepository(
         return await reader.ReadAsync(cancellationToken) ? MapFile(reader) : null;
     }
 
-    public async Task MarkCompletedAsync(
+    public async Task<bool> MarkCompletedAsync(
         string id,
         DateTimeOffset finishedAt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null)
     {
-        await ExecuteAsync(
+        return await ExecuteAsync(
             """
             UPDATE DrawingJobs
             SET Status = $status,
                 FinishedAt = $finishedAt,
-                ErrorMessage = NULL
-            WHERE Id = $id;
+                ErrorMessage = NULL,
+                LeaseToken = NULL,
+                LeaseExpiresAt = NULL
+            WHERE Id = $id
+              AND (
+                  $leaseToken IS NULL
+                  OR (
+                      Status = $running
+                      AND LeaseToken = $leaseToken
+                      AND LeaseExpiresAt > $utcNow
+                  )
+              );
             """,
             command =>
             {
                 command.Parameters.AddWithValue("$id", id);
                 command.Parameters.AddWithValue("$status", DrawingJobStatus.Completed.ToString());
                 command.Parameters.AddWithValue("$finishedAt", FormatDate(finishedAt));
+                AddLeaseGuardParameters(command, leaseToken);
             },
-            cancellationToken);
+            cancellationToken) > 0;
     }
 
-    public async Task MarkFailedAsync(
+    public async Task<bool> MarkFailedAsync(
         string id,
         string errorMessage,
         DateTimeOffset finishedAt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? leaseToken = null)
     {
-        await ExecuteAsync(
+        return await ExecuteAsync(
             """
             UPDATE DrawingJobs
             SET Status = $status,
                 FinishedAt = $finishedAt,
-                ErrorMessage = $errorMessage
-            WHERE Id = $id;
+                ErrorMessage = $errorMessage,
+                LeaseToken = NULL,
+                LeaseExpiresAt = NULL
+            WHERE Id = $id
+              AND (
+                  $leaseToken IS NULL
+                  OR (
+                      Status = $running
+                      AND LeaseToken = $leaseToken
+                      AND LeaseExpiresAt > $utcNow
+                  )
+              );
             """,
             command =>
             {
@@ -418,8 +587,9 @@ public sealed class SqliteDrawingJobRepository(
                 command.Parameters.AddWithValue("$status", DrawingJobStatus.Failed.ToString());
                 command.Parameters.AddWithValue("$finishedAt", FormatDate(finishedAt));
                 command.Parameters.AddWithValue("$errorMessage", errorMessage);
+                AddLeaseGuardParameters(command, leaseToken);
             },
-            cancellationToken);
+            cancellationToken) > 0;
     }
 
     private SqliteConnection CreateConnection()
@@ -435,7 +605,7 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Id = $id;
             """;
@@ -454,7 +624,7 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
-                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory
+                   StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Id = $id AND OwnerUserName = $ownerUserName;
             """;
@@ -489,7 +659,7 @@ public sealed class SqliteDrawingJobRepository(
         return files;
     }
 
-    private async Task ExecuteAsync(
+    private async Task<int> ExecuteAsync(
         string commandText,
         Action<SqliteCommand> configure,
         CancellationToken cancellationToken)
@@ -499,7 +669,38 @@ public sealed class SqliteDrawingJobRepository(
         await using var command = connection.CreateCommand();
         command.CommandText = commandText;
         configure(command);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<int> CountActiveCoreAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string? ownerUserName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = string.IsNullOrWhiteSpace(ownerUserName)
+            ? """
+              SELECT COUNT(*)
+              FROM DrawingJobs
+              WHERE Status IN ($pending, $running);
+              """
+            : """
+              SELECT COUNT(*)
+              FROM DrawingJobs
+              WHERE Status IN ($pending, $running)
+                AND OwnerUserName = $ownerUserName;
+              """;
+
+        command.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+        command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+        if (!string.IsNullOrWhiteSpace(ownerUserName))
+        {
+            command.Parameters.AddWithValue("$ownerUserName", ownerUserName);
+        }
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     private static async Task ExecuteAsync(
@@ -552,6 +753,25 @@ public sealed class SqliteDrawingJobRepository(
         command.Parameters.AddWithValue("$finishedAt", ToDbValue(job.FinishedAt));
         command.Parameters.AddWithValue("$errorMessage", ToDbValue(job.ErrorMessage));
         command.Parameters.AddWithValue("$workingDirectory", ToDbValue(job.WorkingDirectory));
+        command.Parameters.AddWithValue("$leaseToken", ToDbValue(job.LeaseToken));
+        command.Parameters.AddWithValue("$leaseExpiresAt", ToDbValue(job.LeaseExpiresAt is null
+            ? null
+            : FormatDate(job.LeaseExpiresAt.Value)));
+    }
+
+    private static void ConfigureInsertCommand(SqliteCommand command, DrawingJob job)
+    {
+        command.CommandText = """
+            INSERT INTO DrawingJobs (
+                Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+                StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
+            )
+            VALUES (
+                $id, $templateId, $status, $inputParametersJson, $outputFormat, $ownerUserName, $createdAt,
+                $startedAt, $finishedAt, $errorMessage, $workingDirectory, $leaseToken, $leaseExpiresAt
+            );
+            """;
+        AddJobParameters(command, job);
     }
 
     private static DrawingJob MapJob(SqliteDataReader reader)
@@ -568,8 +788,17 @@ public sealed class SqliteDrawingJobRepository(
             StartedAt = ReadNullableDate(reader, 7),
             FinishedAt = ReadNullableDate(reader, 8),
             ErrorMessage = reader.IsDBNull(9) ? null : reader.GetString(9),
-            WorkingDirectory = reader.IsDBNull(10) ? null : reader.GetString(10)
+            WorkingDirectory = reader.IsDBNull(10) ? null : reader.GetString(10),
+            LeaseToken = reader.IsDBNull(11) ? null : reader.GetString(11),
+            LeaseExpiresAt = ReadNullableDate(reader, 12)
         };
+    }
+
+    private static void AddLeaseGuardParameters(SqliteCommand command, string? leaseToken)
+    {
+        command.Parameters.AddWithValue("$leaseToken", (object?)leaseToken ?? DBNull.Value);
+        command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+        command.Parameters.AddWithValue("$utcNow", FormatDate(DateTimeOffset.UtcNow));
     }
 
     private static GeneratedFile MapFile(SqliteDataReader reader)

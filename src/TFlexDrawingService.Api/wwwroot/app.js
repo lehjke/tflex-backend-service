@@ -1,3 +1,8 @@
+import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
+import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260720-ui-hardening-4";
+import { evaluateTFlexExpression } from "./safe-expression.js?v=20260720-ui-hardening-1";
+import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+
 const state = {
   templates: [],
   selectedTemplate: null,
@@ -16,6 +21,7 @@ const state = {
   configurations: [],
   editingConfigurationId: null
 };
+const sessionRequests = createSessionRequestGuard();
 
 const guestMain = document.querySelector("#guestMain");
 const appMain = document.querySelector("#appMain");
@@ -44,6 +50,7 @@ const formatSelect = document.querySelector("#formatSelect");
 const globalSearchInput = document.querySelector(".global-search input");
 const parametersForm = document.querySelector("#parametersForm");
 const submitButton = document.querySelector("#submitButton");
+const previewResultButton = document.querySelector("#previewResultButton");
 const downloadResultButton = document.querySelector("#downloadResultButton");
 const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
@@ -88,6 +95,10 @@ const FIELD_LABEL_OVERRIDES = new Map([
   ["WG", "Длина противовеса"],
   ["AH", "Ширина шахты"],
   ["BH", "Глубина шахты"],
+  ["CB", "От оси кабины до правой стены шахты"],
+  ["CJ", "Эксцентриситет дверей"],
+  ["NE", "Количество входов"],
+  ["TR", "Высота подъема"],
   ["A3", "Расстояние от оси кабины до стенки без противовеса"],
   ["OH", "Оголовок"],
   ["PD", "Приямок"]
@@ -331,7 +342,7 @@ function updateAuthView() {
   appMain.hidden = !authenticated;
   createTopButton.hidden = !authenticated || !canCreateJobs();
   submitButton.hidden = authenticated && !canCreateJobs();
-  saveConfigurationButton.hidden = !authenticated;
+  saveConfigurationButton.hidden = !authenticated || !canCreateJobs();
   adminNavLinks.forEach(link => {
     link.hidden = !isAdmin;
   });
@@ -348,6 +359,61 @@ function updateAuthView() {
       currentUserRoleLabel.hidden = true;
       currentUserRoleLabel.textContent = "";
     }
+  }
+}
+
+function clearEditorSessionState() {
+  sessionRequests.invalidate();
+  if (state.pendingRenderFrame !== null) {
+    cancelAnimationFrame(state.pendingRenderFrame);
+  }
+  clearInterval(state.pollTimer);
+
+  state.templates = [];
+  state.selectedTemplate = null;
+  state.parameterValues = {};
+  state.validationFieldNames = new Set();
+  state.activeJobId = null;
+  state.pollTimer = null;
+  state.latestJob = null;
+  state.jobs = [];
+  state.pendingRenderFrame = null;
+  state.pendingFocusTarget = null;
+  state.activeParameterCategory = null;
+  state.projects = [];
+  state.configurations = [];
+  state.editingConfigurationId = null;
+
+  loginForm?.reset();
+  guestLoginForm?.reset();
+  registerForm?.reset();
+  document.querySelector("#jobForm")?.reset();
+  loginPassword?.setCustomValidity("");
+  guestLoginForm?.querySelector("[name='password']")?.setCustomValidity("");
+  if (registerStatus) {
+    registerStatus.hidden = true;
+    registerStatus.textContent = "";
+  }
+  if (globalSearchInput) globalSearchInput.value = "";
+
+  jobsTableBody.replaceChildren();
+  templateSelect.replaceChildren();
+  formatSelect.replaceChildren();
+  projectSelect.replaceChildren();
+  parametersForm.replaceChildren();
+  parameterTabs?.replaceChildren();
+  updateValidationPanel();
+  updateConfigurationNamePreview();
+  updateDownloadResultButton(null);
+  if (parameterReadyBanner) parameterReadyBanner.hidden = true;
+  statusPanel.className = "empty";
+  statusPanel.textContent = "";
+  updateShaftPreview(null);
+
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.has("configurationId")) {
+    currentUrl.searchParams.delete("configurationId");
+    window.history.replaceState(null, "", currentUrl);
   }
 }
 
@@ -369,13 +435,14 @@ async function apiFetch(url, options = {}) {
     headers.set("X-TFlex-Requested-With", "fetch");
   }
 
-  const response = await fetch(url, {
+  const response = await sessionRequests.fetch(url, {
     credentials: "same-origin",
     ...options,
     headers
   });
 
-  if (response.status === 401) {
+  if (sessionRequests.isCurrent(response) && response.status === 401) {
+    clearEditorSessionState();
     state.currentUser = null;
     updateAuthView();
   }
@@ -384,8 +451,11 @@ async function apiFetch(url, options = {}) {
 }
 
 async function readProblem(response, fallback) {
+  if (!sessionRequests.isCurrent(response)) return [];
+
   try {
-    const problem = await response.json();
+    const problem = await sessionRequests.readJson(response);
+    if (problem === sessionRequests.stalePayload) return [];
     return problem.errors?.request || [problem.detail || problem.title || fallback];
   } catch {
     return [fallback];
@@ -394,7 +464,7 @@ async function readProblem(response, fallback) {
 
 function formatDate(value) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("ru-RU", {
+  return new Intl.DateTimeFormat(getLanguage() === "en" ? "en-GB" : "ru-RU", {
     dateStyle: "short",
     timeStyle: "medium"
   }).format(new Date(value));
@@ -431,6 +501,11 @@ function updateDownloadResultButton(job = undefined) {
     downloadResultButton.disabled = true;
     downloadResultButton.dataset.downloadUrl = "";
     downloadResultButton.textContent = `Скачать ${expectedFormat}`;
+    if (previewResultButton) {
+      previewResultButton.disabled = true;
+      previewResultButton.dataset.downloadUrl = "";
+      previewResultButton.dataset.fileName = "";
+    }
     return;
   }
 
@@ -438,6 +513,14 @@ function updateDownloadResultButton(job = undefined) {
   downloadResultButton.disabled = false;
   downloadResultButton.dataset.downloadUrl = file.downloadUrl;
   downloadResultButton.textContent = `Скачать ${format}`;
+
+  if (previewResultButton) {
+    const pdf = (sourceJob?.resultFiles || []).find(isPdfFile);
+    previewResultButton.disabled = !pdf?.downloadUrl;
+    previewResultButton.dataset.downloadUrl = pdf?.downloadUrl || "";
+    previewResultButton.dataset.fileName = pdf?.fileName || "";
+    previewResultButton.dataset.format = pdf?.format || "pdf";
+  }
 }
 
 function getEditorSearchQuery() {
@@ -539,7 +622,11 @@ function readInputValue(input, parameter) {
   const type = getParameterType(parameter);
   if (type === "bool" || type === "boolean") return input.checked;
   if (acceptsDecimalInput(parameter)) return parseDecimalValue(input.value);
-  if (type === "integer") return input.value === "" ? null : Number.parseInt(input.value, 10);
+  if (type === "integer") {
+    if (input.value === "") return null;
+    const value = Number.parseInt(input.value, 10);
+    return Number.isFinite(value) ? value : null;
+  }
   if (type === "number") return parseDecimalValue(input.value);
   return input.value;
 }
@@ -594,310 +681,10 @@ function isLookupMatch(expected, actual) {
   return String(actual ?? "") === String(expected ?? "");
 }
 
-function tflexSwitch(selector, ...pairs) {
-  for (let index = 0; index < pairs.length - 1; index += 2) {
-    if (isLookupMatch(pairs[index], selector)) return pairs[index + 1];
-  }
-
-  return pairs.length % 2 === 1 ? pairs[pairs.length - 1] : undefined;
-}
-
-function tflexAtof(value) {
-  return toNumber(value);
-}
-
-function tflexVal(value, lookupValue) {
-  return hasValue(lookupValue) ? toNumber(lookupValue) : toNumber(value);
-}
-
-function tflexTan(value) {
-  return Math.tan(toNumber(value) * Math.PI / 180);
-}
-
-function tflexCos(value) {
-  return Math.cos(toNumber(value) * Math.PI / 180);
-}
-
-function tflexSin(value) {
-  return Math.sin(toNumber(value) * Math.PI / 180);
-}
-
-function tflexCeil(value, step = 1) {
-  const number = toNumber(value);
-  const increment = Math.abs(toNumber(step)) || 1;
-  return Math.ceil(number / increment) * increment;
-}
-
-function tflexTpart(value, start, length) {
-  const text = String(value ?? "");
-  const from = Math.max(0, Math.trunc(toNumber(start)) - 1);
-  const count = Math.trunc(toNumber(length));
-  return (count > 0 ? text.slice(from, from + count) : text.slice(from)).trim();
-}
-
-function tflexFtoa(value) {
-  return hasValue(value) ? String(value) : "";
-}
-
-function tflexLtot(value, step = 0.001, sign = 1, precision = 3) {
-  const number = toNumber(value);
-  const decimals = Math.max(0, Math.trunc(toNumber(precision)));
-  return number.toFixed(decimals);
-}
-
-function tflexGet() {
-  return 0;
-}
-
-function tflexGetv() {
-  return 0;
-}
-
-function tflexTgetv(part) {
-  const now = new Date();
-  const key = String(part || "").trim().toUpperCase();
-  const values = {
-    YEAR: now.getFullYear(),
-    MONTH: now.getMonth() + 1,
-    DAY: now.getDate(),
-    HOUR: now.getHours(),
-    MINUTE: now.getMinutes(),
-    SECOND: now.getSeconds()
-  };
-
-  return String(values[key] ?? "");
-}
-
-function tflexSelect(...pairs) {
-  for (let index = 0; index < pairs.length - 1; index += 2) {
-    if (Boolean(pairs[index])) return pairs[index + 1];
-  }
-
-  return pairs.length % 2 === 1 ? pairs[pairs.length - 1] : undefined;
-}
-
-function tflexRound(value, step = 1) {
-  const number = toNumber(value);
-  const increment = Math.abs(toNumber(step)) || 1;
-  return Math.round(number / increment) * increment;
-}
-
-function tflexError() {
-  return 0;
-}
-
-function tflexWarn() {
-  return 1;
-}
-
-function tflexFind(tableName, fieldName, predicate) {
-  const rows = state.selectedTemplate?.lookupTables?.[tableName] || [];
-
-  for (const row of rows) {
-    try {
-      if (predicate(row)) return row[fieldName];
-    } catch {
-      return undefined;
-    }
-  }
-
-  return undefined;
-}
-
-function splitTopLevelComma(value) {
-  let depth = 0;
-  let quote = null;
-
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    const previous = value[index - 1];
-
-    if (quote) {
-      if (char === quote && previous !== "\\") quote = null;
-      continue;
-    }
-
-    if (char === "\"" || char === "'") {
-      quote = char;
-    } else if (char === "(") {
-      depth += 1;
-    } else if (char === ")") {
-      depth -= 1;
-    } else if (char === "," && depth === 0) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function translateFindExpressions(expression) {
-  let result = "";
-  let index = 0;
-
-  while (index < expression.length) {
-    const findIndex = expression.indexOf("find(", index);
-    if (findIndex < 0) {
-      result += expression.slice(index);
-      break;
-    }
-
-    result += expression.slice(index, findIndex);
-
-    let depth = 1;
-    let quote = null;
-    let cursor = findIndex + "find(".length;
-
-    for (; cursor < expression.length; cursor += 1) {
-      const char = expression[cursor];
-      const previous = expression[cursor - 1];
-
-      if (quote) {
-        if (char === quote && previous !== "\\") quote = null;
-        continue;
-      }
-
-      if (char === "\"" || char === "'") {
-        quote = char;
-      } else if (char === "(") {
-        depth += 1;
-      } else if (char === ")") {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-
-    if (depth !== 0) {
-      result += expression.slice(findIndex);
-      break;
-    }
-
-    const inner = expression.slice(findIndex + "find(".length, cursor);
-    const commaIndex = splitTopLevelComma(inner);
-    const target = inner.slice(0, commaIndex).trim();
-    const condition = inner.slice(commaIndex + 1).trim();
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(target);
-
-    if (commaIndex < 0 || !match) {
-      result += expression.slice(findIndex, cursor + 1);
-    } else {
-      const [, tableName, fieldName] = match;
-      const rowCondition = condition.replace(
-        new RegExp(`\\b${tableName}\\.([A-Za-z_][A-Za-z0-9_]*)`, "g"),
-        "row.$1");
-      result += `tflexFind(${JSON.stringify(tableName)}, ${JSON.stringify(fieldName)}, row => ${rowCondition})`;
-    }
-
-    index = cursor + 1;
-  }
-
-  return result;
-}
-
-function truncateTopLevelSemicolon(expression) {
-  const value = String(expression || "");
-  let depth = 0;
-  let quote = null;
-
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    const previous = value[index - 1];
-
-    if (quote) {
-      if (char === quote && previous !== "\\") quote = null;
-      continue;
-    }
-
-    if (char === "\"" || char === "'") {
-      quote = char;
-    } else if (char === "(") {
-      depth += 1;
-    } else if (char === ")") {
-      depth = Math.max(0, depth - 1);
-    } else if (char === ";" && depth === 0) {
-      return value.slice(0, index).trim();
-    }
-  }
-
-  return value;
-}
-
-function translateTFlexExpression(expression) {
-  return translateFindExpressions(truncateTopLevelSemicolon(expression))
-    .replace(/\b(?:ERROR|error)\s*\([^)]*\)/g, "tflexError()")
-    .replace(/\b(?:WARN|warn)\s*\([^)]*\)/g, "tflexWarn()")
-    .replace(/\*\*/g, "*")
-    .replace(/\^/g, "**")
-    .replace(/\b(?:switch|SWITCH)\s*\(/g, "tflexSwitch(")
-    .replace(/\b(?:select|SELECT)\s*\(/g, "tflexSelect(")
-    .replace(/\b(?:atof|ATOF)\s*\(/g, "tflexAtof(")
-    .replace(/\b(?:val|VAL)\s*\(/g, "tflexVal(")
-    .replace(/\b(?:TPART|tpart)\s*\(/g, "tflexTpart(")
-    .replace(/\b(?:FTOA2|FTOA|ftoa2|ftoa)\s*\(/g, "tflexFtoa(")
-    .replace(/\b(?:ltot|LTOT)\s*\(/g, "tflexLtot(")
-    .replace(/\b(?:tgetv|TGETV)\s*\(/g, "tflexTgetv(")
-    .replace(/\b(?:getv|GETV)\s*\(/g, "tflexGetv(")
-    .replace(/\b(?:GET|get)\s*\(/g, "tflexGet(")
-    .replace(/\b(?:max|MAX)\s*\(/g, "Math.max(")
-    .replace(/\b(?:min|MIN)\s*\(/g, "Math.min(")
-    .replace(/\b(?:abs|ABS)\s*\(/g, "Math.abs(")
-    .replace(/\b(?:floor|FLOOR)\s*\(/g, "Math.floor(")
-    .replace(/\b(?:ceil|CEIL)\s*\(/g, "tflexCeil(")
-    .replace(/\b(?:tan|TAN)\s*\(/g, "tflexTan(")
-    .replace(/\b(?:cos|COS)\s*\(/g, "tflexCos(")
-    .replace(/\b(?:sin|SIN)\s*\(/g, "tflexSin(")
-    .replace(/\b(?:round|ROUND)\s*\(/g, "tflexRound(");
-}
-
 function evaluateFormulaExpression(expression, context) {
-  if (!expression) return undefined;
-  const translated = translateTFlexExpression(expression);
-
-  try {
-    return Function(
-      "context",
-      "tflexSwitch",
-      "tflexSelect",
-      "tflexAtof",
-      "tflexVal",
-      "tflexRound",
-      "tflexCeil",
-      "tflexTan",
-      "tflexCos",
-      "tflexSin",
-      "tflexTpart",
-      "tflexFtoa",
-      "tflexLtot",
-      "tflexGet",
-      "tflexGetv",
-      "tflexTgetv",
-      "tflexError",
-      "tflexWarn",
-      "tflexFind",
-      `with (context) { return (${translated}); }`
-    )(
-      context,
-      tflexSwitch,
-      tflexSelect,
-      tflexAtof,
-      tflexVal,
-      tflexRound,
-      tflexCeil,
-      tflexTan,
-      tflexCos,
-      tflexSin,
-      tflexTpart,
-      tflexFtoa,
-      tflexLtot,
-      tflexGet,
-      tflexGetv,
-      tflexTgetv,
-      tflexError,
-      tflexWarn,
-      tflexFind);
-  } catch {
-    return undefined;
-  }
+  return evaluateTFlexExpression(expression, context, {
+    lookupTables: state.selectedTemplate?.lookupTables
+  });
 }
 
 function getLookupValue(parameter, context) {
@@ -1230,6 +1017,15 @@ function getCounterweightPlace(context) {
   return { label: place === "налево" ? "Налево" : "Слева", mirrorX: false };
 }
 
+function getRearDoorDirection(context) {
+  const direction = normalizePreviewToken(getPreviewTextValue(context, "$s_1", "s_1"));
+  const opensRight = direction === "направо" || direction === "right" || direction === "1";
+  return {
+    value: opensRight ? "right" : "left",
+    label: opensRight ? "Направо" : "Налево"
+  };
+}
+
 function getPreviewLayoutType(template = state.selectedTemplate) {
   const marker = [template?.id, template?.code, template?.name]
     .filter(Boolean)
@@ -1241,6 +1037,11 @@ function getPreviewLayoutType(template = state.selectedTemplate) {
   }
 
   return "side";
+}
+
+function isLehyProTemplate(template = state.selectedTemplate) {
+  return template?.id === "lehy_pro_side_cwt"
+    || template?.id === "lehy_pro_rear_cwt";
 }
 
 function getPreviewVariantNumber(context, prefix, fallbackNames = []) {
@@ -1370,6 +1171,7 @@ function updateShaftPreview(context = null) {
   const dk = getPreviewNumber(previewContext, "DK");
   const bottomGap = getPreviewNumber(previewContext, "bb");
   const cwtPlace = getCounterweightPlace(previewContext);
+  const rearDoorDirection = getRearDoorDirection(previewContext);
   const cwtLayout = getPreviewLayoutType();
   const centerOpeningDoor = isCenterOpeningDoor(previewContext);
   const entrances = Math.max(1, Math.round(getPreviewNumber(previewContext, "NE") || 1));
@@ -1377,9 +1179,10 @@ function updateShaftPreview(context = null) {
   const doorWidth = jj ? (centerOpeningDoor ? jj * 2 : jj * 1.5 + 175) : null;
   const doorWidthMetricName = centerOpeningDoor ? "2xJJ" : "1.5*JJ+175";
   const lehyProSideCwt = state.selectedTemplate?.id === "lehy_pro_side_cwt";
-  const rearCwt = cwtLayout === "rear";
+  const lehyPro = isLehyProTemplate();
+  const rearCwt = lehyPro && cwtLayout === "rear";
   const carCenterX = rearCwt && ah
-    ? ah / 2
+    ? (cb ? ah - cb : ah / 2)
     : (a1 && a2
     ? a1 + a2
     : (lehyProSideCwt && cb && ah ? ah - cb : (ca || (ah ? ah / 2 : null))));
@@ -1400,8 +1203,15 @@ function updateShaftPreview(context = null) {
     : (ee
       ? ee + 150
       : (bh && wg ? Math.max(0, (bh - wg) / 2) : null));
+  const rearCabinWall = entrances > 1 ? (dk || 141) : (bottomGap || 30);
+  const rearCabinOuterY = rearCwt && cc && bb
+    ? cc - bb / 2 - rearCabinWall
+    : null;
+  const cwtRearClearance = rearCwt && rearCabinOuterY !== null && ww
+    ? Math.max(0, rearCabinOuterY - ww - 30)
+    : null;
   const cwtY = rearCwt
-    ? 30
+    ? cwtRearClearance
     : (ee && bh && wg ? bh - cwtDepth - wg : cwtDepth);
   const doorOffset = rearCwt
     ? getPreviewSignedNumber(previewContext, "CJ")
@@ -1420,7 +1230,9 @@ function updateShaftPreview(context = null) {
     entrances,
     cwtPlaceLabel: cwtPlace.label,
     cwtLayout,
-    mirrorX: cwtPlace.mirrorX,
+    mirrorX: rearCwt ? false : cwtPlace.mirrorX,
+    rearDoorDirection: rearDoorDirection.value,
+    rearDoorDirectionLabel: rearDoorDirection.label,
     a4: doorOffset,
     a1,
     a2,
@@ -1437,7 +1249,9 @@ function updateShaftPreview(context = null) {
     cwtMetricValue,
     cwtDepth,
     cwtY,
+    cwtRearClearance,
     cwtDepthLabel: rearCwt ? "WW" : (ee ? "EE+150" : "CWT Y"),
+    lehyPro,
     rearCwt,
     bs,
     dk,
@@ -1727,22 +1541,27 @@ function renderShaftPreviewSvg(dimensions) {
     height: dimensions.bh + shaftWallThickness * 2
   };
   const cabinSideWallMm = 31;
-  const cabinRearWallMm = 30;
-  const cabinFrontWallMm = dimensions.kk || 45;
+  const cabinRearWallMm = dimensions.rearCwt
+    ? (dimensions.entrances > 1 ? (dimensions.dk || 141) : (dimensions.bottomGap || 30))
+    : 30;
+  const cabinFrontWallMm = dimensions.rearCwt
+    ? (dimensions.dk || 141)
+    : (dimensions.kk || 45);
   const cabinInnerX = dimensions.carCenterX
     ? dimensions.carCenterX - dimensions.aa / 2
     : (dimensions.ah - dimensions.aa) / 2;
   const cabinOuterWidth = Math.max(dimensions.as || 0, dimensions.aa + cabinSideWallMm * 2);
-  const cabinOuterHeight = dimensions.bb + cabinRearWallMm + cabinFrontWallMm;
+  const cabinOuterHeight = dimensions.rearCwt && dimensions.bs
+    ? dimensions.bs
+    : dimensions.bb + cabinRearWallMm + cabinFrontWallMm;
   const cabinSideWall = (cabinOuterWidth - dimensions.aa) / 2;
   const doorWidthMm = dimensions.doorWidth || dimensions.aa * 0.55;
   const doorDepthMm = dimensions.centerOpeningDoor ? 60 : 96;
   const doorSpacingMm = 30;
   const carDoorFrontGap = dimensions.centerOpeningDoor ? 130 : 151;
-  const cabinOuterBottomY = dimensions.bh - carDoorFrontGap - doorDepthMm;
   const cabinOuterTopY = dimensions.rearCwt && dimensions.carCenterY
     ? dimensions.carCenterY - dimensions.bb / 2 - cabinRearWallMm
-    : cabinOuterBottomY - cabinOuterHeight;
+    : dimensions.bh - carDoorFrontGap - doorDepthMm - cabinOuterHeight;
   const baseCabinOuterRect = {
     x: cabinInnerX - cabinSideWall,
     y: cabinOuterTopY,
@@ -1757,12 +1576,18 @@ function renderShaftPreviewSvg(dimensions) {
   };
   const doorX = dimensions.centerOpeningDoor
     ? baseCabinInnerRect.x + baseCabinInnerRect.width / 2 + (dimensions.a4 || 0) - doorWidthMm / 2
-    : baseCabinOuterRect.x + baseCabinOuterRect.width + 25 - doorWidthMm;
+    : dimensions.rearCwt && dimensions.rearDoorDirection === "right"
+      ? baseCabinOuterRect.x - 25
+      : baseCabinOuterRect.x + baseCabinOuterRect.width + 25 - doorWidthMm;
   const makeDoorPair = side => {
     const isRear = side === "rear";
-    const carDoorY = isRear
-      ? baseCabinOuterRect.y - doorDepthMm
-      : baseCabinOuterRect.y + baseCabinOuterRect.height;
+    const carDoorY = dimensions.lehyPro
+      ? (isRear
+        ? baseCabinOuterRect.y
+        : baseCabinOuterRect.y + baseCabinOuterRect.height - doorDepthMm)
+      : (isRear
+        ? baseCabinOuterRect.y - doorDepthMm
+        : baseCabinOuterRect.y + baseCabinOuterRect.height);
     const landingDoorY = isRear
       ? carDoorY - doorSpacingMm - doorDepthMm
       : carDoorY + doorDepthMm + doorSpacingMm;
@@ -1822,7 +1647,7 @@ function renderShaftPreviewSvg(dimensions) {
   };
 
   const baseCwtRect = buildBaseCwtRect();
-  const mirrorRect = rect => dimensions.mirrorX
+  const mirrorRect = rect => dimensions.mirrorX && !dimensions.rearCwt
     ? { ...rect, x: dimensions.ah - rect.x - rect.width }
     : rect;
   const mirrorDoorPair = pair => ({
@@ -1886,6 +1711,9 @@ function renderShaftPreviewSvg(dimensions) {
       const center = pair.carDoor.x + pair.carDoor.width / 2;
       start = center - openingWidth / 2;
       end = center + openingWidth / 2;
+    } else if (dimensions.rearCwt && dimensions.rearDoorDirection === "right") {
+      start = cabinInnerRect.x + 25;
+      end = start + openingWidth;
     } else if (dimensions.mirrorX) {
       start = cabinInnerRect.x + 25;
       end = start + openingWidth;
@@ -2066,15 +1894,31 @@ function renderShaftPreviewMetrics(dimensions) {
     ...(dimensions.doorWidth && dimensions.doorWidth !== dimensions.jj
       ? [[dimensions.doorWidthMetricName, dimensions.doorWidth, dimensions.centerOpeningDoor ? "Расчетная ширина CO" : "Расчетная ширина 2S"]]
       : []),
-    ["KK", dimensions.kk, "Передняя стенка кабины"],
+    [
+      dimensions.rearCwt ? "DK" : "KK",
+      dimensions.rearCwt ? dimensions.dk : dimensions.kk,
+      dimensions.rearCwt
+        ? "От дальней стенки двери кабины до внутренней стенки кабины"
+        : "Передняя стенка кабины"
+    ],
     [dimensions.rearCwt ? "CJ" : "A4", dimensions.a4, "Эксцентриситет"],
     ["Тип", dimensions.rearCwt ? "Задний" : "Боковой", "Компоновка противовеса"],
-    ["Место", dimensions.rearCwt ? "По центру" : dimensions.cwtPlaceLabel, "Положение противовеса"],
+    ...(dimensions.rearCwt && !dimensions.centerOpeningDoor
+      ? [["Открывание", dimensions.rearDoorDirectionLabel, "Направление ТО-дверей"]]
+      : dimensions.rearCwt
+        ? []
+        : [["Место", dimensions.cwtPlaceLabel, "Положение противовеса"]]),
+    ...(dimensions.rearCwt && dimensions.cb
+      ? [["CB", dimensions.cb, "От оси кабины до правой стены"]]
+      : []),
     ...(dimensions.rearCwt && dimensions.carCenterY
-      ? [["CC", dimensions.carCenterY, "Ось кабины по глубине"]]
+      ? [["CC", dimensions.carCenterY, "От задней стены до оси кабины"]]
       : []),
     [dimensions.cwtMetricName, dimensions.cwtMetricValue, "Противовес по ширине"],
-    [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"]
+    [dimensions.cwtDepthLabel, dimensions.cwtDepth, "Противовес по глубине"],
+    ...(dimensions.rearCwt && dimensions.cwtRearClearance !== null
+      ? [["Зазор", dimensions.cwtRearClearance, "От задней стены до противовеса"]]
+      : [])
   ];
 
   return metrics
@@ -2219,6 +2063,41 @@ function collectValidationFieldNames(errors = []) {
   return new Set(errors.flatMap(error => error.fieldNames || []));
 }
 
+function getShaftPreviewGeometryErrors(context) {
+  if (!isLehyProTemplate() || getPreviewLayoutType() !== "rear") return [];
+
+  const cc = getPreviewNumber(context, "CC");
+  const bb = getPreviewNumber(context, "BB");
+  const ww = getPreviewNumber(context, "WW") || getPreviewVariantNumber(context, "WW_", [
+    "WW_1",
+    "WW_11",
+    "WW_12",
+    "WW_2",
+    "WW_21",
+    "WW_22",
+    "WW_3",
+    "WW_31",
+    "WW_32"
+  ]);
+  const entrances = Math.max(1, Math.round(getPreviewNumber(context, "NE") || 1));
+  const rearWall = entrances > 1
+    ? (getPreviewNumber(context, "DK") || 141)
+    : (getPreviewNumber(context, "bb") || 30);
+
+  if (!cc || !bb || !ww) return [];
+
+  const availableDepth = cc - bb / 2 - rearWall;
+  const requiredDepth = ww + 30;
+  if (availableDepth >= requiredDepth) return [];
+
+  const deficit = Math.max(1, Math.ceil(requiredDepth - availableDepth));
+  return [{
+    name: "rear_counterweight_clearance",
+    message: `Недостаточно места для заднего противовеса. Требуется еще ${deficit} мм.`,
+    fieldNames: ["CC", "BB", "WW", entrances > 1 ? "DK" : "bb", "NE"]
+  }];
+}
+
 function applyValidationHighlights(errors = []) {
   state.validationFieldNames = collectValidationFieldNames(errors);
 
@@ -2253,6 +2132,12 @@ function getCurrentValidationErrors(context = buildLevelContext()) {
 
     seenMessages.add(message);
     errors.push({ name: rule.name, message, fieldNames: getValidationFieldNames(rule) });
+  }
+
+  for (const error of getShaftPreviewGeometryErrors(context)) {
+    if (seenMessages.has(error.message)) continue;
+    seenMessages.add(error.message);
+    errors.push(error);
   }
 
   return errors;
@@ -2315,6 +2200,11 @@ function getStopNameParameterName(index, stops) {
 
 function getStopLevelParameterName(index, stops) {
   return `${getStopRowKey(index, stops)}_level_1`;
+}
+
+function isLehyProStopLevelParameter(parameter, template = state.selectedTemplate) {
+  return isLehyProTemplate(template)
+    && /^s(?:\d{2}|_top)_level_1$/.test(parameter?.name || "");
 }
 
 function normalizeStopFloorName(value) {
@@ -2404,6 +2294,17 @@ function createDisplayInput(value, parameterName = null) {
 function bindInputChange(input, parameter) {
   const handleInputChange = event => {
     const focusTarget = getInputFocusTarget(input);
+    if (isLehyProStopLevelParameter(parameter) && event?.type === "input") {
+      if (/^-?\d*$/.test(input.value)) {
+        state.parameterValues[parameter.name] = input.value;
+      } else {
+        input.value = hasValue(state.parameterValues[parameter.name])
+          ? state.parameterValues[parameter.name]
+          : "";
+      }
+      return;
+    }
+
     if (acceptsDecimalInput(parameter) && event?.type === "input") {
       state.parameterValues[parameter.name] = input.value;
       return;
@@ -2430,6 +2331,12 @@ function createCompactInput(parameter, options = {}) {
     input.value = String(options.radioValue);
   } else if (type === "bool" || type === "boolean") {
     input.type = "checkbox";
+  } else if (isLehyProStopLevelParameter(parameter)) {
+    input.type = "text";
+    input.inputMode = "text";
+    input.pattern = "-?[0-9]+";
+    input.autocomplete = "off";
+    input.spellcheck = false;
   } else if (acceptsDecimalInput(parameter)) {
     input.type = "text";
     input.inputMode = "decimal";
@@ -3132,12 +3039,35 @@ function appendFrontendHiddenParameters(parameters) {
   }
 }
 
+function renderResultFileActions(files, compact = false) {
+  return files.map(file => `
+    <span class="result-file-actions">
+      <a href="${escapeHtml(file.downloadUrl)}">${escapeHtml(compact ? "скачать" : file.fileName)}</a>
+      ${isPdfFile(file) ? `
+        <button
+          class="result-file-preview"
+          type="button"
+          data-preview-url="${escapeHtml(file.downloadUrl)}"
+          data-preview-name="${escapeHtml(file.fileName || "drawing.pdf")}"
+          data-preview-format="${escapeHtml(file.format || "pdf")}">Просмотреть</button>
+      ` : ""}
+    </span>
+  `).join(" ");
+}
+
+function openPreviewFromControl(control) {
+  if (!control?.dataset.previewUrl) return;
+  openGeneratedFilePreview({
+    downloadUrl: control.dataset.previewUrl,
+    fileName: control.dataset.previewName,
+    format: control.dataset.previewFormat
+  }, control);
+}
+
 function renderJob(job) {
   state.latestJob = job;
   const files = job.resultFiles || [];
-  const downloadLinks = files.map(file =>
-    `<a href="${escapeHtml(file.downloadUrl)}">${escapeHtml(file.fileName)}</a>`
-  ).join("");
+  const downloadLinks = renderResultFileActions(files);
 
   statusPanel.className = "job-status";
   statusPanel.innerHTML = `
@@ -3173,7 +3103,8 @@ function renderStatusError(messages) {
 async function refreshJob(jobId) {
   const response = await apiFetch(`/api/jobs/${jobId}`);
   if (!response.ok) return;
-  const job = await response.json();
+  const job = await sessionRequests.readJson(response);
+  if (job === sessionRequests.stalePayload) return;
   renderJob(job);
 
   if (job.status === "Completed" || job.status === "Failed" || job.status === "Cancelled") {
@@ -3186,7 +3117,9 @@ async function refreshJob(jobId) {
 async function refreshJobs() {
   const response = await apiFetch("/api/jobs?take=20");
   if (!response.ok) return;
-  state.jobs = await response.json();
+  const jobs = await sessionRequests.readJson(response);
+  if (jobs === sessionRequests.stalePayload) return;
+  state.jobs = jobs;
   renderJobs();
 }
 
@@ -3211,7 +3144,7 @@ function renderJobs() {
       <td><span class="status ${escapeHtml(job.status.toLowerCase())}">${escapeHtml(job.status)}</span></td>
       <td>${escapeHtml(job.outputFormat.toUpperCase())}</td>
       <td>${formatDate(job.createdAt)}</td>
-      <td>${files.map(file => `<a href="${escapeHtml(file.downloadUrl)}">скачать</a>`).join(" ")}</td>
+      <td>${renderResultFileActions(files, true)}</td>
     `;
     jobsTableBody.append(row);
   }
@@ -3221,7 +3154,7 @@ async function submitJob(event) {
   event.preventDefault();
   if (!state.selectedTemplate) return;
   if (!canCreateJobs()) {
-    renderStatusError(["Недостаточно прав для создания задания."]);
+    renderStatusError([t("Недостаточно прав для создания задания.")]);
     return;
   }
 
@@ -3230,7 +3163,7 @@ async function submitJob(event) {
   updateValidationPanel(validationErrors);
   applyValidationHighlights(validationErrors);
   if (validationErrors.length > 0) {
-    renderStatusError(["Исправьте параметры перед созданием задания."]);
+    renderStatusError([t("Исправьте параметры перед созданием задания.")]);
     validationPanel.scrollIntoView({ behavior: "auto", block: "nearest" });
     return;
   }
@@ -3241,30 +3174,36 @@ async function submitJob(event) {
   statusPanel.className = "job-status";
   statusPanel.innerHTML = `<div class="status pending">Pending</div>`;
 
-  const response = await apiFetch("/api/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      templateId: state.selectedTemplate.id,
-      outputFormat: formatSelect.value,
-      parameters: collectParameters()
-    })
-  });
+  try {
+    const response = await apiFetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateId: state.selectedTemplate.id,
+        outputFormat: formatSelect.value,
+        parameters: collectParameters()
+      })
+    });
 
-  submitButton.disabled = false;
+    if (!response.ok) {
+      renderStatusError(await readProblem(response, "Ошибка создания задания"));
+      return;
+    }
 
-  if (!response.ok) {
-    renderStatusError(await readProblem(response, "Ошибка создания задания"));
-    return;
+    const job = await sessionRequests.readJson(response);
+    if (job === sessionRequests.stalePayload) return;
+    state.activeJobId = job.id;
+    renderJob(job);
+    await refreshJobs();
+    if (!sessionRequests.isCurrent(response)) return;
+
+    clearInterval(state.pollTimer);
+    state.pollTimer = setInterval(() => refreshJob(job.id), 1200);
+  } catch {
+    renderStatusError([t("Не удалось создать задание. Проверьте соединение с API.")]);
+  } finally {
+    submitButton.disabled = false;
   }
-
-  const job = await response.json();
-  state.activeJobId = job.id;
-  renderJob(job);
-  await refreshJobs();
-
-  clearInterval(state.pollTimer);
-  state.pollTimer = setInterval(() => refreshJob(job.id), 1200);
 }
 
 function resetJobForm(event) {
@@ -3277,7 +3216,9 @@ function resetJobForm(event) {
 async function loadTemplates() {
   const response = await apiFetch("/api/templates");
   if (!response.ok) return;
-  state.templates = await response.json();
+  const templates = await sessionRequests.readJson(response);
+  if (templates === sessionRequests.stalePayload) return;
+  state.templates = templates;
 
   templateSelect.replaceChildren();
   for (const template of state.templates) {
@@ -3296,7 +3237,9 @@ async function loadProjects(selectedProjectId = null) {
   if (!response.ok) return;
 
   const previousValue = selectedProjectId || projectSelect.value;
-  state.projects = await response.json();
+  const projects = await sessionRequests.readJson(response);
+  if (projects === sessionRequests.stalePayload) return;
+  state.projects = projects;
   projectSelect.replaceChildren();
 
   if (state.projects.length === 0) {
@@ -3329,7 +3272,7 @@ async function loadProjects(selectedProjectId = null) {
 async function saveCurrentConfiguration() {
   if (!state.selectedTemplate) return;
   if (!projectSelect.value) {
-    renderStatusError(["Сначала создайте проект в личном кабинете."]);
+    renderStatusError([t("Сначала создайте проект в личном кабинете.")]);
     return;
   }
 
@@ -3355,7 +3298,8 @@ async function saveCurrentConfiguration() {
     return;
   }
 
-  const savedConfiguration = await response.json();
+  const savedConfiguration = await sessionRequests.readJson(response);
+  if (savedConfiguration === sessionRequests.stalePayload) return;
   state.editingConfigurationId = savedConfiguration.id || editingConfigurationId;
   updateConfigurationNamePreview(parameters);
   statusPanel.className = "empty";
@@ -3397,8 +3341,10 @@ async function loadConfigurationFromUrl() {
     return;
   }
 
-  const configuration = await response.json();
+  const configuration = await sessionRequests.readJson(response);
+  if (configuration === sessionRequests.stalePayload) return;
   await loadProjects(configuration.projectId);
+  if (!sessionRequests.isCurrent(response)) return;
   applyConfiguration(configuration);
 }
 
@@ -3410,7 +3356,9 @@ async function loadCurrentUser() {
     return false;
   }
 
-  state.currentUser = await response.json();
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return false;
+  state.currentUser = currentUser;
   updateAuthView();
   return isAuthenticated();
 }
@@ -3431,7 +3379,7 @@ async function register(event) {
   });
 
   if (!response.ok) {
-    const messages = await readProblem(response, "Не удалось отправить заявку");
+    const messages = await readProblem(response, t("Не удалось отправить заявку"));
     registerStatus.hidden = false;
     registerStatus.className = "error";
     registerStatus.textContent = messages.join(" ");
@@ -3441,7 +3389,7 @@ async function register(event) {
   registerForm.reset();
   registerStatus.hidden = false;
   registerStatus.className = "empty";
-  registerStatus.textContent = "Заявка отправлена. Доступ появится после подтверждения администратором.";
+  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
@@ -3461,12 +3409,15 @@ async function login(event) {
   });
 
   if (!response.ok) {
-    passwordInput.setCustomValidity("Неверный логин или пароль");
+    passwordInput.setCustomValidity(t("Неверный логин или пароль"));
     passwordInput.reportValidity();
     return;
   }
 
-  state.currentUser = await response.json();
+  const currentUser = await sessionRequests.readJson(response);
+  if (currentUser === sessionRequests.stalePayload) return;
+  clearEditorSessionState();
+  state.currentUser = currentUser;
   passwordInput.value = "";
   updateAuthView();
   await loadTemplates();
@@ -3476,23 +3427,10 @@ async function login(event) {
 }
 
 async function logout() {
-  await apiFetch("/api/auth/logout", { method: "POST" });
+  clearEditorSessionState();
   state.currentUser = null;
-  state.templates = [];
-  state.projects = [];
-  state.configurations = [];
-  state.selectedTemplate = null;
-  state.parameterValues = {};
-  state.latestJob = null;
-  state.jobs = [];
-  jobsTableBody.replaceChildren();
-  parametersForm.replaceChildren();
-  projectSelect.replaceChildren();
-  updateConfigurationNamePreview();
-  clearInterval(state.pollTimer);
-  state.pollTimer = null;
-  updateDownloadResultButton(null);
   updateAuthView();
+  await apiFetch("/api/auth/logout", { method: "POST" });
 }
 
 async function boot() {
@@ -3530,10 +3468,28 @@ downloadResultButton?.addEventListener("click", () => {
   if (!url) return;
   window.location.href = url;
 });
+previewResultButton?.addEventListener("click", () => {
+  openGeneratedFilePreview({
+    downloadUrl: previewResultButton.dataset.downloadUrl,
+    fileName: previewResultButton.dataset.fileName,
+    format: previewResultButton.dataset.format
+  }, previewResultButton);
+});
+for (const container of [statusPanel, jobsTableBody]) {
+  container?.addEventListener("click", event => {
+    const control = event.target.closest("[data-preview-url]");
+    if (control) openPreviewFromControl(control);
+  });
+}
 saveConfigurationButton.addEventListener("click", saveCurrentConfiguration);
 showAllParametersToggle?.addEventListener("change", event => {
   state.showAllParameters = event.currentTarget.checked;
   applyParameterTabVisibility();
+});
+window.addEventListener("tflex:languagechange", () => {
+  if (state.latestJob) renderJob(state.latestJob);
+  renderJobs();
+  updateDownloadResultButton();
 });
 
 await boot();

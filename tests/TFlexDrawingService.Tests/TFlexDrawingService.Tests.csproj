@@ -24,4 +24,9 @@
     <ProjectReference Include="..\..\src\TFlexDrawingService.Infrastructure\TFlexDrawingService.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\src\TFlexAutomationRunner\ParameterFileParser.cs" Link="Runner\ParameterFileParser.cs" />
+    <Compile Include="..\..\src\TFlexAutomationRunner\RealVariableValueFormatter.cs" Link="Runner\RealVariableValueFormatter.cs" />
+  </ItemGroup>
+
 </Project>

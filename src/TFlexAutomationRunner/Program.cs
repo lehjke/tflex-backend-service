@@ -22,7 +22,16 @@ namespace TFlexAutomationRunner
             {
                 if (args.Length == 0)
                 {
-                    throw new ArgumentException("Usage: TFlexAutomationRunner.exe <requestPath> <responsePath>");
+                    throw new ArgumentException(
+                        "Usage: TFlexAutomationRunner.exe --health-check | <requestPath> <responsePath>");
+                }
+
+                if (string.Equals(args[0], "--health-check", StringComparison.OrdinalIgnoreCase))
+                {
+                    TFlexApiBootstrap.Initialize();
+                    CheckHealth();
+                    Console.WriteLine("T-FLEX CAD Open API session is ready.");
+                    return 0;
                 }
 
                 if (string.Equals(args[0], "--inspect-controls", StringComparison.OrdinalIgnoreCase))
@@ -79,6 +88,26 @@ namespace TFlexAutomationRunner
                 Console.Error.WriteLine(exception);
                 return 1;
             }
+        }
+
+        private static void CheckHealth()
+        {
+            var setup = new ApplicationSessionSetup
+            {
+                ReadOnly = true,
+                Enable3D = true,
+                EnableDOCs = false,
+                EnableMacros = false,
+                PromptToSaveModifiedDocuments = false
+            };
+
+            if (!Application.InitSession(setup))
+            {
+                throw new InvalidOperationException(
+                    "T-FLEX CAD Open API session initialization failed.");
+            }
+
+            Application.ExitSession();
         }
 
         private static void InspectVariables(string templatePath, string outputPath, string parametersPath)
@@ -434,7 +463,7 @@ namespace TFlexAutomationRunner
 
             if (variable.IsReal)
             {
-                variable.Expression = ConvertToRealExpression(value);
+                variable.Expression = RealVariableValueFormatter.Format(value);
                 return;
             }
 
@@ -546,27 +575,6 @@ namespace TFlexAutomationRunner
             }
 
             return pages;
-        }
-
-        private static string ConvertToRealExpression(object value)
-        {
-            if (value == null)
-            {
-                return "0";
-            }
-
-            if (value is bool)
-            {
-                return (bool)value ? "1" : "0";
-            }
-
-            var formattable = value as IFormattable;
-            if (formattable != null)
-            {
-                return formattable.ToString(null, CultureInfo.InvariantCulture);
-            }
-
-            return Convert.ToString(value, CultureInfo.InvariantCulture);
         }
 
         private static string ConvertToExpression(object value)
