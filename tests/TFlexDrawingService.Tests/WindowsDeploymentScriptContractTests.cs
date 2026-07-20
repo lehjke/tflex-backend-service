@@ -104,6 +104,27 @@ public sealed class WindowsDeploymentScriptContractTests
     }
 
     [Fact]
+    public void ServiceAccountConfigurationBypassesTheCimProviderAndKeepsPasswordOutOfProcessArguments()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+
+        Assert.DoesNotContain(
+            "Invoke-CimMethod -InputObject $service -MethodName Change",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains("ChangeServiceConfigW", installer, StringComparison.Ordinal);
+        Assert.Contains("OpenServiceW", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "[TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(",
+            installer,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Invoke-Sc @(\"config\", $Name, \"obj=\"",
+            installer,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RunnerReadinessIsIndependentOfRunnerBuildAndUsesProductionOverrides()
     {
         var installer = File.ReadAllText(InstallerPath);

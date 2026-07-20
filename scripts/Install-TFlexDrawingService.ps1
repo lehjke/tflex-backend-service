@@ -1162,6 +1162,111 @@ function Remove-ServiceFileSystemAccess {
     }
 }
 
+function Initialize-NativeServiceConfigurationType {
+    if ("TFlexDrawingService.Install.ServiceConfiguration" -as [type]) {
+        return
+    }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+namespace TFlexDrawingService.Install
+{
+    public static class ServiceConfiguration
+    {
+        private const uint ScManagerConnect = 0x0001;
+        private const uint ServiceChangeConfig = 0x0002;
+        private const uint ServiceNoChange = 0xFFFFFFFF;
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr OpenSCManagerW(
+            string machineName,
+            string databaseName,
+            uint desiredAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr OpenServiceW(
+            IntPtr serviceManager,
+            string serviceName,
+            uint desiredAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ChangeServiceConfigW(
+            IntPtr service,
+            uint serviceType,
+            uint startType,
+            uint errorControl,
+            string binaryPathName,
+            string loadOrderGroup,
+            IntPtr tagId,
+            string dependencies,
+            string serviceStartName,
+            string password,
+            string displayName);
+
+        [DllImport("advapi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseServiceHandle(IntPtr handle);
+
+        public static void SetAccount(string serviceName, string accountName, string password)
+        {
+            IntPtr serviceManager = OpenSCManagerW(null, null, ScManagerConnect);
+            if (serviceManager == IntPtr.Zero)
+            {
+                throw CreateLastWin32Exception("Could not open the Service Control Manager");
+            }
+
+            try
+            {
+                IntPtr service = OpenServiceW(serviceManager, serviceName, ServiceChangeConfig);
+                if (service == IntPtr.Zero)
+                {
+                    throw CreateLastWin32Exception("Could not open Windows service '" + serviceName + "'");
+                }
+
+                try
+                {
+                    if (!ChangeServiceConfigW(
+                        service,
+                        ServiceNoChange,
+                        ServiceNoChange,
+                        ServiceNoChange,
+                        null,
+                        null,
+                        IntPtr.Zero,
+                        null,
+                        accountName,
+                        password ?? string.Empty,
+                        null))
+                    {
+                        throw CreateLastWin32Exception(
+                            "Could not configure the account for Windows service '" + serviceName + "'");
+                    }
+                }
+                finally
+                {
+                    CloseServiceHandle(service);
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(serviceManager);
+            }
+        }
+
+        private static Win32Exception CreateLastWin32Exception(string message)
+        {
+            int errorCode = Marshal.GetLastWin32Error();
+            return new Win32Exception(errorCode, message + " (Win32 error " + errorCode + ")");
+        }
+    }
+}
+'@
+}
+
 function Set-ServiceAccount {
     param(
         [string]$Name,
@@ -1180,15 +1285,21 @@ function Set-ServiceAccount {
         throw "Windows service '$Name' could not be queried after creation."
     }
 
-    $changeArguments = @{ StartName = $User }
-    if (-not [string]::IsNullOrEmpty($Password)) {
-        $changeArguments.StartPassword = $Password
+    Initialize-NativeServiceConfigurationType
+    try {
+        [TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(
+            $Name,
+            $User,
+            $Password)
     }
-
-    $result = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments $changeArguments
-    if ($null -eq $result -or $result.ReturnValue -ne 0) {
-        $returnValue = if ($null -eq $result) { "unknown" } else { $result.ReturnValue }
-        throw "Windows service '$Name' rejected the configured service account (Win32_Service.Change result: $returnValue)."
+    catch {
+        $accountChangeError = if ($null -ne $_.Exception.InnerException) {
+            $_.Exception.InnerException.Message
+        }
+        else {
+            $_.Exception.Message
+        }
+        throw "Windows service '$Name' rejected the configured service account: $accountChangeError"
     }
 
     $configuredService = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedName'"

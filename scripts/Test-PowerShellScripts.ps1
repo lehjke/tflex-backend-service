@@ -102,6 +102,13 @@ if ($installerText.Contains(
         '$existing = if ($null -eq $serviceProperties.Environment)')) {
     throw "Fresh Windows service installation must treat a missing Environment registry value as empty."
 }
+if ($installerText.Contains('Invoke-CimMethod -InputObject $service -MethodName Change') -or
+    -not $installerText.Contains('ChangeServiceConfigW') -or
+    -not $installerText.Contains(
+        '[TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(') -or
+    $installerText.Contains('Invoke-Sc @("config", $Name, "obj="')) {
+    throw "Service account changes must bypass the failing CIM provider without exposing passwords to sc.exe."
+}
 
 $recoveryWriteIndex = $installerText.LastIndexOf('Write-BootstrapAdminRecovery `')
 $activationIndex = $installerText.IndexOf('Write-Step "Activating staged deployment"')
