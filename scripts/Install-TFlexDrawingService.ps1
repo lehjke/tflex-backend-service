@@ -550,9 +550,18 @@ function Resolve-ServiceAccountSid {
         "nt authority\network service" { return "S-1-5-20" }
     }
 
-    $normalizedName = $AccountName
-    if ($normalizedName.StartsWith(".\")) {
-        $normalizedName = "$env:COMPUTERNAME\$($normalizedName.Substring(2))"
+    $normalizedName = $AccountName.Trim()
+    $machinePrefix = "$env:COMPUTERNAME\"
+    if ($normalizedName.StartsWith(".\", [StringComparison]::OrdinalIgnoreCase) -or
+        $normalizedName.StartsWith($machinePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        $separatorIndex = $normalizedName.IndexOf("\")
+        $localUserName = $normalizedName.Substring($separatorIndex + 1)
+        $localUser = Get-LocalUser -Name $localUserName -ErrorAction SilentlyContinue
+        if ($null -eq $localUser) {
+            throw "Local service account '$AccountName' was not found."
+        }
+
+        return $localUser.Sid.Value
     }
 
     try {
@@ -1285,6 +1294,11 @@ function Set-ServiceAccount {
         throw "Windows service '$Name' could not be queried after creation."
     }
 
+    $currentSid = Resolve-ServiceAccountSid ([string]$service.StartName)
+    if ($currentSid -eq $ExpectedSid) {
+        return
+    }
+
     Initialize-NativeServiceConfigurationType
     try {
         [TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(
@@ -1556,11 +1570,20 @@ function Install-OrUpdateService {
     param(
         [string]$Name,
         [string]$DisplayName,
-        [string]$BinaryPath
+        [string]$BinaryPath,
+        [System.Management.Automation.PSCredential]$Credential
     )
 
     if (Test-ServiceExists $Name) {
         Invoke-Sc @("config", $Name, "binPath=", $BinaryPath, "DisplayName=", $DisplayName, "start=", "auto")
+    }
+    elseif ($null -ne $Credential) {
+        New-Service `
+            -Name $Name `
+            -BinaryPathName $BinaryPath `
+            -DisplayName $DisplayName `
+            -StartupType Automatic `
+            -Credential $Credential | Out-Null
     }
     else {
         Invoke-Sc @("create", $Name, "binPath=", $BinaryPath, "DisplayName=", $DisplayName, "start=", "auto")
@@ -2234,16 +2257,30 @@ try {
             Write-Step "Installing Windows services"
             $apiExe = Join-Path $apiDir "TFlexDrawingService.Api.exe"
             $workerExe = Join-Path $workerDir "TFlexDrawingService.Worker.exe"
+            $serviceCredential = if (-not [string]::IsNullOrWhiteSpace($ServiceUser)) {
+                $secureServicePassword = ConvertTo-SecureString `
+                    $resolvedServicePassword `
+                    -AsPlainText `
+                    -Force
+                [System.Management.Automation.PSCredential]::new(
+                    $ServiceUser,
+                    $secureServicePassword)
+            }
+            else {
+                $null
+            }
 
             Install-OrUpdateService `
                 -Name $ApiServiceName `
                 -DisplayName "T-FLEX Drawing Service API" `
-                -BinaryPath "`"$apiExe`" --urls $Urls"
+                -BinaryPath "`"$apiExe`" --urls $Urls" `
+                -Credential $serviceCredential
 
             Install-OrUpdateService `
                 -Name $WorkerServiceName `
                 -DisplayName "T-FLEX Drawing Service Worker" `
-                -BinaryPath "`"$workerExe`""
+                -BinaryPath "`"$workerExe`"" `
+                -Credential $serviceCredential
 
             Set-ServiceEnvironmentVariable `
                 -ServiceName $ApiServiceName `

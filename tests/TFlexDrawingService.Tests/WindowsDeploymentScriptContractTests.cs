@@ -118,8 +118,33 @@ public sealed class WindowsDeploymentScriptContractTests
             "[TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(",
             installer,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "[System.Management.Automation.PSCredential]::new(",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains("-Credential $Credential", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "if ($currentSid -eq $ExpectedSid)",
+            installer,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Invoke-Sc @(\"config\", $Name, \"obj=\"",
+            installer,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LocalServiceAccountSidIsResolvedWithoutNtAccountTranslation()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+
+        Assert.Contains(
+            "$localUser = Get-LocalUser -Name $localUserName -ErrorAction SilentlyContinue",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains("return $localUser.Sid.Value", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "$normalizedName.StartsWith($machinePrefix, [StringComparison]::OrdinalIgnoreCase)",
             installer,
             StringComparison.Ordinal);
     }

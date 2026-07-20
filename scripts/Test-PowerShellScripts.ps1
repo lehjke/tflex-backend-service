@@ -106,8 +106,18 @@ if ($installerText.Contains('Invoke-CimMethod -InputObject $service -MethodName 
     -not $installerText.Contains('ChangeServiceConfigW') -or
     -not $installerText.Contains(
         '[TFlexDrawingService.Install.ServiceConfiguration]::SetAccount(') -or
+    -not $installerText.Contains('[System.Management.Automation.PSCredential]::new(') -or
+    -not $installerText.Contains('-Credential $Credential') -or
+    -not $installerText.Contains('if ($currentSid -eq $ExpectedSid)') -or
     $installerText.Contains('Invoke-Sc @("config", $Name, "obj="')) {
     throw "Service account changes must bypass the failing CIM provider without exposing passwords to sc.exe."
+}
+if (-not $installerText.Contains(
+        '$localUser = Get-LocalUser -Name $localUserName -ErrorAction SilentlyContinue') -or
+    -not $installerText.Contains('return $localUser.Sid.Value') -or
+    -not $installerText.Contains(
+        '$normalizedName.StartsWith($machinePrefix, [StringComparison]::OrdinalIgnoreCase)')) {
+    throw "Local service accounts must be resolved directly through Get-LocalUser."
 }
 
 $recoveryWriteIndex = $installerText.LastIndexOf('Write-BootstrapAdminRecovery `')
