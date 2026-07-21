@@ -10,6 +10,26 @@ namespace TFlexDrawingService.Tests;
 public sealed class JsonTemplateCatalogTests
 {
     [Fact]
+    public async Task ProductionCatalogReferencesExistingTemplateFiles()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var catalog = new JsonTemplateCatalog(
+            Options.Create(new TemplateCatalogOptions
+            {
+                ProjectRootPath = repositoryRoot,
+                ConfigPath = Path.Combine(repositoryRoot, "templates", "templates.json")
+            }),
+            NullLogger<JsonTemplateCatalog>.Instance);
+
+        var missing = (await catalog.ListAsync())
+            .Where(template => !File.Exists(template.TemplateFilePath))
+            .Select(template => $"{template.Code}: {template.TemplateFilePath}")
+            .ToArray();
+
+        Assert.Empty(missing);
+    }
+
+    [Fact]
     public async Task ProductionCatalogContainsCompleteLehyProRearCwtTemplate()
     {
         var repositoryRoot = FindRepositoryRoot();

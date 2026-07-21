@@ -81,6 +81,53 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Get-HttpErrorResponseDetail {
+    param([System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $message = [string]$ErrorRecord.Exception.Message
+    $response = $ErrorRecord.Exception.Response
+    if ($null -eq $response) {
+        return $message
+    }
+
+    $statusCode = $null
+    try {
+        $statusCode = [int]$response.StatusCode
+    }
+    catch {
+        # Keep the original exception message when the response has no status.
+    }
+
+    $responseBody = ""
+    $reader = $null
+    try {
+        $stream = $response.GetResponseStream()
+        if ($null -ne $stream) {
+            $reader = New-Object System.IO.StreamReader($stream)
+            $responseBody = $reader.ReadToEnd().Trim()
+        }
+    }
+    catch {
+        # Keep the original exception message when the body cannot be read.
+    }
+    finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+        if ($responseBody.Length -gt 4096) {
+            $responseBody = $responseBody.Substring(0, 4096) + " [truncated]"
+        }
+
+        $prefix = if ($null -ne $statusCode) { "HTTP $statusCode" } else { $message }
+        return "${prefix}: $responseBody"
+    }
+
+    return $message
+}
+
 function Resolve-FullPath {
     param([string]$Path)
     return [System.IO.Path]::GetFullPath($Path)
@@ -223,7 +270,7 @@ function Get-ExistingAdminPasswordHash {
     }
 
     try {
-        $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+        $config = Get-Content -LiteralPath $ConfigPath -Encoding UTF8 -Raw | ConvertFrom-Json
         $users = @($config.Security.Users)
         $user = $users |
             Where-Object { $_.UserName -ieq $UserName -and -not [string]::IsNullOrWhiteSpace($_.PasswordHash) } |
@@ -393,7 +440,7 @@ function Read-BootstrapAdminRecovery {
     try {
         Set-BootstrapAdminRecoveryDirectoryAcl (Split-Path $Path -Parent)
         Set-BootstrapAdminRecoveryFileAcl $Path
-        $document = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        $document = Get-Content -LiteralPath $Path -Encoding UTF8 -Raw | ConvertFrom-Json
         if ([int]$document.Version -ne 1 -or
             [string]::IsNullOrWhiteSpace([string]$document.UserName) -or
             [string]::IsNullOrWhiteSpace([string]$document.PasswordHash) -or
@@ -1628,8 +1675,8 @@ function Merge-RuntimeTemplatesIntoStage {
     }
 
     $stagedCatalogPath = Join-Path $StagedTemplatesDirectory "templates.json"
-    $liveCatalog = Get-Content -LiteralPath $liveCatalogPath -Raw | ConvertFrom-Json
-    $stagedCatalog = Get-Content -LiteralPath $stagedCatalogPath -Raw | ConvertFrom-Json
+    $liveCatalog = Get-Content -LiteralPath $liveCatalogPath -Encoding UTF8 -Raw | ConvertFrom-Json
+    $stagedCatalog = Get-Content -LiteralPath $stagedCatalogPath -Encoding UTF8 -Raw | ConvertFrom-Json
     $runtimeTemplates = @($liveCatalog.templates | Where-Object {
         $templatePath = ([string]$_.templateFilePath).Replace("\", "/")
         $templatePath.StartsWith("templates/imported/", [StringComparison]::OrdinalIgnoreCase)
@@ -1683,12 +1730,80 @@ function Merge-RuntimeTemplatesIntoStage {
     }
 }
 
+function Assert-StagedTemplateFiles {
+    param(
+        [object]$Catalog,
+        [string]$ProjectRoot,
+        [string]$TemplatesDirectory
+    )
+
+    $pathSeparators = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $liveTemplatesRoot = Resolve-FullPath (Join-Path $ProjectRoot "templates")
+    $liveTemplatesPrefix = $liveTemplatesRoot.TrimEnd($pathSeparators) + [System.IO.Path]::DirectorySeparatorChar
+    $stagedTemplatesRoot = Resolve-FullPath $TemplatesDirectory
+    $stagedTemplatesPrefix = $stagedTemplatesRoot.TrimEnd($pathSeparators) + [System.IO.Path]::DirectorySeparatorChar
+
+    $templates = @($Catalog.templates | Where-Object { $null -ne $_ })
+    if ($templates.Count -eq 0) {
+        throw "Staged template catalog is empty."
+    }
+
+    foreach ($template in $templates) {
+        $templateCode = [string]$template.code
+        if ([string]::IsNullOrWhiteSpace($templateCode)) {
+            $templateCode = [string]$template.id
+        }
+        if ([string]::IsNullOrWhiteSpace($templateCode)) {
+            $templateCode = "<unknown>"
+        }
+
+        $templatePath = [string]$template.templateFilePath
+        if ([string]::IsNullOrWhiteSpace($templatePath)) {
+            throw "Staged template '$templateCode' has empty templateFilePath '$templatePath'."
+        }
+
+        try {
+            $resolvedLiveTemplatePath = if ([System.IO.Path]::IsPathRooted($templatePath)) {
+                Resolve-FullPath $templatePath
+            }
+            else {
+                Resolve-FullPath (Join-Path $ProjectRoot $templatePath)
+            }
+        }
+        catch {
+            throw "Staged template '$templateCode' has invalid templateFilePath '$templatePath'."
+        }
+
+        if (-not $resolvedLiveTemplatePath.StartsWith(
+                $liveTemplatesPrefix,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Staged template '$templateCode' references unsafe templateFilePath '$templatePath'. Expected a file under '$liveTemplatesRoot'."
+        }
+
+        $relativeTemplatePath = $resolvedLiveTemplatePath.Substring($liveTemplatesPrefix.Length)
+        $stagedTemplatePath = Resolve-FullPath (Join-Path $stagedTemplatesRoot $relativeTemplatePath)
+        if (-not $stagedTemplatePath.StartsWith(
+                $stagedTemplatesPrefix,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Staged template '$templateCode' references unsafe templateFilePath '$templatePath'. Expected a file under '$stagedTemplatesRoot'."
+        }
+
+        if (-not (Test-Path -LiteralPath $stagedTemplatePath -PathType Leaf)) {
+            throw "Staged template '$templateCode' references missing staged file '$templatePath' (expected '$stagedTemplatePath')."
+        }
+    }
+}
+
 function Assert-StagedDeployment {
     param(
         [string]$ApiDirectory,
         [string]$WorkerDirectory,
         [string]$RunnerDirectory,
         [string]$TemplatesDirectory,
+        [string]$ProjectRoot,
         [bool]$RequireRunner
     )
 
@@ -1717,14 +1832,20 @@ function Assert-StagedDeployment {
         throw "Staged deployment contains appsettings.Development.json. Development settings must not be published."
     }
 
+    $templateCatalog = $null
     try {
-        Get-Content -LiteralPath (Join-Path $TemplatesDirectory "templates.json") -Raw | ConvertFrom-Json | Out-Null
-        Get-Content -LiteralPath (Join-Path $ApiDirectory "appsettings.Production.json") -Raw | ConvertFrom-Json | Out-Null
-        Get-Content -LiteralPath (Join-Path $WorkerDirectory "appsettings.Production.json") -Raw | ConvertFrom-Json | Out-Null
+        $templateCatalog = Get-Content -LiteralPath (Join-Path $TemplatesDirectory "templates.json") -Encoding UTF8 -Raw | ConvertFrom-Json
+        Get-Content -LiteralPath (Join-Path $ApiDirectory "appsettings.Production.json") -Encoding UTF8 -Raw | ConvertFrom-Json | Out-Null
+        Get-Content -LiteralPath (Join-Path $WorkerDirectory "appsettings.Production.json") -Encoding UTF8 -Raw | ConvertFrom-Json | Out-Null
     }
     catch {
         throw "Staged deployment contains an invalid JSON configuration file."
     }
+
+    Assert-StagedTemplateFiles `
+        -Catalog $templateCatalog `
+        -ProjectRoot $ProjectRoot `
+        -TemplatesDirectory $TemplatesDirectory
 }
 
 function Write-ProductionConfig {
@@ -1883,7 +2004,7 @@ function Invoke-ApiHealthCheck {
             $lastError = "HTTP $($response.StatusCode)"
         }
         catch {
-            $lastError = $_.Exception.Message
+            $lastError = Get-HttpErrorResponseDetail $_
         }
 
         if ($attempt -lt $HealthCheckAttempts) {
@@ -2165,6 +2286,7 @@ try {
         -WorkerDirectory $stageWorkerDir `
         -RunnerDirectory $stageRunnerDir `
         -TemplatesDirectory $stageTemplatesDir `
+        -ProjectRoot $InstallRoot `
         -RequireRunner (-not $SkipRunnerBuild)
 
     if (-not $SkipFirewall) {
@@ -2236,6 +2358,7 @@ try {
             -WorkerDirectory $stageWorkerDir `
             -RunnerDirectory $stageRunnerDir `
             -TemplatesDirectory $stageTemplatesDir `
+            -ProjectRoot $InstallRoot `
             -RequireRunner (-not $SkipRunnerBuild)
 
         Write-Step "Activating staged deployment"

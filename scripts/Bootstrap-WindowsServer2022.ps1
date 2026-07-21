@@ -87,6 +87,53 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Get-HttpErrorResponseDetail {
+    param([System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $message = [string]$ErrorRecord.Exception.Message
+    $response = $ErrorRecord.Exception.Response
+    if ($null -eq $response) {
+        return $message
+    }
+
+    $statusCode = $null
+    try {
+        $statusCode = [int]$response.StatusCode
+    }
+    catch {
+        # Keep the original exception message when the response has no status.
+    }
+
+    $responseBody = ""
+    $reader = $null
+    try {
+        $stream = $response.GetResponseStream()
+        if ($null -ne $stream) {
+            $reader = New-Object System.IO.StreamReader($stream)
+            $responseBody = $reader.ReadToEnd().Trim()
+        }
+    }
+    catch {
+        # Keep the original exception message when the body cannot be read.
+    }
+    finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+        if ($responseBody.Length -gt 4096) {
+            $responseBody = $responseBody.Substring(0, 4096) + " [truncated]"
+        }
+
+        $prefix = if ($null -ne $statusCode) { "HTTP $statusCode" } else { $message }
+        return "${prefix}: $responseBody"
+    }
+
+    return $message
+}
+
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -635,7 +682,7 @@ for ($attempt = 1; $attempt -le $HealthCheckAttempts; $attempt++) {
         $lastHealthError = "HTTP $($response.StatusCode)"
     }
     catch {
-        $lastHealthError = $_.Exception.Message
+        $lastHealthError = Get-HttpErrorResponseDetail $_
     }
 
     if ($attempt -lt $HealthCheckAttempts) {

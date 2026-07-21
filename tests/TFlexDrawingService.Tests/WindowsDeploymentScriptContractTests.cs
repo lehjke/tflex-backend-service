@@ -195,6 +195,39 @@ public sealed class WindowsDeploymentScriptContractTests
     }
 
     [Fact]
+    public void HealthChecksPreserveHttpErrorResponseBodies()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+        var bootstrap = File.ReadAllText(BootstrapPath);
+
+        foreach (var script in new[] { installer, bootstrap })
+        {
+            Assert.Contains(
+                "function Get-HttpErrorResponseDetail",
+                script,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "$response.GetResponseStream()",
+                script,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "$reader.ReadToEnd().Trim()",
+                script,
+                StringComparison.Ordinal);
+            Assert.Contains("[truncated]", script, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "$lastError = Get-HttpErrorResponseDetail $_",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$lastHealthError = Get-HttpErrorResponseDetail $_",
+            bootstrap,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void EffectiveServiceAccountAclIsAppliedAfterActivation()
     {
         var installer = File.ReadAllText(InstallerPath);
@@ -311,6 +344,77 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.True(rollbackWarning < finalFailure);
         Assert.Contains(
             "sc.exe failed with exit code $LASTEXITCODE`: $details",
+            installer,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StagedTemplateFilesAreValidatedBeforeServicesStop()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+
+        Assert.Contains("function Assert-StagedTemplateFiles", installer, StringComparison.Ordinal);
+        Assert.Contains("$templates = @($Catalog.templates", installer, StringComparison.Ordinal);
+        Assert.Contains("Staged template catalog is empty.", installer, StringComparison.Ordinal);
+        Assert.Contains("foreach ($template in $templates)", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "$resolvedLiveTemplatePath.StartsWith(",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$stagedTemplatePath.StartsWith(",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Test-Path -LiteralPath $stagedTemplatePath -PathType Leaf",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Staged template '$templateCode' references unsafe templateFilePath '$templatePath'.",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Staged template '$templateCode' references missing staged file '$templatePath'",
+            installer,
+            StringComparison.Ordinal);
+
+        var catalogParse = installer.IndexOf(
+            "$templateCatalog = Get-Content -LiteralPath (Join-Path $TemplatesDirectory \"templates.json\") -Encoding UTF8 -Raw | ConvertFrom-Json",
+            StringComparison.Ordinal);
+        var stagedFileValidation = installer.IndexOf(
+            "Assert-StagedTemplateFiles `",
+            catalogParse,
+            StringComparison.Ordinal);
+        var firstDeploymentValidation = installer.IndexOf(
+            "Assert-StagedDeployment `",
+            stagedFileValidation,
+            StringComparison.Ordinal);
+        var servicesStop = installer.IndexOf(
+            "Write-Step \"Stopping services after staging validation\"",
+            StringComparison.Ordinal);
+
+        Assert.True(catalogParse >= 0);
+        Assert.True(stagedFileValidation > catalogParse);
+        Assert.True(firstDeploymentValidation > stagedFileValidation);
+        Assert.True(firstDeploymentValidation < servicesStop);
+    }
+
+    [Fact]
+    public void DeploymentJsonIsAlwaysReadAsUtf8()
+    {
+        var installer = File.ReadAllText(InstallerPath);
+        var jsonReadLines = installer
+            .Split('\n')
+            .Where(line => line.Contains("Get-Content", StringComparison.Ordinal)
+                && line.Contains("ConvertFrom-Json", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(jsonReadLines);
+        Assert.All(
+            jsonReadLines,
+            line => Assert.Contains("-Encoding UTF8", line, StringComparison.Ordinal));
+        Assert.Contains(
+            "$stagedCatalog = Get-Content -LiteralPath $stagedCatalogPath -Encoding UTF8 -Raw | ConvertFrom-Json",
             installer,
             StringComparison.Ordinal);
     }
