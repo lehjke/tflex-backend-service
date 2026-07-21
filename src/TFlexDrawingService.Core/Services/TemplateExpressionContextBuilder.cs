@@ -163,6 +163,21 @@ internal static partial class TemplateExpressionContextBuilder
                     Values,
                     out passed);
         }
+
+        public bool TryEvaluateExpression(string source, out object? value)
+        {
+            value = null;
+            return TryExpandFindExpressions(
+                    source,
+                    template,
+                    Values,
+                    lookupBudget,
+                    out var expression)
+                && SafeTFlexExpressionEvaluator.TryEvaluateExpression(
+                    expression,
+                    Values,
+                    out value);
+        }
     }
 
     internal static bool TryValidateSupportedExpression(

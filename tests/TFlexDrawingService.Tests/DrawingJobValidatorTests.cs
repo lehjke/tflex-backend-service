@@ -93,6 +93,69 @@ public sealed class DrawingJobValidatorTests
         Assert.Equal("Алюминий", result.NormalizedParameters["MATERIAL"]);
     }
 
+    [Theory]
+    [InlineData("20,5", "20.5")]
+    [InlineData("1,000", "1")]
+    [InlineData("-0,125", "-0.125")]
+    [InlineData("20.5", "20.5")]
+    public async Task ValidateAsync_ParsesStringDecimalSeparatorsWithoutThousands(
+        string input,
+        string expected)
+    {
+        var template = CreateSingleParameterTemplate(new DrawingParameterDefinition
+        {
+            Name = "VALUE",
+            Type = "number",
+            IsRequired = true
+        });
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = new Dictionary<string, JsonElement>
+            {
+                ["VALUE"] = JsonSerializer.SerializeToElement(input)
+            }
+        });
+
+        Assert.True(result.IsValid);
+        Assert.Equal(
+            decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture),
+            result.NormalizedParameters["VALUE"]);
+    }
+
+    [Theory]
+    [InlineData("1,000.5")]
+    [InlineData("1.000,5")]
+    [InlineData("1 000,5")]
+    public async Task ValidateAsync_RejectsAmbiguousOrGroupedStringNumbers(string input)
+    {
+        var template = CreateSingleParameterTemplate(new DrawingParameterDefinition
+        {
+            Name = "VALUE",
+            Type = "number",
+            IsRequired = true
+        });
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = new Dictionary<string, JsonElement>
+            {
+                ["VALUE"] = JsonSerializer.SerializeToElement(input)
+            }
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("must be a number", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task ValidateAsync_RecalculatesSubmittedReadOnlyParameters()
     {
@@ -154,6 +217,93 @@ public sealed class DrawingJobValidatorTests
         Assert.True(result.IsValid);
         Assert.Equal(15m, result.NormalizedParameters["DERIVED"]);
         Assert.DoesNotContain("DISPLAY_ONLY", result.NormalizedParameters.Keys);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_RejectsFractionalCalculatedReadOnlyInteger()
+    {
+        var template = new DrawingTemplate
+        {
+            Id = "fractional-read-only",
+            Code = "fractional-read-only",
+            Name = "Fractional read-only",
+            OutputFormats = ["pdf"],
+            Parameters =
+            [
+                new DrawingParameterDefinition
+                {
+                    Name = "INPUT",
+                    Type = "number",
+                    IsRequired = true
+                },
+                new DrawingParameterDefinition
+                {
+                    Name = "DERIVED",
+                    Type = "integer",
+                    IsReadOnly = true,
+                    SubmitWhenDisabled = true,
+                    Expression = "INPUT * 1000"
+                }
+            ]
+        };
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = JsonParameters("""{ "INPUT": 20.0005 }""")
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains(
+                "Read-only parameter 'DERIVED' must calculate to an integer",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_RejectsCalculatedReadOnlyIntegerOutsideDeclaredRange()
+    {
+        var template = new DrawingTemplate
+        {
+            Id = "bounded-read-only",
+            Code = "bounded-read-only",
+            Name = "Bounded read-only",
+            OutputFormats = ["pdf"],
+            Parameters =
+            [
+                new DrawingParameterDefinition
+                {
+                    Name = "INPUT",
+                    Type = "integer",
+                    IsRequired = true
+                },
+                new DrawingParameterDefinition
+                {
+                    Name = "DERIVED",
+                    Type = "integer",
+                    IsReadOnly = true,
+                    SubmitWhenDisabled = true,
+                    Expression = "INPUT + 10",
+                    MaxValue = 15
+                }
+            ]
+        };
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = JsonParameters("""{ "INPUT": 6 }""")
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(
+            result.Errors,
+            error => error.Contains("less than or equal to 15", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -250,6 +400,55 @@ public sealed class DrawingJobValidatorTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.Contains("больше 125", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_InterpolatesSafeExpressionsInRuleMessage()
+    {
+        var template = CreateRuleTemplate("0");
+        template.ValidationRules[0].Message =
+            "AA-JJ = {AA-JJ}; half = {(AA-JJ)/2}; third = {(AA-JJ)/3}.";
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = JsonParameters("""{ "AA": 1100, "JJ": 1000 }""")
+        });
+
+        Assert.False(result.IsValid);
+        Assert.Contains("AA-JJ = 100; half = 50; third = 33.333.", result.Errors);
+        Assert.DoesNotContain(result.Errors, error => error.Contains('{', StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("warning", true)]
+    [InlineData("WARNING", true)]
+    [InlineData("error", false)]
+    [InlineData("unsupported", false)]
+    public async Task ValidateAsync_OnlyWarningSeverityIsNonBlocking(
+        string severity,
+        bool expectedValid)
+    {
+        var template = CreateRuleTemplate("0");
+        template.ValidationRules[0].Severity = severity;
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+
+        var result = await validator.ValidateAsync(new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id,
+            OutputFormat = "pdf",
+            Parameters = JsonParameters("""{ "AA": 1100, "JJ": 1000 }""")
+        });
+
+        Assert.Equal(expectedValid, result.IsValid);
+        if (!expectedValid)
+        {
+            Assert.Contains(
+                result.Errors,
+                error => error.Contains("больше 125", StringComparison.Ordinal));
+        }
     }
 
     [Fact]

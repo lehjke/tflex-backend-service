@@ -33,5 +33,7 @@ public sealed class DrawingValidationRule
 
     public string Message { get; set; } = string.Empty;
 
+    public string Severity { get; set; } = "error";
+
     public List<string> FieldNames { get; set; } = [];
 }

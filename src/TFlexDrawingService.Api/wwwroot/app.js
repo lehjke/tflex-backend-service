@@ -1,7 +1,24 @@
 import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
 import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260720-ui-hardening-4";
-import { evaluateTFlexExpression } from "./safe-expression.js?v=20260720-ui-hardening-1";
+import { evaluateTFlexExpression } from "./safe-expression.js?v=20260721-validation-parity-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+import {
+  calculateAutomaticStopLevel,
+  clampStopCount,
+  collectStopParameterValues,
+  getAuthoritativeStopLevelValues,
+  getMainSelectionMode,
+  getStopLevelParameterName,
+  getStopNameParameterName,
+  getStopRowKey,
+  resolveMainFloor
+} from "./stop-state.js?v=20260721-validation-parity-1";
+import {
+  isBlockingValidationIssue,
+  isValidationPassed,
+  normalizeValidationSeverity,
+  partitionValidationIssues
+} from "./validation-state.js?v=20260721-validation-parity-1";
 
 const state = {
   templates: [],
@@ -878,6 +895,13 @@ function buildLevelContext() {
   };
 
   if (!state.selectedTemplate) return context;
+
+  const stopsDefinition = getParameterDefinition("stops");
+  if (stopsDefinition) {
+    const stops = clampStopCount(getParameterValue(stopsDefinition));
+    synchronizeAutomaticStopState(stops);
+    synchronizeAutomaticStopLevels(stops);
+  }
 
   for (const parameter of getTemplateDefinitions()) {
     const value = getParameterValue(parameter);
@@ -1956,18 +1980,6 @@ function formatValidationMessage(message, context) {
     });
 }
 
-function isValidationPassed(value) {
-  if (!hasValue(value)) return true;
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "нет";
-  }
-
-  return Boolean(value);
-}
-
 function stripStringLiterals(value) {
   return String(value || "").replace(/(["'])(?:\\.|(?!\1).)*\1/g, "");
 }
@@ -2118,9 +2130,9 @@ function applyValidationHighlights(errors = []) {
   }
 }
 
-function getCurrentValidationErrors(context = buildLevelContext()) {
+function getCurrentValidationIssues(context = buildLevelContext()) {
   const rules = state.selectedTemplate?.validationRules || [];
-  const errors = [];
+  const issues = [];
   const seenMessages = new Set();
 
   for (const rule of rules) {
@@ -2131,40 +2143,58 @@ function getCurrentValidationErrors(context = buildLevelContext()) {
     if (seenMessages.has(message)) continue;
 
     seenMessages.add(message);
-    errors.push({ name: rule.name, message, fieldNames: getValidationFieldNames(rule) });
+    issues.push({
+      name: rule.name,
+      message,
+      fieldNames: getValidationFieldNames(rule),
+      severity: normalizeValidationSeverity(rule.severity)
+    });
   }
 
   for (const error of getShaftPreviewGeometryErrors(context)) {
     if (seenMessages.has(error.message)) continue;
     seenMessages.add(error.message);
-    errors.push(error);
+    issues.push({ ...error, severity: "error" });
   }
 
-  return errors;
+  return issues;
 }
 
-function updateValidationPanel(errors = []) {
-  validationPanel.replaceChildren();
+function appendValidationIssueGroup(titleText, issues, severity) {
+  if (issues.length === 0) return;
 
-  if (errors.length === 0) {
-    validationPanel.hidden = true;
-    return;
-  }
+  const group = document.createElement("section");
+  group.className = `validation-panel__group validation-panel__group--${severity}`;
 
   const title = document.createElement("h3");
   title.className = "validation-panel__title";
-  title.textContent = "Проверьте параметры";
+  title.textContent = titleText;
 
   const list = document.createElement("ul");
   list.className = "validation-panel__list";
 
-  for (const error of errors) {
+  for (const issue of issues) {
     const item = document.createElement("li");
-    item.textContent = error.message;
+    item.textContent = issue.message;
     list.append(item);
   }
 
-  validationPanel.append(title, list);
+  group.append(title, list);
+  validationPanel.append(group);
+}
+
+function updateValidationPanel(issues = []) {
+  validationPanel.replaceChildren();
+
+  if (issues.length === 0) {
+    validationPanel.hidden = true;
+    return;
+  }
+
+  const { errors, warnings } = partitionValidationIssues(issues);
+  validationPanel.classList.toggle("validation-panel--warning-only", errors.length === 0);
+  appendValidationIssueGroup("Проверьте параметры", errors, "error");
+  appendValidationIssueGroup("Предупреждения", warnings, "warning");
   validationPanel.hidden = false;
 }
 
@@ -2182,24 +2212,6 @@ function isStopParameter(parameter) {
 
 function isFrontendHiddenParameter(parameter) {
   return FRONTEND_HIDDEN_PARAMETER_NAMES.has(parameter.name);
-}
-
-function clampStopCount(value) {
-  const number = Math.trunc(toNumber(value));
-  if (!Number.isFinite(number)) return 2;
-  return Math.min(48, Math.max(2, number));
-}
-
-function getStopRowKey(index, stops) {
-  return index === stops ? "s_top" : `s${String(index).padStart(2, "0")}`;
-}
-
-function getStopNameParameterName(index, stops) {
-  return `${getStopRowKey(index, stops)}_name_1`;
-}
-
-function getStopLevelParameterName(index, stops) {
-  return `${getStopRowKey(index, stops)}_level_1`;
 }
 
 function isLehyProStopLevelParameter(parameter, template = state.selectedTemplate) {
@@ -2254,7 +2266,6 @@ function findLobbyStopIndex(stops, manualNames, automaticStart) {
 
 function synchronizeAutomaticStopState(stops) {
   const manualNames = toFlagNumber(getParameterValueByName("name")) === 1;
-  const manualMain = toFlagNumber(getParameterValueByName("main")) === 1;
   const automaticStart = getAutomaticStopNameStart();
 
   if (!manualNames) {
@@ -2266,16 +2277,36 @@ function synchronizeAutomaticStopState(stops) {
     }
   }
 
-  if (!manualMain) {
-    state.parameterValues.main_floor = findLobbyStopIndex(stops, manualNames, automaticStart);
-  }
+  state.parameterValues.main_floor = resolveMainFloor({
+    mainValue: getParameterValueByName("main"),
+    selectedMainFloor: getParameterValueByName("main_floor"),
+    lobbyStopIndex: findLobbyStopIndex(stops, manualNames, automaticStart),
+    stops
+  });
 }
 
 function getAutomaticStopLevel(index, stops) {
-  const bottomLevel = toNumber(getParameterValueByName("s01_level_1"));
-  const travelHeight = toNumber(getParameterValueByName("TR")) * 1000;
-  const total = travelHeight > 0 ? travelHeight : (stops - 1) * 6000;
-  return bottomLevel + Math.round((total * (index - 1)) / Math.max(1, stops - 1));
+  return calculateAutomaticStopLevel({
+    bottomLevel: getParameterValueByName("s01_level_1"),
+    travelHeightMeters: getParameterValueByName("TR"),
+    index,
+    stops
+  });
+}
+
+function synchronizeAutomaticStopLevels(stops) {
+  const synchronizedValues = getAuthoritativeStopLevelValues({
+    stops,
+    manualLevels: getParameterValueByName("level"),
+    values: state.parameterValues,
+    bottomLevel: getParameterValueByName("s01_level_1"),
+    travelHeightMeters: getParameterValueByName("TR"),
+    hasParameter: name => Boolean(getParameterDefinition(name))
+  });
+
+  for (const [name, value] of Object.entries(synchronizedValues)) {
+    if (hasValue(value)) state.parameterValues[name] = value;
+  }
 }
 
 function createDisplayInput(value, parameterName = null) {
@@ -2422,14 +2453,15 @@ function createDisplayStopRadio(checked) {
 function createStopsTable(context, options = {}) {
   const stops = clampStopCount(context.stops);
   synchronizeAutomaticStopState(stops);
+  synchronizeAutomaticStopLevels(stops);
 
-  const manualMain = toFlagNumber(getParameterValueByName("main")) === 1;
+  const mainSelectionMode = getMainSelectionMode(getParameterValueByName("main"));
   const manualNames = toFlagNumber(context.name) === 1;
   const manualLevels = toFlagNumber(context.level) === 1;
   const hasRearDoors = toNumber(context.NE) === 2;
   const hasAo = toFlagNumber(context.em) === 1;
   const automaticStart = getAutomaticStopNameStart();
-  const lobbyStopIndex = manualMain
+  const lobbyStopIndex = mainSelectionMode.manual
     ? toNumber(getParameterValueByName("main_floor"))
     : findLobbyStopIndex(stops, manualNames, automaticStart);
 
@@ -2480,9 +2512,9 @@ function createStopsTable(context, options = {}) {
     const row = document.createElement("tr");
 
     const lobbyCell = document.createElement("td");
-    lobbyCell.append(manualMain
-      ? createStopRadio(index)
-      : createDisplayStopRadio(index === lobbyStopIndex));
+    lobbyCell.append(mainSelectionMode.radiosReadOnly
+      ? createDisplayStopRadio(index === lobbyStopIndex)
+      : createStopRadio(index));
     row.append(lobbyCell);
 
     const stopNameParameterName = getStopNameParameterName(index, stops);
@@ -2918,7 +2950,8 @@ function renderParameters(options = {}) {
   }
 
   const context = buildLevelContext();
-  const validationErrors = getCurrentValidationErrors(context);
+  const validationIssues = getCurrentValidationIssues(context);
+  const validationErrors = validationIssues.filter(isBlockingValidationIssue);
   state.validationFieldNames = collectValidationFieldNames(validationErrors);
   let stopsTablePending = false;
   const groups = new Map();
@@ -2944,7 +2977,7 @@ function renderParameters(options = {}) {
 
   reorderParameterGroups(groups);
   renderParameterTabs();
-  updateValidationPanel(validationErrors);
+  updateValidationPanel(validationIssues);
   if (parameterReadyBanner) {
     parameterReadyBanner.hidden = validationErrors.length > 0;
   }
@@ -3012,21 +3045,24 @@ function putCollectedParameter(parameters, definition, value) {
 }
 
 function appendStopParameters(parameters) {
-  if (!state.selectedTemplate) return;
+  if (!state.selectedTemplate || !getParameterDefinition("stops")) return;
 
   const stops = clampStopCount(parameters.stops ?? getParameterValueByName("stops"));
   synchronizeAutomaticStopState(stops);
+  synchronizeAutomaticStopLevels(stops);
 
   const mainFloor = getParameterDefinition("main_floor");
   if (mainFloor) {
     putCollectedParameter(parameters, mainFloor, state.parameterValues.main_floor);
   }
 
-  for (let index = 1; index <= stops; index += 1) {
-    const stopName = getParameterDefinition(getStopNameParameterName(index, stops));
-    if (stopName) {
-      putCollectedParameter(parameters, stopName, state.parameterValues[stopName.name]);
-    }
+  const stopValues = collectStopParameterValues({
+    stops,
+    values: state.parameterValues,
+    hasParameter: name => Boolean(getParameterDefinition(name))
+  });
+  for (const [name, value] of Object.entries(stopValues)) {
+    putCollectedParameter(parameters, getParameterDefinition(name), value);
   }
 }
 
@@ -3159,8 +3195,9 @@ async function submitJob(event) {
   }
 
   rememberCurrentValues();
-  const validationErrors = getCurrentValidationErrors();
-  updateValidationPanel(validationErrors);
+  const validationIssues = getCurrentValidationIssues();
+  const validationErrors = validationIssues.filter(isBlockingValidationIssue);
+  updateValidationPanel(validationIssues);
   applyValidationHighlights(validationErrors);
   if (validationErrors.length > 0) {
     renderStatusError([t("Исправьте параметры перед созданием задания.")]);

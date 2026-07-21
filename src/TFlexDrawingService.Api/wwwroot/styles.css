@@ -2658,6 +2658,12 @@ textarea.is-invalid:focus {
   color: var(--bad);
 }
 
+.validation-panel--warning-only {
+  border-color: #edc778;
+  background: #fffaf0;
+  color: #7a4d12;
+}
+
 .validation-panel[hidden] {
   display: none;
 }
@@ -2665,6 +2671,20 @@ textarea.is-invalid:focus {
 .validation-panel__title {
   font-size: 15px;
   font-weight: 800;
+}
+
+.validation-panel__group {
+  display: grid;
+  gap: 10px;
+}
+
+.validation-panel__group--warning {
+  color: #7a4d12;
+}
+
+.validation-panel__group--warning:not(:first-child) {
+  padding-top: 12px;
+  border-top: 1px solid #edc778;
 }
 
 .validation-panel__list {

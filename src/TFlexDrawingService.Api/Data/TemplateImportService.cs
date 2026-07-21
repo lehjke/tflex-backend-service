@@ -401,6 +401,13 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
                 errors[$"manifest.validationRules[{index}]"] =
                     ["Validation rule name and expression are required."];
             }
+
+            if (rule is not null
+                && rule.Severity is not ("error" or "warning"))
+            {
+                errors[$"manifest.validationRules[{index}].severity"] =
+                    ["Severity must be error or warning."];
+            }
         }
     }
 
@@ -599,6 +606,7 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
             if (rule is not null)
             {
                 rule.FieldNames ??= [];
+                rule.Severity = rule.Severity?.Trim().ToLowerInvariant() ?? string.Empty;
             }
         }
     }

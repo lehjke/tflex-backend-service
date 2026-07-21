@@ -1,12 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TFlexDrawingService.Core.Abstractions;
 using TFlexDrawingService.Core.Models;
 using TFlexDrawingService.Core.Requests;
 
 namespace TFlexDrawingService.Core.Services;
 
-public sealed class DrawingJobValidator : IDrawingRequestValidator
+public sealed partial class DrawingJobValidator : IDrawingRequestValidator
 {
     private const int MaxStringParameterLength = 16 * 1024;
     private readonly ITemplateCatalog _templateCatalog;
@@ -306,9 +307,14 @@ public sealed class DrawingJobValidator : IDrawingRequestValidator
                 continue;
             }
 
+            if (string.Equals(rule.Severity?.Trim(), "warning", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             errors.Add(string.IsNullOrWhiteSpace(rule.Message)
                 ? $"Validation rule '{rule.Name}' failed."
-                : rule.Message);
+                : InterpolateValidationMessage(rule.Message, expressionContext));
         }
     }
 
@@ -329,8 +335,101 @@ public sealed class DrawingJobValidator : IDrawingRequestValidator
                 continue;
             }
 
-            normalizedParameters[definition.Name] = value;
+            if (!TryNormalizeTrustedReadOnlyInteger(definition, value, errors, out var normalizedValue))
+            {
+                continue;
+            }
+
+            normalizedParameters[definition.Name] = normalizedValue;
         }
+    }
+
+    private static bool TryNormalizeTrustedReadOnlyInteger(
+        DrawingParameterDefinition definition,
+        object value,
+        ICollection<string> errors,
+        out object normalizedValue)
+    {
+        normalizedValue = value;
+        if (!string.Equals(definition.Type?.Trim(), "integer", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!TryConvertCalculatedDecimal(value, out var number)
+            || decimal.Truncate(number) != number
+            || number < long.MinValue
+            || number > long.MaxValue)
+        {
+            errors.Add($"Read-only parameter '{definition.Name}' must calculate to an integer.");
+            return false;
+        }
+
+        if (definition.MinValue.HasValue && number < definition.MinValue.Value)
+        {
+            errors.Add(
+                $"Read-only parameter '{definition.Name}' must calculate to a value greater than or equal to {definition.MinValue.Value}.");
+            return false;
+        }
+
+        if (definition.MaxValue.HasValue && number > definition.MaxValue.Value)
+        {
+            errors.Add(
+                $"Read-only parameter '{definition.Name}' must calculate to a value less than or equal to {definition.MaxValue.Value}.");
+            return false;
+        }
+
+        if (!IsAllowedNumericValue(definition, number))
+        {
+            errors.Add(
+                $"Read-only parameter '{definition.Name}' calculated value '{number}' is not allowed.");
+            return false;
+        }
+
+        // Keep calculated numeric values as decimals for compatibility with the
+        // expression context and the existing T-FLEX parameter serializer.
+        normalizedValue = number;
+        return true;
+    }
+
+    private static string InterpolateValidationMessage(
+        string message,
+        TemplateExpressionContextBuilder.RuntimeExpressionContext expressionContext)
+    {
+        return ValidationMessagePlaceholderRegex().Replace(message, match =>
+        {
+            var expression = match.Groups[1].Value;
+            return expressionContext.TryEvaluateExpression(expression, out var value) && value is not null
+                ? FormatValidationValue(value)
+                : match.Value;
+        });
+    }
+
+    private static string FormatValidationValue(object value)
+    {
+        if (TryConvertValidationNumber(value, out var number))
+        {
+            try
+            {
+                // JavaScript's Math.round, used by the browser, rounds midpoint
+                // values towards positive infinity.
+                number = decimal.Floor((number * 1000m) + 0.5m) / 1000m;
+            }
+            catch (OverflowException)
+            {
+                // The value is still safe to display invariantly; only the
+                // three-decimal presentation rounding could not be applied.
+            }
+
+            return number.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        return value switch
+        {
+            bool boolean => boolean ? "true" : "false",
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
     }
 
     private static bool TryReadDecimal(JsonElement value, out decimal number)
@@ -342,9 +441,7 @@ public sealed class DrawingJobValidator : IDrawingRequestValidator
 
         if (value.ValueKind == JsonValueKind.String)
         {
-            var text = value.GetString();
-            return decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out number)
-                || decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out number);
+            return TryReadDecimalString(value.GetString(), out number);
         }
 
         number = default;
@@ -360,13 +457,127 @@ public sealed class DrawingJobValidator : IDrawingRequestValidator
 
         if (value.ValueKind == JsonValueKind.String)
         {
-            return long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
-                || long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.CurrentCulture, out number);
+            return long.TryParse(
+                value.GetString()?.Trim(),
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out number);
         }
 
         number = default;
         return false;
     }
+
+    private static bool TryReadDecimalString(string? text, out decimal number)
+    {
+        number = default;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var normalized = text.Trim();
+        if (normalized.Contains(','))
+        {
+            // Request strings use either a comma or a dot as the decimal
+            // separator. Group separators are intentionally unsupported, so
+            // "20,5" cannot become 205 and "1,000" cannot become 1000.
+            if (normalized.Contains('.'))
+            {
+                return false;
+            }
+
+            normalized = normalized.Replace(',', '.');
+        }
+
+        return decimal.TryParse(
+            normalized,
+            NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+            CultureInfo.InvariantCulture,
+            out number);
+    }
+
+    private static bool TryConvertCalculatedDecimal(object value, out decimal number)
+    {
+        try
+        {
+            switch (value)
+            {
+                case decimal decimalValue:
+                    number = decimalValue;
+                    return true;
+                case bool boolean:
+                    number = boolean ? 1m : 0m;
+                    return true;
+                case byte or sbyte or short or ushort or int or uint or long or ulong:
+                    number = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                    return true;
+                case float floatValue when float.IsFinite(floatValue):
+                    number = Convert.ToDecimal(floatValue, CultureInfo.InvariantCulture);
+                    return true;
+                case double doubleValue when double.IsFinite(doubleValue):
+                    number = Convert.ToDecimal(doubleValue, CultureInfo.InvariantCulture);
+                    return true;
+                case JsonElement { ValueKind: JsonValueKind.Number } json when json.TryGetDecimal(out number):
+                    return true;
+                case JsonElement { ValueKind: JsonValueKind.True }:
+                    number = 1m;
+                    return true;
+                case JsonElement { ValueKind: JsonValueKind.False }:
+                    number = 0m;
+                    return true;
+                case string text:
+                    return decimal.TryParse(
+                        text,
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out number);
+                default:
+                    number = default;
+                    return false;
+            }
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
+        {
+            number = default;
+            return false;
+        }
+    }
+
+    private static bool TryConvertValidationNumber(object value, out decimal number)
+    {
+        // Message interpolation mirrors JavaScript's numeric formatting without
+        // coercing strings or booleans into numbers.
+        try
+        {
+            switch (value)
+            {
+                case decimal decimalValue:
+                    number = decimalValue;
+                    return true;
+                case byte or sbyte or short or ushort or int or uint or long or ulong:
+                    number = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                    return true;
+                case float floatValue when float.IsFinite(floatValue):
+                    number = Convert.ToDecimal(floatValue, CultureInfo.InvariantCulture);
+                    return true;
+                case double doubleValue when double.IsFinite(doubleValue):
+                    number = Convert.ToDecimal(doubleValue, CultureInfo.InvariantCulture);
+                    return true;
+                default:
+                    number = default;
+                    return false;
+            }
+        }
+        catch (OverflowException)
+        {
+            number = default;
+            return false;
+        }
+    }
+
+    [GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]
+    private static partial Regex ValidationMessagePlaceholderRegex();
 
     private static bool Fail(List<string> errors, string message)
     {

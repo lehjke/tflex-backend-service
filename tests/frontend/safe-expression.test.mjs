@@ -92,6 +92,21 @@ test("supports bounded lookup-table expressions", () => {
   assert.equal(result, 850);
 });
 
+test("returns the server-side zero fallback when find has no matching row", () => {
+  const result = evaluateTFlexExpression(
+    "find(TH.AA, (TH.cap == cap)&&(TH.car_type == $car_type))",
+    { cap: 999, $car_type: "missing" },
+    {
+      lookupTables: {
+        TH: [
+          { cap: 320, car_type: "P04D", AA: 850 }
+        ]
+      }
+    });
+
+  assert.equal(result, 0);
+});
+
 test("matches the server-side landing helper semantics", () => {
   const context = {
     stops: 3,

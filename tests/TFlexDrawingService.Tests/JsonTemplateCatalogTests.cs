@@ -179,6 +179,256 @@ public sealed class JsonTemplateCatalogTests
         Assert.Equal(1500m, Assert.IsType<decimal>(standardContext["BB"]));
     }
 
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050")]
+    [InlineData("lehy_l_pro_1050_2500")]
+    [InlineData("lehy_pro_side_cwt")]
+    [InlineData("lehy_pro_rear_cwt")]
+    public async Task ProductionCatalog_LehyStopSelectorsCoverFullSupportedRange(
+        string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+
+        var stops = Assert.Single(template.Parameters, parameter => parameter.Name == "stops");
+        Assert.Equal("integer", stops.Type);
+        Assert.Equal(2m, stops.MinValue);
+        Assert.Equal(48m, stops.MaxValue);
+
+        var mainFloor = Assert.Single(
+            template.Parameters,
+            parameter => parameter.Name == "main_floor");
+        Assert.Equal("integer", mainFloor.Type);
+        Assert.Equal(1m, mainFloor.MinValue);
+        Assert.Equal(48m, mainFloor.MaxValue);
+        Assert.Equal(
+            Enumerable.Range(1, 48).Select(value => value.ToString()).ToArray(),
+            mainFloor.AllowedValues);
+        Assert.Equal(1, mainFloor.DefaultValue?.GetInt32());
+    }
+
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050", "AH<=max_A1+A2+max_A3", "{max_A1+A2+max_A3}")]
+    [InlineData("lehy_l_pro_1050_2500", "AH<=max_AH", "{max_AH}")]
+    [InlineData("lehy_pro_side_cwt", "AH<=max_BW+CA+max_CB", "{max_BW+CA+max_CB}")]
+    [InlineData("lehy_pro_rear_cwt", "AH<=2*max_CB", "{2*max_CB}")]
+    public async Task ProductionCatalog_LehyAhRulesEnforceDocumentedUpperBound(
+        string templateId,
+        string upperBoundExpression,
+        string upperBoundMessage)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var rule = Assert.Single(template.ValidationRules, rule => rule.Name == "r_AH");
+
+        Assert.Contains("AH>=min_AH", rule.Expression, StringComparison.Ordinal);
+        Assert.Contains(upperBoundExpression, rule.Expression, StringComparison.Ordinal);
+        Assert.Contains("{min_AH} ≤ AH ≤", rule.Message, StringComparison.Ordinal);
+        Assert.Contains(upperBoundMessage, rule.Message, StringComparison.Ordinal);
+
+        var calculatedRule = template.CalculatedVariables.SingleOrDefault(
+            variable => variable.Name == "r_AH");
+        if (calculatedRule is not null)
+        {
+            Assert.Contains(
+                upperBoundExpression,
+                calculatedRule.Expression,
+                StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050")]
+    [InlineData("lehy_l_pro_1050_2500")]
+    public async Task ProductionCatalog_LProA4RuleIsSymmetricAndIncludesBoundaries(
+        string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var rule = Assert.Single(template.ValidationRules, rule => rule.Name == "r_A4_1");
+        var context = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["$door_type"] = "ЦО",
+            ["AA"] = 1400m,
+            ["JJ"] = 900m,
+            ["A4"] = -200m,
+            ["$r_A4_1_text"] = string.Empty
+        };
+
+        Assert.Contains("abs(A4)", rule.Expression, StringComparison.Ordinal);
+        Assert.Contains("≤ A4 ≤", rule.Message, StringComparison.Ordinal);
+        Assert.True(
+            SafeTFlexExpressionEvaluator.TryEvaluateRule(rule.Expression, context, out var boundaryPassed));
+        Assert.True(boundaryPassed);
+
+        context["A4"] = -201m;
+        Assert.True(
+            SafeTFlexExpressionEvaluator.TryEvaluateRule(rule.Expression, context, out var outsidePassed));
+        Assert.False(outsidePassed);
+    }
+
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050")]
+    [InlineData("lehy_l_pro_1050_2500")]
+    [InlineData("lehy_pro_side_cwt")]
+    [InlineData("lehy_pro_rear_cwt")]
+    public async Task ProductionCatalog_LehyMessagesMatchInclusiveRules(
+        string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+
+        var doorWidthRule = Assert.Single(
+            template.ValidationRules,
+            rule => rule.Name == "r_JJ_AA");
+        Assert.Contains("AA-JJ ≥", doorWidthRule.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("JJ-AA", doorWidthRule.Message, StringComparison.Ordinal);
+
+        var travelRule = Assert.Single(template.ValidationRules, rule => rule.Name == "r_TR");
+        Assert.Contains("TR ≤", travelRule.Message, StringComparison.Ordinal);
+
+        var maximumFloorHeightRule = Assert.Single(
+            template.ValidationRules,
+            rule => rule.Name == "r_maxHF");
+        Assert.Contains("≤ 11000", maximumFloorHeightRule.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050")]
+    [InlineData("lehy_l_pro_1050_2500")]
+    [InlineData("lehy_pro_side_cwt")]
+    [InlineData("lehy_pro_rear_cwt")]
+    public async Task ProductionCatalog_LehyMaximumFloorHeightChecksEveryActiveGap(
+        string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var rule = Assert.Single(template.ValidationRules, rule => rule.Name == "r_maxHF");
+        var context = Enumerable.Range(1, 48).ToDictionary(
+            index => $"maxHF{index:00}",
+            _ => (object?)1m,
+            StringComparer.Ordinal);
+        context["maxHF03"] = 0m;
+        context["$r_maxHF_text"] = "Maximum floor height exceeded.";
+
+        Assert.DoesNotContain("**", rule.Expression, StringComparison.Ordinal);
+        Assert.True(
+            SafeTFlexExpressionEvaluator.TryEvaluateRule(
+                rule.Expression,
+                context,
+                out var passed));
+        Assert.False(passed);
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_SideCwtMessagesUseLivePlaceholders()
+    {
+        var template = await GetProductionTemplateAsync("lehy_pro_side_cwt");
+
+        Assert.Equal(
+            "BW = {BW}. Должно быть {min_BW} ≤ BW ≤ {max_BW}.",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "r_BW_1").Message);
+        Assert.Equal(
+            "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_BW+CA+max_CB}.",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "r_AH").Message);
+        Assert.Equal(
+            "Остановки = {stops}. Должно быть остановки ≤ {S_stops}.",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "r_stops").Message);
+        Assert.Equal(
+            "Минимальное межэтажное расстояние должно быть ≥ {S_HF}.",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "r_THF").Message);
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_KIiMessagesMatchCalculatedLimitsAndUnits()
+    {
+        var template = await GetProductionTemplateAsync("k_ii_type");
+
+        Assert.Contains(
+            "1100",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "TJmax").Expression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "1100",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "TKmax").Expression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{TJmax}",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "err1").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{TKmax}",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "err2").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{TJmax}",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "err1").Expression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{TKmax}",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "err2").Expression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "≥ 9500 мм",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "err3").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "≥ 9500 мм",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "err3").Expression,
+            StringComparison.Ordinal);
+        Assert.EndsWith(
+            "{HEmax} мм",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "err6").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{HEmax} мм",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "err6").Expression,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_RazvertkiMessagesIncludeAllowedBoundaries()
+    {
+        var template = await GetProductionTemplateAsync("razvertki_lehy");
+
+        Assert.Contains(
+            "не более 54",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "e2").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не более 2800",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "e3").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не более 2500",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "e4").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не более 1300",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "e5").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не менее 700",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "e6").Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не более 54",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "$e2").Expression,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "не менее 700",
+            Assert.Single(template.CalculatedVariables, variable => variable.Name == "$e6").Expression,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_VictorWarningsDeclareWarningSeverity()
+    {
+        var template = await GetProductionTemplateAsync("un_victor_mrl");
+
+        Assert.Equal(
+            "warning",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "warn01").Severity);
+        Assert.Equal(
+            "warning",
+            Assert.Single(template.ValidationRules, rule => rule.Name == "warn02").Severity);
+    }
+
     [Fact]
     public async Task ProductionCatalog_KIiTypePreservesAndResolvesExactCaseSymbols()
     {

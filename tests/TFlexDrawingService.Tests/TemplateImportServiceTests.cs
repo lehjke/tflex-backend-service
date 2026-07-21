@@ -194,6 +194,74 @@ public sealed class TemplateImportServiceTests
     }
 
     [Fact]
+    public async Task ImportAsync_RejectsUnsupportedValidationRuleSeverity()
+    {
+        var root = CreateRoot();
+        var service = CreateService(root);
+
+        var result = await service.ImportAsync(
+            CreateFormFile(
+                "manifest.json",
+                """
+                {
+                  "id": "invalid_rule_severity",
+                  "code": "INVALID-RULE-SEVERITY",
+                  "name": "Invalid rule severity",
+                  "outputFormats": ["pdf"],
+                  "validationRules": [
+                    {
+                      "name": "notice",
+                      "expression": "0",
+                      "message": "Notice",
+                      "severity": "info"
+                    }
+                  ]
+                }
+                """),
+            CreateFormFile("InvalidSeverity.grb", "t-flex"),
+            null);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("manifest.validationRules[0].severity", result.Errors.Keys);
+        Assert.Contains(
+            "error or warning",
+            result.Errors["manifest.validationRules[0].severity"][0],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportAsync_NormalizesSupportedValidationRuleSeverity()
+    {
+        var root = CreateRoot();
+        var service = CreateService(root);
+
+        var result = await service.ImportAsync(
+            CreateFormFile(
+                "manifest.json",
+                """
+                {
+                  "id": "warning_rule_severity",
+                  "code": "WARNING-RULE-SEVERITY",
+                  "name": "Warning rule severity",
+                  "outputFormats": ["pdf"],
+                  "validationRules": [
+                    {
+                      "name": "notice",
+                      "expression": "0",
+                      "message": "Notice",
+                      "severity": " WARNING "
+                    }
+                  ]
+                }
+                """),
+            CreateFormFile("WarningSeverity.grb", "t-flex"),
+            null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("warning", Assert.Single(result.Template!.ValidationRules).Severity);
+    }
+
+    [Fact]
     public async Task ImportAsync_RejectsTextTypeForRealTFlexVariable()
     {
         var root = CreateRoot();

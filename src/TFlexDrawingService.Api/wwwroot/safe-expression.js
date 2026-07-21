@@ -826,7 +826,7 @@ function evaluateFind(node, environment) {
     }
   }
 
-  return UNKNOWN;
+  return known(0);
 }
 
 function evaluateFunction(node, environment) {
