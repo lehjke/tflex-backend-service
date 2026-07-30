@@ -5,8 +5,52 @@ import {
   collectStopParameterValues,
   getAuthoritativeStopLevelValues,
   getMainSelectionMode,
+  isSignedIntegerDraft,
+  isSignedStopIntegerParameterName,
   resolveMainFloor
 } from "../../src/TFlexDrawingService.Api/wwwroot/stop-state.js";
+
+test("floor names and levels accept a leading minus while typing", () => {
+  for (const name of [
+    "s01_name_1",
+    "s_top_name_1",
+    "s01_level_1",
+    "s_top_level_1"
+  ]) {
+    assert.equal(isSignedStopIntegerParameterName(name), true, name);
+  }
+
+  for (const name of ["main_floor", "s01_front_1", "s01_rear_1"]) {
+    assert.equal(isSignedStopIntegerParameterName(name), false, name);
+  }
+
+  for (const value of ["", "-", "-1", "0", "12"]) {
+    assert.equal(isSignedIntegerDraft(value), true, value);
+  }
+
+  for (const value of ["--1", "1-", "1.5", "A1"]) {
+    assert.equal(isSignedIntegerDraft(value), false, value);
+  }
+});
+
+test("negative floor names reach the stop payload unchanged", () => {
+  const payload = collectStopParameterValues({
+    stops: 2,
+    values: {
+      s01_name_1: -1,
+      s01_level_1: 0,
+      s_top_name_1: 1,
+      s_top_level_1: 3000
+    }
+  });
+
+  assert.deepEqual(payload, {
+    s01_name_1: -1,
+    s01_level_1: 0,
+    s_top_name_1: 1,
+    s_top_level_1: 3000
+  });
+});
 
 test("automatic levels are authoritative and every active level reaches the payload", () => {
   const existing = {

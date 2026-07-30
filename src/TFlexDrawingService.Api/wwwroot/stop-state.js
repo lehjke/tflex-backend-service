@@ -27,6 +27,14 @@ export function getStopLevelParameterName(index, stops) {
   return `${getStopRowKey(index, stops)}_level_1`;
 }
 
+export function isSignedStopIntegerParameterName(name) {
+  return /^s(?:\d{2}|_top)_(?:name|level)_1$/.test(String(name ?? ""));
+}
+
+export function isSignedIntegerDraft(value) {
+  return /^-?\d*$/.test(String(value ?? ""));
+}
+
 export function getMainSelectionMode(mainValue) {
   const automatic = toFlag(mainValue);
   return {

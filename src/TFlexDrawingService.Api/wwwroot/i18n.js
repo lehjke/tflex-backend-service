@@ -3,10 +3,11 @@ const SUPPORTED_LANGUAGES = new Set(["ru", "en"]);
 
 const ENGLISH_BY_RUSSIAN = new Map([
   ["Главная", "Home"],
-  ["Инженерный центр — METEOR Engineering Center", "Engineering Center — METEOR Engineering Center"],
-  ["Создание чертежей — METEOR Engineering Center", "Create drawings — METEOR Engineering Center"],
-  ["Личный кабинет — METEOR Engineering Center", "Account — METEOR Engineering Center"],
-  ["Базовая цена — METEOR Engineering Center", "Base price — METEOR Engineering Center"],
+  ["Инженерный центр — МЛТ", "Engineering Center — MLT"],
+  ["Создание чертежей — МЛТ", "Create drawings — MLT"],
+  ["Личный кабинет — МЛТ", "Account — MLT"],
+  ["Базовая цена — МЛТ", "Base price — MLT"],
+  ["Инженерный центр МЛТ", "MLT Engineering Center"],
   ["Инженерный центр", "Engineering Center"],
   ["Создание чертежей", "Create drawings"],
   ["Личный кабинет", "Account"],

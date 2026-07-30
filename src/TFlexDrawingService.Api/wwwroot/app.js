@@ -1,5 +1,5 @@
-import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
-import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260720-ui-hardening-4";
+import { getLanguage, t } from "./i18n.js?v=20260728-mlt-brand-1";
+import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260728-mlt-brand-1";
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260721-validation-parity-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -11,8 +11,10 @@ import {
   getStopLevelParameterName,
   getStopNameParameterName,
   getStopRowKey,
+  isSignedIntegerDraft,
+  isSignedStopIntegerParameterName,
   resolveMainFloor
-} from "./stop-state.js?v=20260721-validation-parity-1";
+} from "./stop-state.js?v=20260722-signed-floor-1";
 import {
   isBlockingValidationIssue,
   isValidationPassed,
@@ -2214,9 +2216,8 @@ function isFrontendHiddenParameter(parameter) {
   return FRONTEND_HIDDEN_PARAMETER_NAMES.has(parameter.name);
 }
 
-function isLehyProStopLevelParameter(parameter, template = state.selectedTemplate) {
-  return isLehyProTemplate(template)
-    && /^s(?:\d{2}|_top)_level_1$/.test(parameter?.name || "");
+function acceptsSignedStopIntegerInput(parameter) {
+  return isSignedStopIntegerParameterName(parameter?.name);
 }
 
 function normalizeStopFloorName(value) {
@@ -2325,8 +2326,8 @@ function createDisplayInput(value, parameterName = null) {
 function bindInputChange(input, parameter) {
   const handleInputChange = event => {
     const focusTarget = getInputFocusTarget(input);
-    if (isLehyProStopLevelParameter(parameter) && event?.type === "input") {
-      if (/^-?\d*$/.test(input.value)) {
+    if (acceptsSignedStopIntegerInput(parameter) && event?.type === "input") {
+      if (isSignedIntegerDraft(input.value)) {
         state.parameterValues[parameter.name] = input.value;
       } else {
         input.value = hasValue(state.parameterValues[parameter.name])
@@ -2362,7 +2363,7 @@ function createCompactInput(parameter, options = {}) {
     input.value = String(options.radioValue);
   } else if (type === "bool" || type === "boolean") {
     input.type = "checkbox";
-  } else if (isLehyProStopLevelParameter(parameter)) {
+  } else if (acceptsSignedStopIntegerInput(parameter)) {
     input.type = "text";
     input.inputMode = "text";
     input.pattern = "-?[0-9]+";

@@ -1,5 +1,5 @@
-import { getLanguage, t } from "./i18n.js?v=20260720-ui-hardening-4";
-import { openGeneratedFilePreview } from "./file-preview.js?v=20260720-ui-hardening-4";
+import { getLanguage, t } from "./i18n.js?v=20260728-mlt-brand-1";
+import { openGeneratedFilePreview } from "./file-preview.js?v=20260728-mlt-brand-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 
 const state = {

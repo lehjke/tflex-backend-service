@@ -1,4 +1,4 @@
-import { mountLanguageSwitch, t } from "./i18n.js?v=20260720-ui-hardening-4";
+import { mountLanguageSwitch, t } from "./i18n.js?v=20260728-mlt-brand-1";
 
 const menuButton = document.querySelector(".sidebar__menu-toggle");
 const sidebarMenu = document.querySelector("#sidebarMenu");
@@ -45,7 +45,7 @@ function setupSidebarControls() {
   session.hidden = true;
   session.innerHTML = `
     <a class="sidebar__account-link" href="/account">
-      <span class="user-avatar" aria-hidden="true">ME</span>
+      <span class="user-avatar" aria-hidden="true">МЛТ</span>
       <span data-mobile-user-name></span>
     </a>
     <button class="sidebar__logout secondary secondary--compact" type="button">Выйти</button>

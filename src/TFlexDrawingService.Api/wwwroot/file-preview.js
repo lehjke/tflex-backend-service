@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=20260720-ui-hardening-4";
+import { t } from "./i18n.js?v=20260728-mlt-brand-1";
 
 let previewDialog = null;
 let previousFocus = null;
