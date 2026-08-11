@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=20260728-mlt-brand-1";
+import { t } from "./i18n.js?v=20260806-design-fixes-1";
 
 const state = {
   currentUser: null
@@ -20,7 +20,6 @@ const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
 const activeTemplateCount = document.querySelector("#activeTemplateCount");
 const globalSearchInput = document.querySelector(".global-search input");
-const templateCardCloseTimers = new WeakMap();
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -29,7 +28,7 @@ function isAuthenticated() {
 function getRoleLabel() {
   const roles = state.currentUser?.roles || [];
   if (roles.includes("Admin")) return "Admin";
-  if (roles.includes("Operator")) return "Engineer";
+  if (roles.includes("Operator")) return "Operator";
   if (roles.includes("Viewer")) return "Viewer";
   return "User";
 }
@@ -48,7 +47,7 @@ function updateAuthView() {
     }
     if (currentUserRole) {
       const role = getRoleLabel();
-      currentUserRole.hidden = role !== "Admin";
+      currentUserRole.hidden = !role;
       currentUserRole.textContent = role;
     }
   } else {
@@ -131,6 +130,7 @@ async function register(event) {
     const messages = await readProblem(response, t("Не удалось отправить заявку"));
     registerStatus.hidden = false;
     registerStatus.className = "error";
+    registerStatus.setAttribute("role", "alert");
     registerStatus.textContent = messages.join(" ");
     return;
   }
@@ -138,6 +138,7 @@ async function register(event) {
   registerForm.reset();
   registerStatus.hidden = false;
   registerStatus.className = "empty";
+  registerStatus.setAttribute("role", "status");
   registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
@@ -199,44 +200,6 @@ function setupHomeCards() {
   }
 }
 
-function setTemplateCardState(card, isOpen) {
-  if (!card) return;
-  card.classList.toggle("is-open", isOpen);
-  card.setAttribute("aria-expanded", isOpen ? "true" : "false");
-}
-
-function openTemplateCard(card) {
-  if (!card) return;
-
-  for (const otherCard of document.querySelectorAll("[data-template-card]")) {
-    if (otherCard !== card) {
-      window.clearTimeout(templateCardCloseTimers.get(otherCard));
-      setTemplateCardState(otherCard, false);
-    }
-  }
-
-  window.clearTimeout(templateCardCloseTimers.get(card));
-  setTemplateCardState(card, true);
-  templateCardCloseTimers.set(card, window.setTimeout(() => {
-    setTemplateCardState(card, false);
-  }, 5000));
-}
-
-function setupTemplateCard() {
-  for (const card of document.querySelectorAll("[data-template-card]")) {
-    card.setAttribute("aria-expanded", "false");
-    card.addEventListener("pointerenter", () => openTemplateCard(card));
-    card.addEventListener("focusin", () => openTemplateCard(card));
-
-    const button = card.querySelector(".home-template-card__button");
-    button?.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || event.isPrimary === false) return;
-      event.preventDefault();
-      window.location.assign(card.href);
-    });
-  }
-}
-
 function setupHomeSearch() {
   if (!globalSearchInput) return;
 
@@ -246,6 +209,12 @@ function setupHomeSearch() {
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   globalSearchInput.closest(".global-search")?.append(status);
+
+  const updateSearchCopy = () => {
+    const label = `${t("Поиск")}: ${t("Быстрый доступ")}`;
+    globalSearchInput.placeholder = label;
+    globalSearchInput.setAttribute("aria-label", label);
+  };
 
   const applySearch = () => {
     const query = globalSearchInput.value.trim().toLocaleLowerCase();
@@ -270,23 +239,24 @@ function setupHomeSearch() {
     if (event.key !== "Enter") return;
     const visibleCards = applySearch();
     if (visibleCards.length === 1) {
+      const link = visibleCards[0].querySelector(".home-template-card__button[href]");
+      if (!link) return;
       event.preventDefault();
-      window.location.assign(visibleCards[0].href);
+      window.location.assign(link.href);
     }
   });
-  window.addEventListener("tflex:languagechange", applySearch);
+  window.addEventListener("tflex:languagechange", () => {
+    updateSearchCopy();
+    applySearch();
+  });
+  updateSearchCopy();
 }
 
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);
-userPanel?.addEventListener("click", event => {
-  if (logoutButton?.contains(event.target)) return;
-  window.location.assign("/account");
-});
 
 setupHomeCards();
-setupTemplateCard();
 setupHomeSearch();
 if (await loadCurrentUser()) {
   await loadActiveTemplateCount();

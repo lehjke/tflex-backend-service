@@ -1,4 +1,4 @@
-import { mountLanguageSwitch, t } from "./i18n.js?v=20260728-mlt-brand-1";
+import { mountLanguageSwitch, t } from "./i18n.js?v=20260806-design-fixes-1";
 
 const menuButton = document.querySelector(".sidebar__menu-toggle");
 const sidebarMenu = document.querySelector("#sidebarMenu");
@@ -10,8 +10,11 @@ const sourceUserPanel = document.querySelector("#userPanel");
 const sourceUserName = document.querySelector("#currentUserName");
 const sourceLogoutButton = document.querySelector("#logoutButton");
 const sourceSearchLabel = document.querySelector(".global-search");
+const workspace = document.querySelector(".workspace");
 let searchPlaceholder = null;
 let mobileSearchSlot = null;
+let workspacePreviousAriaHidden = null;
+let workspaceWasSuppressed = false;
 
 function setupSidebarControls() {
   if (!sidebarMenu || sidebarMenu.querySelector(".sidebar__controls")) return;
@@ -81,15 +84,28 @@ function setupSidebarControls() {
 
 function syncSearchPlacement() {
   if (!sourceSearchLabel || !searchPlaceholder || !mobileSearchSlot) return;
+  const searchInput = sourceSearchLabel.querySelector("input");
+  const preserveSearchFocus = Boolean(searchInput && sourceSearchLabel.contains(document.activeElement));
   if (mobileSearchQuery.matches) {
     mobileSearchSlot.append(sourceSearchLabel);
+    if (preserveSearchFocus && mobileMenuQuery.matches) {
+      setMobileMenuState(true);
+    }
   } else {
+    if (preserveSearchFocus && document.body.classList.contains("mobile-menu-open")) {
+      closeMobileMenu();
+    }
     searchPlaceholder.parentNode?.insertBefore(sourceSearchLabel, searchPlaceholder.nextSibling);
+  }
+
+  if (preserveSearchFocus) {
+    requestAnimationFrame(() => searchInput?.focus({ preventScroll: true }));
   }
 }
 
 function setMobileMenuState(isOpen) {
   const wasOpen = document.body.classList.contains("mobile-menu-open");
+  const suppressWorkspace = mobileMenuQuery.matches && isOpen;
   document.body.classList.toggle("mobile-menu-open", isOpen);
   menuButton?.setAttribute("aria-expanded", isOpen ? "true" : "false");
   menuButton?.setAttribute("aria-label", isOpen ? t("Закрыть меню") : t("Открыть меню"));
@@ -116,6 +132,24 @@ function setMobileMenuState(isOpen) {
 
   if (menuBackdrop) {
     menuBackdrop.hidden = !isOpen;
+  }
+
+  if (workspace) {
+    if (suppressWorkspace && !workspaceWasSuppressed) {
+      workspacePreviousAriaHidden = workspace.getAttribute("aria-hidden");
+      workspace.setAttribute("aria-hidden", "true");
+      if ("inert" in workspace) workspace.inert = true;
+      workspaceWasSuppressed = true;
+    } else if (!suppressWorkspace && workspaceWasSuppressed) {
+      if (workspacePreviousAriaHidden === null) {
+        workspace.removeAttribute("aria-hidden");
+      } else {
+        workspace.setAttribute("aria-hidden", workspacePreviousAriaHidden);
+      }
+      if ("inert" in workspace) workspace.inert = false;
+      workspacePreviousAriaHidden = null;
+      workspaceWasSuppressed = false;
+    }
   }
 
   if (mobileMenuQuery.matches && isOpen && !wasOpen) {

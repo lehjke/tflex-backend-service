@@ -1,5 +1,5 @@
-import { getLanguage, t } from "./i18n.js?v=20260728-mlt-brand-1";
-import { openGeneratedFilePreview } from "./file-preview.js?v=20260728-mlt-brand-1";
+import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 
 const state = {
@@ -9,13 +9,22 @@ const state = {
   templates: [],
   jobs: [],
   adminUsers: [],
-  adminTemplates: []
+  adminTemplates: [],
+  activeGenerationActions: new Map(),
+  activeAdminUserActions: new Set()
 };
 const sessionRequests = createSessionRequestGuard();
+let bootPromise = null;
+let pageLoadErrorContext = "load";
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
 const pageSkeleton = document.querySelector("#pageSkeleton");
+const pageLoadingElements = document.querySelectorAll("[data-page-loading]");
+const pageLoadError = document.querySelector("#pageLoadError");
+const pageLoadErrorTitle = document.querySelector("#pageLoadErrorTitle");
+const pageLoadErrorMessage = document.querySelector("#pageLoadErrorMessage");
+const retryBootButton = document.querySelector("#retryBootButton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -32,8 +41,10 @@ const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
+const currentUserAccessNote = document.querySelector("#currentUserAccessNote");
 const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
+const globalSearch = document.querySelector(".global-search");
 const globalSearchInput = document.querySelector(".global-search input");
 const projectNameInput = document.querySelector("#projectNameInput");
 const projectAddressInput = document.querySelector("#projectAddressInput");
@@ -49,6 +60,7 @@ const pendingMetric = document.querySelector("#pendingMetric");
 const savedConfigurationsList = document.querySelector("#savedConfigurationsList");
 const adminAccessCard = document.querySelector("#adminAccessCard");
 const adminPanel = document.querySelector("#adminPanel");
+const adminStatus = document.querySelector("#adminStatus");
 const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
 const accountCreateSection = document.querySelector(".account-create");
@@ -74,6 +86,15 @@ function canAdmin() {
   return (state.currentUser?.roles || []).includes("Admin");
 }
 
+function localized(ru, en) {
+  return getLanguage() === "en" ? en : ru;
+}
+
+function getCurrentRole() {
+  const roles = state.currentUser?.roles || [];
+  return ADMIN_ROLE_OPTIONS.find(role => roles.includes(role)) || "Viewer";
+}
+
 function isAdminPanelRoute() {
   return window.location.hash === "#adminPanel";
 }
@@ -95,7 +116,15 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function setLiveRegionUrgency(element, kind) {
+  if (!element) return;
+  const isError = kind === "error";
+  element.setAttribute("role", isError ? "alert" : "status");
+  element.setAttribute("aria-live", isError ? "assertive" : "polite");
+}
+
 function showAccountStatus(message, kind = "empty") {
+  setLiveRegionUrgency(accountStatus, kind);
   accountStatus.hidden = false;
   accountStatus.className = kind;
   accountStatus.textContent = message;
@@ -106,6 +135,28 @@ function hideAccountStatus() {
   accountStatus.textContent = "";
 }
 
+function showAdminStatus(message, kind = "empty") {
+  if (!adminStatus) return;
+  setLiveRegionUrgency(adminStatus, kind);
+  adminStatus.hidden = false;
+  adminStatus.className = kind;
+  adminStatus.textContent = message;
+}
+
+function hideAdminStatus() {
+  if (!adminStatus) return;
+  adminStatus.hidden = true;
+  adminStatus.textContent = "";
+}
+
+function showRegisterStatus(message, kind = "empty") {
+  if (!registerStatus) return;
+  setLiveRegionUrgency(registerStatus, kind);
+  registerStatus.hidden = false;
+  registerStatus.className = kind;
+  registerStatus.textContent = message;
+}
+
 function clearAccountSessionState() {
   sessionRequests.invalidate();
   state.projects = [];
@@ -114,6 +165,8 @@ function clearAccountSessionState() {
   state.jobs = [];
   state.adminUsers = [];
   state.adminTemplates = [];
+  state.activeGenerationActions = new Map();
+  state.activeAdminUserActions = new Set();
 
   loginForm?.reset();
   guestLoginForm?.reset();
@@ -141,6 +194,7 @@ function clearAccountSessionState() {
   adminUsersTableBody.replaceChildren();
   adminTemplatesTableBody.replaceChildren();
   hideAccountStatus();
+  hideAdminStatus();
   updateMetrics();
 }
 
@@ -192,6 +246,60 @@ function findConfigurationFormatSelect(configurationId, scope = document) {
 
 function findConfigurationActionScope(button) {
   return button.closest(".saved-configuration-item, tr") || document;
+}
+
+function getGenerationKey(projectId, configurationId) {
+  return JSON.stringify([String(projectId || ""), String(configurationId || "")]);
+}
+
+function syncGenerationControls() {
+  const buttons = document.querySelectorAll(`
+    #projectsList button[data-action="preview"],
+    #projectsList button[data-action="download"],
+    #savedConfigurationsList button[data-action="preview"],
+    #savedConfigurationsList button[data-action="download"]
+  `);
+
+  for (const button of buttons) {
+    const key = getGenerationKey(button.dataset.projectId, button.dataset.id);
+    const activeAction = state.activeGenerationActions.get(key);
+    if (activeAction) {
+      if (!button.dataset.generationIdleLabel) {
+        button.dataset.generationIdleLabel = button.textContent;
+      }
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+      button.dataset.generationBusy = "true";
+      if (button.dataset.action === activeAction) {
+        button.setAttribute("aria-busy", "true");
+        button.textContent = localized("Формирование…", "Preparing…");
+      } else {
+        button.removeAttribute("aria-busy");
+      }
+      continue;
+    }
+
+    if (button.dataset.generationBusy === "true") {
+      button.disabled = false;
+      button.removeAttribute("aria-disabled");
+      button.removeAttribute("aria-busy");
+      button.textContent = button.dataset.generationIdleLabel || button.textContent;
+      delete button.dataset.generationBusy;
+      delete button.dataset.generationIdleLabel;
+    }
+  }
+
+  const scopes = document.querySelectorAll("#projectsList tr, #savedConfigurationsList .saved-configuration-item");
+  for (const scope of scopes) {
+    const isBusy = Boolean(scope.querySelector("button[data-generation-busy='true']"));
+    if (isBusy) {
+      scope.setAttribute("aria-busy", "true");
+      scope.dataset.generationBusy = "true";
+    } else if (scope.dataset.generationBusy === "true") {
+      scope.removeAttribute("aria-busy");
+      delete scope.dataset.generationBusy;
+    }
+  }
 }
 
 function getAllConfigurations() {
@@ -293,6 +401,7 @@ function applyAccountSearch(source = null) {
   syncSearchInputs(value, source);
   renderProjects();
   renderSavedConfigurations();
+  syncGenerationControls();
 }
 
 function updateMetrics() {
@@ -310,8 +419,66 @@ function updateMetrics() {
   if (pendingMetric) pendingMetric.textContent = String(pendingJobs.length);
 }
 
+function updatePageLoadErrorCopy(context = pageLoadErrorContext) {
+  pageLoadErrorContext = context;
+  const isLogoutRecovery = context === "logout";
+  if (pageLoadErrorTitle) {
+    pageLoadErrorTitle.textContent = localized(
+      isLogoutRecovery ? "Выход не подтвержден" : "Не удалось загрузить личный кабинет",
+      isLogoutRecovery ? "Sign-out not confirmed" : "The account could not be loaded");
+  }
+  if (pageLoadErrorMessage) {
+    pageLoadErrorMessage.textContent = localized(
+      isLogoutRecovery
+        ? "Сервер не подтвердил выход. Сессия могла сохраниться. Проверьте состояние еще раз."
+        : "Проверьте сетевое соединение и повторите загрузку.",
+      isLogoutRecovery
+        ? "The server did not confirm sign-out. The session may still be active. Check the state again."
+        : "Check your network connection and try loading the account again.");
+  }
+  if (retryBootButton) {
+    retryBootButton.textContent = localized(
+      isLogoutRecovery ? "Проверить снова" : "Повторить",
+      isLogoutRecovery ? "Check again" : "Try again");
+  }
+}
+
+function showPageLoading(context = "load") {
+  if (!pageSkeleton) return;
+  updatePageLoadErrorCopy(context);
+  pageSkeleton.hidden = false;
+  pageSkeleton.setAttribute("aria-label", localized("Загрузка страницы", "Loading page"));
+  pageSkeleton.setAttribute("aria-busy", "true");
+  pageLoadingElements.forEach(element => {
+    element.hidden = false;
+  });
+  if (pageLoadError) pageLoadError.hidden = true;
+  if (retryBootButton) {
+    retryBootButton.disabled = true;
+    retryBootButton.setAttribute("aria-busy", "true");
+  }
+}
+
+function showPageLoadError({ context = "load" } = {}) {
+  if (!pageSkeleton || !pageLoadError) return;
+  updatePageLoadErrorCopy(context);
+  guestMain.hidden = true;
+  accountMain.hidden = true;
+  pageLoadingElements.forEach(element => {
+    element.hidden = true;
+  });
+  pageSkeleton.hidden = false;
+  pageSkeleton.setAttribute("aria-label", localized("Ошибка загрузки", "Loading error"));
+  pageSkeleton.removeAttribute("aria-busy");
+  pageLoadError.hidden = false;
+  retryBootButton?.removeAttribute("aria-busy");
+  if (retryBootButton) retryBootButton.disabled = false;
+  requestAnimationFrame(() => retryBootButton?.focus({ preventScroll: true }));
+}
+
 function hidePageSkeleton() {
   if (pageSkeleton) {
+    pageSkeleton.removeAttribute("aria-busy");
     pageSkeleton.hidden = true;
   }
 }
@@ -324,6 +491,7 @@ function updateAuthView() {
   userPanel.hidden = !authenticated;
   accountMain.hidden = !authenticated;
   const showAdminPanel = isAdmin && isAdminPanelRoute();
+  if (globalSearch) globalSearch.hidden = !authenticated || showAdminPanel;
   accountMain.classList.toggle("is-admin-route", showAdminPanel);
   adminPanel.hidden = !showAdminPanel;
   adminPanel.classList.toggle("is-open", showAdminPanel);
@@ -335,22 +503,35 @@ function updateAuthView() {
 
   if (showAdminPanel) {
     requestAnimationFrame(() => {
-      const desktopOffset = window.matchMedia("(min-width: 901px)").matches ? 42 : 0;
-      window.scrollTo({ top: desktopOffset, left: 0, behavior: "auto" });
+      adminPanel.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
     });
   }
 
   if (authenticated) {
+    const currentRole = getCurrentRole();
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
     if (currentUserRoleLabel) {
-      currentUserRoleLabel.hidden = !isAdmin;
-      currentUserRoleLabel.textContent = isAdmin ? "Admin" : "";
+      currentUserRoleLabel.hidden = false;
+      currentUserRoleLabel.textContent = currentRole;
+    }
+    if (currentUserAccessNote) {
+      const isViewer = currentRole === "Viewer";
+      currentUserAccessNote.hidden = !isViewer;
+      currentUserAccessNote.textContent = isViewer
+        ? localized(
+          "Роль Viewer: режим только для просмотра. Создание проектов и выпуск файлов недоступны.",
+          "Viewer role: read-only access. Creating projects and generating files are unavailable.")
+        : "";
     }
   } else {
     currentUserName.textContent = "";
     if (currentUserRoleLabel) {
       currentUserRoleLabel.hidden = true;
       currentUserRoleLabel.textContent = "";
+    }
+    if (currentUserAccessNote) {
+      currentUserAccessNote.hidden = true;
+      currentUserAccessNote.textContent = "";
     }
   }
 }
@@ -405,16 +586,45 @@ async function readProblem(response, fallback) {
   }
 }
 
+function createAccountRequestAbortError(resource) {
+  const error = new Error(`The ${resource} request no longer belongs to the active session`);
+  error.name = "AbortError";
+  return error;
+}
+
+function requireSuccessfulLoadResponse(response, resource) {
+  if (!sessionRequests.isCurrent(response)) {
+    throw createAccountRequestAbortError(resource);
+  }
+  if (response.ok) return;
+
+  const error = new Error(`The ${resource} request failed with status ${response.status}`);
+  error.name = "AccountLoadError";
+  error.status = response.status;
+  throw error;
+}
+
+function requireCurrentLoadPayload(payload, resource) {
+  if (payload === sessionRequests.stalePayload) {
+    throw createAccountRequestAbortError(resource);
+  }
+  return payload;
+}
+
 async function loadCurrentUser() {
   const response = await apiFetch("/api/auth/me");
   if (!response.ok) {
-    state.currentUser = null;
-    updateAuthView();
-    return false;
+    if (response.status === 401 || response.status === 403) {
+      state.currentUser = null;
+      updateAuthView();
+      return false;
+    }
+    requireSuccessfulLoadResponse(response, "authentication");
   }
 
-  const currentUser = await sessionRequests.readJson(response);
-  if (currentUser === sessionRequests.stalePayload) return false;
+  const currentUser = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "authentication");
   state.currentUser = currentUser;
   updateAuthView();
   return isAuthenticated();
@@ -422,31 +632,32 @@ async function loadCurrentUser() {
 
 async function loadTemplates() {
   const response = await apiFetch("/api/templates");
-  if (!response.ok) return;
-  const templates = await sessionRequests.readJson(response);
-  if (templates === sessionRequests.stalePayload) return;
+  requireSuccessfulLoadResponse(response, "templates");
+  const templates = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "templates");
   state.templates = templates;
 }
 
 async function loadProjects() {
   const response = await apiFetch("/api/projects");
-  if (!response.ok) return;
+  requireSuccessfulLoadResponse(response, "projects");
 
-  const projects = await sessionRequests.readJson(response);
-  if (projects === sessionRequests.stalePayload) return;
+  const projects = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "projects");
 
   const configurationEntries = await Promise.all(projects.map(async project => {
     const configurationsResponse = await apiFetch(`/api/projects/${project.id}/configurations`);
-    if (!configurationsResponse.ok) return [project.id, []];
-    const configurations = await sessionRequests.readJson(configurationsResponse);
-    return configurations === sessionRequests.stalePayload
-      ? sessionRequests.stalePayload
-      : [project.id, configurations];
+    requireSuccessfulLoadResponse(
+      configurationsResponse,
+      `configurations for project ${project.id}`);
+    const configurations = requireCurrentLoadPayload(
+      await sessionRequests.readJson(configurationsResponse),
+      `configurations for project ${project.id}`);
+    return [project.id, configurations];
   }));
-  if (!sessionRequests.isCurrent(response)
-      || configurationEntries.includes(sessionRequests.stalePayload)) {
-    return;
-  }
+  requireSuccessfulLoadResponse(response, "projects");
 
   state.projects = projects;
   state.configurationsByProjectId = new Map(configurationEntries);
@@ -455,9 +666,10 @@ async function loadProjects() {
 
 async function loadAccountJobs() {
   const response = await apiFetch("/api/jobs?take=100");
-  if (!response.ok) return;
-  const jobs = await sessionRequests.readJson(response);
-  if (jobs === sessionRequests.stalePayload) return;
+  requireSuccessfulLoadResponse(response, "jobs");
+  const jobs = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "jobs");
   state.jobs = jobs;
   updateMetrics();
 }
@@ -466,6 +678,7 @@ function renderAccountData() {
   renderProjects();
   renderSavedConfigurations();
   updateMetrics();
+  syncGenerationControls();
 }
 
 function renderProjects() {
@@ -645,6 +858,17 @@ function createConfigurationsTable(project, configurations) {
   return wrap;
 }
 
+async function reloadProjectsAfterMutation(successMessage) {
+  try {
+    await loadProjects();
+    showAccountStatus(successMessage);
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showPageLoadError();
+    }
+  }
+}
+
 async function createProject() {
   const name = projectNameInput.value.trim();
   if (!name) {
@@ -673,8 +897,7 @@ async function createProject() {
   projectNameInput.value = "";
   if (projectAddressInput) projectAddressInput.value = "";
   if (projectFactoryRequestNumberInput) projectFactoryRequestNumberInput.value = "";
-  hideAccountStatus();
-  await loadProjects();
+  await reloadProjectsAfterMutation(localized("Проект создан.", "Project created."));
 }
 
 function getProjectFormValues(button) {
@@ -713,8 +936,7 @@ async function updateProject(projectId, button) {
     return;
   }
 
-  hideAccountStatus();
-  await loadProjects();
+  await reloadProjectsAfterMutation(localized("Проект сохранен.", "Project saved."));
 }
 
 async function deleteProject(projectId) {
@@ -736,11 +958,22 @@ async function deleteProject(projectId) {
     return;
   }
 
-  hideAccountStatus();
-  await loadProjects();
+  await reloadProjectsAfterMutation(localized("Проект удален.", "Project deleted."));
 }
 
 async function deleteConfiguration(projectId, configurationId) {
+  const project = state.projects.find(item => item.id === projectId);
+  const configuration = (state.configurationsByProjectId.get(projectId) || [])
+    .find(item => item.id === configurationId);
+  const configurationLabel = configuration ? ` "${getConfigurationName(configuration)}"` : "";
+  const projectLabel = project?.name ? ` из проекта "${project.name}"` : "";
+  const confirmation = localized(
+    `Удалить сохраненную конфигурацию${configurationLabel}${projectLabel}? Это действие нельзя отменить.`,
+    `Delete saved configuration${configurationLabel}${project?.name ? ` from project "${project.name}"` : ""}? This action cannot be undone.`);
+  if (!confirm(confirmation)) {
+    return;
+  }
+
   const response = await apiFetch(`/api/project-configurations/${encodeURIComponent(configurationId)}`, {
     method: "DELETE"
   });
@@ -750,8 +983,7 @@ async function deleteConfiguration(projectId, configurationId) {
     return;
   }
 
-  hideAccountStatus();
-  await loadProjects();
+  await reloadProjectsAfterMutation(localized("Конфигурация удалена.", "Configuration deleted."));
 }
 
 async function downloadConfiguration(projectId, configurationId, format, options = {}) {
@@ -764,25 +996,47 @@ async function downloadConfiguration(projectId, configurationId, format, options
     .find(item => item.id === configurationId);
   if (!configuration) return;
 
-  showAccountStatus(`Генерация ${format.toUpperCase()} запущена...`);
-  const createResponse = await apiFetch("/api/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      templateId: configuration.templateId,
-      outputFormat: format,
-      parameters: configuration.parameters || {}
-    })
-  });
-
-  if (!createResponse.ok) {
-    showAccountStatus((await readProblem(createResponse, "Не удалось создать задание")).join(" "), "error");
+  const generationKey = getGenerationKey(projectId, configurationId);
+  if (state.activeGenerationActions.has(generationKey)) {
+    showAccountStatus(localized(
+      "Файл для этой конфигурации уже формируется.",
+      "A file for this configuration is already being prepared."));
     return;
   }
 
-  const job = await sessionRequests.readJson(createResponse);
-  if (job === sessionRequests.stalePayload) return;
-  await waitForDownload(job.id, format, options);
+  state.activeGenerationActions.set(generationKey, options.preview ? "preview" : "download");
+  syncGenerationControls();
+
+  try {
+    showAccountStatus(`Генерация ${String(format).toUpperCase()} запущена...`);
+    const createResponse = await apiFetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateId: configuration.templateId,
+        outputFormat: format,
+        parameters: configuration.parameters || {}
+      })
+    });
+
+    if (!createResponse.ok) {
+      showAccountStatus((await readProblem(createResponse, "Не удалось создать задание")).join(" "), "error");
+      return;
+    }
+
+    const job = await sessionRequests.readJson(createResponse);
+    if (job === sessionRequests.stalePayload) return;
+    await waitForDownload(job.id, format, options);
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showAccountStatus(localized(
+        "Не удалось связаться с сервисом генерации. Повторите позже.",
+        "The generation service could not be reached. Try again later."), "error");
+    }
+  } finally {
+    state.activeGenerationActions.delete(generationKey);
+    syncGenerationControls();
+  }
 }
 
 async function waitForDownload(jobId, format, options = {}) {
@@ -832,11 +1086,45 @@ async function loadAdminData() {
 
 async function loadAdminUsers() {
   const response = await apiFetch("/api/admin/users");
-  if (!response.ok) return;
-  const users = await sessionRequests.readJson(response);
-  if (users === sessionRequests.stalePayload) return;
+  requireSuccessfulLoadResponse(response, "admin users");
+  const users = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "admin users");
   state.adminUsers = users;
   renderAdminUsers();
+}
+
+function setAdminUserRowBusy(row, busy) {
+  if (!row) return;
+
+  if (busy) {
+    row.setAttribute("aria-busy", "true");
+    row.dataset.adminUserBusy = "true";
+  } else {
+    row.removeAttribute("aria-busy");
+    delete row.dataset.adminUserBusy;
+  }
+
+  row.querySelectorAll("button, input").forEach(control => {
+    if (busy) {
+      if (control.dataset.adminRowWasDisabled === undefined) {
+        control.dataset.adminRowWasDisabled = String(control.disabled);
+      }
+      control.disabled = true;
+      return;
+    }
+
+    if (control.dataset.adminRowWasDisabled !== undefined) {
+      control.disabled = control.dataset.adminRowWasDisabled === "true";
+      delete control.dataset.adminRowWasDisabled;
+    }
+  });
+}
+
+function syncAdminUserActionRows() {
+  for (const row of adminUsersTableBody.querySelectorAll("tr[data-admin-user]")) {
+    setAdminUserRowBusy(row, state.activeAdminUserActions.has(row.dataset.adminUser));
+  }
 }
 
 function renderAdminUsers() {
@@ -844,6 +1132,7 @@ function renderAdminUsers() {
 
   for (const user of state.adminUsers) {
     const row = document.createElement("tr");
+    row.dataset.adminUser = user.userName;
     const status = !user.enabled && (user.approvalStatus || "Approved") === "Approved"
       ? "Disabled"
       : (user.approvalStatus || (user.enabled ? "Approved" : "Disabled"));
@@ -873,6 +1162,8 @@ function renderAdminUsers() {
     `;
     adminUsersTableBody.append(row);
   }
+
+  syncAdminUserActionRows();
 }
 
 function renderAdminRoleControls(user, isCurrentUser) {
@@ -902,7 +1193,7 @@ function getSelectedAdminRoles(button) {
 }
 
 async function handleAdminUserAction(action, userName, button) {
-  if (!userName) return;
+  if (!userName || state.activeAdminUserActions.has(userName)) return;
 
   let url = `/api/admin/users/${encodeURIComponent(userName)}`;
   let options = { method: "DELETE" };
@@ -932,20 +1223,36 @@ async function handleAdminUserAction(action, userName, button) {
     options = { method: "POST" };
   }
 
-  const response = await apiFetch(url, options);
-  if (!response.ok) {
-    showAccountStatus((await readProblem(response, "Не удалось обновить пользователя")).join(" "), "error");
-    return;
-  }
+  state.activeAdminUserActions.add(userName);
+  syncAdminUserActionRows();
+  showAdminStatus(localized("Обновление пользователя…", "Updating user…"));
+  try {
+    const response = await apiFetch(url, options);
+    if (!response.ok) {
+      showAdminStatus((await readProblem(response, "Не удалось обновить пользователя")).join(" "), "error");
+      return;
+    }
 
-  await loadAdminUsers();
+    await loadAdminUsers();
+    showAdminStatus(localized("Данные пользователя обновлены.", "User updated."));
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showAdminStatus(localized(
+        "Не удалось связаться с сервисом пользователей.",
+        "The user service could not be reached."), "error");
+    }
+  } finally {
+    state.activeAdminUserActions.delete(userName);
+    syncAdminUserActionRows();
+  }
 }
 
 async function loadAdminTemplates() {
   const response = await apiFetch("/api/admin/templates");
-  if (!response.ok) return;
-  const templates = await sessionRequests.readJson(response);
-  if (templates === sessionRequests.stalePayload) return;
+  requireSuccessfulLoadResponse(response, "admin templates");
+  const templates = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "admin templates");
   state.adminTemplates = templates;
   renderAdminTemplates();
 }
@@ -969,25 +1276,41 @@ function renderAdminTemplates() {
   }
 }
 
-async function setTemplateEnabled(templateId, enabled) {
-  const response = await apiFetch(`/api/admin/templates/${encodeURIComponent(templateId)}/enabled`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled })
-  });
+async function setTemplateEnabled(templateId, enabled, input) {
+  input.disabled = true;
+  input.setAttribute("aria-busy", "true");
+  showAdminStatus(localized("Обновление шаблона…", "Updating template…"));
+  try {
+    const response = await apiFetch(`/api/admin/templates/${encodeURIComponent(templateId)}/enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled })
+    });
 
-  if (!response.ok) {
-    showAccountStatus((await readProblem(response, "Не удалось обновить шаблон")).join(" "), "error");
-    await loadAdminTemplates();
-    return;
+    if (!response.ok) {
+      showAdminStatus((await readProblem(response, "Не удалось обновить шаблон")).join(" "), "error");
+      await loadAdminTemplates();
+      return;
+    }
+
+    await Promise.all([loadTemplates(), loadAdminTemplates()]);
+    showAdminStatus(localized("Доступность шаблона обновлена.", "Template availability updated."));
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showAdminStatus(localized(
+        "Не удалось связаться с сервисом шаблонов.",
+        "The template service could not be reached."), "error");
+      input.checked = !enabled;
+    }
+  } finally {
+    input.disabled = false;
+    input.removeAttribute("aria-busy");
   }
-
-  await loadTemplates();
-  await loadAdminTemplates();
 }
 
 function showTemplateImportStatus(message, kind = "empty") {
   if (!templateImportStatus) return;
+  setLiveRegionUrgency(templateImportStatus, kind);
   templateImportStatus.hidden = false;
   templateImportStatus.className = `template-import__status ${kind}`;
   templateImportStatus.textContent = message;
@@ -1010,6 +1333,8 @@ async function importTemplate(event) {
   if (fragments) formData.append("fragments", fragments);
 
   templateImportButton.disabled = true;
+  templateImportButton.setAttribute("aria-busy", "true");
+  templateImportForm.setAttribute("aria-busy", "true");
   showTemplateImportStatus(t("Импорт выполняется..."));
   try {
     const response = await apiFetch("/api/admin/templates/import", {
@@ -1034,6 +1359,8 @@ async function importTemplate(event) {
     showTemplateImportStatus(t("Не удалось импортировать шаблон"), "error");
   } finally {
     templateImportButton.disabled = false;
+    templateImportButton.removeAttribute("aria-busy");
+    templateImportForm.removeAttribute("aria-busy");
   }
 }
 
@@ -1042,28 +1369,32 @@ async function register(event) {
   registerStatus.hidden = true;
   registerStatus.textContent = "";
 
-  const response = await apiFetch("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userName: registerUserName.value,
-      displayName: registerDisplayName.value,
-      password: registerPassword.value
-    })
-  });
+  try {
+    const response = await apiFetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: registerUserName.value,
+        displayName: registerDisplayName.value,
+        password: registerPassword.value
+      })
+    });
 
-  if (!response.ok) {
-    const messages = await readProblem(response, t("Не удалось отправить заявку"));
-    registerStatus.hidden = false;
-    registerStatus.className = "error";
-    registerStatus.textContent = messages.join(" ");
-    return;
+    if (!response.ok) {
+      const messages = await readProblem(response, t("Не удалось отправить заявку"));
+      showRegisterStatus(messages.join(" "), "error");
+      return;
+    }
+
+    registerForm.reset();
+    showRegisterStatus(t("Заявка отправлена. Доступ появится после подтверждения администратором."));
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showRegisterStatus(localized(
+        "Не удалось отправить заявку: нет связи с сервисом.",
+        "The request could not be submitted because the service could not be reached."), "error");
+    }
   }
-
-  registerForm.reset();
-  registerStatus.hidden = false;
-  registerStatus.className = "empty";
-  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
@@ -1073,54 +1404,96 @@ async function login(event) {
   const passwordInput = form.querySelector("[name='password']") || loginPassword;
   passwordInput.setCustomValidity("");
 
-  const response = await apiFetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userName: userNameInput.value,
-      password: passwordInput.value
-    })
-  });
+  try {
+    const response = await apiFetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: userNameInput.value,
+        password: passwordInput.value
+      })
+    });
 
-  if (!response.ok) {
-    passwordInput.setCustomValidity(t("Неверный логин или пароль"));
-    passwordInput.reportValidity();
-    return;
+    if (!response.ok) {
+      if (response.status >= 500) {
+        showPageLoadError();
+        return;
+      }
+      passwordInput.setCustomValidity(t("Неверный логин или пароль"));
+      passwordInput.reportValidity();
+      return;
+    }
+
+    const currentUser = await sessionRequests.readJson(response);
+    if (currentUser === sessionRequests.stalePayload) return;
+    clearAccountSessionState();
+    state.currentUser = currentUser;
+    passwordInput.value = "";
+    updateAuthView();
+    await loadTemplates();
+    await loadProjects();
+    await loadAccountJobs();
+    await loadAdminData();
+    updateAuthView();
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      showPageLoadError();
+    }
   }
-
-  const currentUser = await sessionRequests.readJson(response);
-  if (currentUser === sessionRequests.stalePayload) return;
-  clearAccountSessionState();
-  state.currentUser = currentUser;
-  passwordInput.value = "";
-  updateAuthView();
-  await loadTemplates();
-  await loadProjects();
-  await loadAccountJobs();
-  await loadAdminData();
-  updateAuthView();
 }
 
 async function logout() {
   clearAccountSessionState();
   state.currentUser = null;
   updateAuthView();
-  await apiFetch("/api/auth/logout", { method: "POST" });
+  try {
+    const response = await apiFetch("/api/auth/logout", { method: "POST" });
+    if (!response.ok && response.status !== 401 && response.status !== 403) {
+      showPageLoadError({ context: "logout" });
+      return;
+    }
+    requestAnimationFrame(() => {
+      guestLoginForm?.querySelector("[name='userName']")?.focus({ preventScroll: true });
+    });
+  } catch (error) {
+    if (error?.name !== "AbortError") showPageLoadError({ context: "logout" });
+  }
 }
 
-async function boot() {
+async function runBoot({ context = "load" } = {}) {
+  let errorContext = context;
+  showPageLoading(context);
+  sessionRequests.invalidate();
   try {
     const authenticated = await loadCurrentUser();
-    if (!authenticated) return;
+    errorContext = "load";
+    updatePageLoadErrorCopy("load");
+    if (!authenticated) {
+      hidePageSkeleton();
+      return;
+    }
 
     await loadTemplates();
     await loadProjects();
     await loadAccountJobs();
     await loadAdminData();
     updateAuthView();
-  } finally {
     hidePageSkeleton();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      hidePageSkeleton();
+      return;
+    }
+    showPageLoadError({ context: errorContext });
   }
+}
+
+function boot({ context = "load" } = {}) {
+  if (bootPromise) return bootPromise;
+  bootPromise = runBoot({ context }).finally(() => {
+    bootPromise = null;
+  });
+  return bootPromise;
 }
 
 registerForm.addEventListener("submit", register);
@@ -1129,6 +1502,10 @@ guestLoginForm?.addEventListener("submit", login);
 showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
 showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
+retryBootButton?.addEventListener("click", () => {
+  const context = pageLoadErrorContext;
+  void boot({ context });
+});
 createProjectButton.addEventListener("click", createProject);
 globalSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
 projectSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
@@ -1148,7 +1525,9 @@ projectsList.addEventListener("click", event => {
     deleteConfiguration(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
-    downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+    downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf", {
+      trigger: button
+    });
   } else if (button.dataset.action === "preview") {
     downloadConfiguration(button.dataset.projectId, button.dataset.id, "pdf", {
       preview: true,
@@ -1166,7 +1545,9 @@ savedConfigurationsList?.addEventListener("click", event => {
 
   if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
-    downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf");
+    downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf", {
+      trigger: button
+    });
   } else if (button.dataset.action === "preview") {
     downloadConfiguration(button.dataset.projectId, button.dataset.id, "pdf", {
       preview: true,
@@ -1182,10 +1563,14 @@ adminUsersTableBody.addEventListener("click", event => {
 adminTemplatesTableBody.addEventListener("change", event => {
   const input = event.target.closest("input[data-template-id]");
   if (!input) return;
-  setTemplateEnabled(input.dataset.templateId, input.checked);
+  setTemplateEnabled(input.dataset.templateId, input.checked, input);
 });
 templateImportForm?.addEventListener("submit", importTemplate);
 window.addEventListener("tflex:languagechange", () => {
+  updateAuthView();
+  if (pageLoadError && !pageLoadError.hidden) {
+    updatePageLoadErrorCopy();
+  }
   renderAccountData();
   if (canAdmin()) {
     renderAdminUsers();

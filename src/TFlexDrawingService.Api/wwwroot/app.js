@@ -1,5 +1,5 @@
-import { getLanguage, t } from "./i18n.js?v=20260728-mlt-brand-1";
-import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260728-mlt-brand-1";
+import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260721-validation-parity-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -29,6 +29,10 @@ const state = {
   validationFieldNames: new Set(),
   activeJobId: null,
   pollTimer: null,
+  pollRequestToken: null,
+  pollFailureCount: 0,
+  pollErrorAnnounced: false,
+  lastRenderedJobFingerprint: "",
   latestJob: null,
   jobs: [],
   pendingRenderFrame: null,
@@ -41,10 +45,16 @@ const state = {
   editingConfigurationId: null
 };
 const sessionRequests = createSessionRequestGuard();
+let pageLoadErrorContext = "load";
 
 const guestMain = document.querySelector("#guestMain");
 const appMain = document.querySelector("#appMain");
+const editorHeading = document.querySelector("#editorHeading");
 const pageSkeleton = document.querySelector("#pageSkeleton");
+const pageLoadError = document.querySelector("#pageLoadError");
+const pageLoadErrorTitle = document.querySelector("#pageLoadErrorTitle");
+const pageLoadErrorMessage = document.querySelector("#pageLoadErrorMessage");
+const retryPageLoadButton = document.querySelector("#retryPageLoadButton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -61,6 +71,7 @@ const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
+const roleAccessNote = document.querySelector("#roleAccessNote");
 const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
 const createTopButton = document.querySelector("#createTopButton");
@@ -82,6 +93,7 @@ const shaftPreviewSubtitle = document.querySelector("#shaftPreviewSubtitle");
 const shaftPreviewUnavailable = document.querySelector("#shaftPreviewUnavailable");
 const shaftPreviewContent = document.querySelector("#shaftPreviewContent");
 const shaftPreviewCanvas = document.querySelector("#shaftPreviewCanvas");
+const shaftCollisionStatus = document.querySelector("#shaftCollisionStatus");
 const shaftPreviewMetrics = document.querySelector("#shaftPreviewMetrics");
 const projectSelect = document.querySelector("#projectSelect");
 const saveConfigurationButton = document.querySelector("#saveConfigurationButton");
@@ -348,13 +360,59 @@ function escapeHtml(value) {
 
 function hidePageSkeleton() {
   if (pageSkeleton) {
+    pageSkeleton.removeAttribute("aria-busy");
     pageSkeleton.hidden = true;
+  }
+}
+
+function focusBootDestination(authenticated) {
+  const target = authenticated
+    ? editorHeading
+    : guestLoginForm?.querySelector("[name='userName']");
+  requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+}
+
+function syncPageLoadErrorCopy(context = pageLoadErrorContext) {
+  pageLoadErrorContext = context;
+  const isLogoutRecovery = context === "logout";
+  if (pageLoadErrorTitle) {
+    pageLoadErrorTitle.textContent = t(isLogoutRecovery
+      ? "Выход не подтвержден"
+      : "Не удалось загрузить конфигуратор");
+  }
+  if (pageLoadErrorMessage) {
+    pageLoadErrorMessage.textContent = t(isLogoutRecovery
+      ? "Сервер не подтвердил выход. Сессия могла сохраниться. Проверьте состояние еще раз."
+      : "Проверьте соединение с API и повторите загрузку.");
+  }
+  if (retryPageLoadButton) {
+    retryPageLoadButton.textContent = t(isLogoutRecovery ? "Проверить снова" : "Повторить");
+  }
+}
+
+function showPageLoadFailure({ focus = false, context = "load" } = {}) {
+  guestMain.hidden = true;
+  appMain.hidden = true;
+  hidePageSkeleton();
+  syncPageLoadErrorCopy(context);
+  if (pageLoadError) pageLoadError.hidden = false;
+  if (retryPageLoadButton) {
+    retryPageLoadButton.disabled = false;
+    if (focus) requestAnimationFrame(() => retryPageLoadButton.focus({ preventScroll: true }));
   }
 }
 
 function updateAuthView() {
   const authenticated = isAuthenticated();
   const isAdmin = authenticated && canAdmin();
+  const roles = state.currentUser?.roles || [];
+  const visibleRole = roles.includes("Admin")
+    ? "Admin"
+    : roles.includes("Operator")
+      ? "Operator"
+      : roles.includes("Viewer")
+        ? "Viewer"
+        : "";
   guestMain.hidden = authenticated;
   loginForm.hidden = true;
   userPanel.hidden = !authenticated;
@@ -369,14 +427,25 @@ function updateAuthView() {
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
     if (currentUserRoleLabel) {
-      currentUserRoleLabel.hidden = !isAdmin;
-      currentUserRoleLabel.textContent = isAdmin ? "Admin" : "";
+      currentUserRoleLabel.hidden = !visibleRole;
+      currentUserRoleLabel.textContent = visibleRole;
+    }
+    if (roleAccessNote) {
+      const readOnly = visibleRole === "Viewer";
+      roleAccessNote.hidden = !readOnly;
+      roleAccessNote.textContent = readOnly
+        ? t("Режим просмотра: создание и сохранение чертежей доступно ролям Operator и Admin.")
+        : "";
     }
   } else {
     currentUserName.textContent = "";
     if (currentUserRoleLabel) {
       currentUserRoleLabel.hidden = true;
       currentUserRoleLabel.textContent = "";
+    }
+    if (roleAccessNote) {
+      roleAccessNote.hidden = true;
+      roleAccessNote.textContent = "";
     }
   }
 }
@@ -386,7 +455,7 @@ function clearEditorSessionState() {
   if (state.pendingRenderFrame !== null) {
     cancelAnimationFrame(state.pendingRenderFrame);
   }
-  clearInterval(state.pollTimer);
+  clearTimeout(state.pollTimer);
 
   state.templates = [];
   state.selectedTemplate = null;
@@ -394,6 +463,10 @@ function clearEditorSessionState() {
   state.validationFieldNames = new Set();
   state.activeJobId = null;
   state.pollTimer = null;
+  state.pollRequestToken = null;
+  state.pollFailureCount = 0;
+  state.pollErrorAnnounced = false;
+  state.lastRenderedJobFingerprint = "";
   state.latestJob = null;
   state.jobs = [];
   state.pendingRenderFrame = null;
@@ -427,6 +500,9 @@ function clearEditorSessionState() {
   if (parameterReadyBanner) parameterReadyBanner.hidden = true;
   statusPanel.className = "empty";
   statusPanel.textContent = "";
+  statusPanel.setAttribute("role", "status");
+  statusPanel.setAttribute("aria-live", "polite");
+  statusPanel.setAttribute("aria-busy", "false");
   updateShaftPreview(null);
 
   const currentUrl = new URL(window.location.href);
@@ -1117,7 +1193,32 @@ function showShaftPreviewUnavailable(message, title = "Предпросмотр"
     shaftPreviewUnavailable.hidden = false;
     shaftPreviewUnavailable.textContent = message;
   }
+  if (shaftCollisionStatus) {
+    shaftCollisionStatus.hidden = true;
+    shaftCollisionStatus.textContent = "";
+  }
+  shaftPreviewCanvas?.querySelector("svg[role='img']")?.removeAttribute("aria-describedby");
   if (shaftPreviewContent) shaftPreviewContent.hidden = true;
+}
+
+function updatePreviewCollisionStatus() {
+  if (!shaftCollisionStatus || !shaftPreviewCanvas) return;
+
+  const previewImage = shaftPreviewCanvas.querySelector("svg[role='img']");
+  const hasCollision = Boolean(shaftPreviewCanvas.querySelector(
+    ".shaft-preview-svg__car--collision, .shaft-preview-svg__counterweight--collision, .shaft-preview-svg__door--collision"));
+  const message = hasCollision
+    ? t("Обнаружено пересечение элементов. Проверьте размеры кабины, дверей и противовеса.")
+    : "";
+  if (shaftCollisionStatus.hidden === hasCollision || shaftCollisionStatus.textContent !== message) {
+    shaftCollisionStatus.hidden = !hasCollision;
+    shaftCollisionStatus.textContent = message;
+  }
+  if (hasCollision) {
+    previewImage?.setAttribute("aria-describedby", "shaftCollisionStatus");
+  } else {
+    previewImage?.removeAttribute("aria-describedby");
+  }
 }
 
 function showPreviewContent({ title, subtitle, ariaLabel, svg, metrics, technical = false }) {
@@ -1126,11 +1227,12 @@ function showPreviewContent({ title, subtitle, ariaLabel, svg, metrics, technica
   if (shaftPreviewUnavailable) shaftPreviewUnavailable.hidden = true;
   if (shaftPreviewCanvas) {
     shaftPreviewCanvas.classList.toggle("is-technical-preview", technical);
-    shaftPreviewCanvas.setAttribute("aria-label", ariaLabel);
     shaftPreviewCanvas.innerHTML = svg;
+    shaftPreviewCanvas.querySelector("svg[role='img']")?.setAttribute("aria-label", ariaLabel);
   }
   if (shaftPreviewMetrics) shaftPreviewMetrics.innerHTML = metrics;
   if (shaftPreviewContent) shaftPreviewContent.hidden = false;
+  updatePreviewCollisionStatus();
 }
 
 function updateShaftPreview(context = null) {
@@ -2122,12 +2224,22 @@ function applyValidationHighlights(errors = []) {
   for (const input of parametersForm.querySelectorAll("input, select, textarea")) {
     input.classList.remove("is-invalid");
     input.removeAttribute("aria-invalid");
+    const describedBy = (input.getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter(id => id !== "validationPanel");
+    if (describedBy.length) {
+      input.setAttribute("aria-describedby", describedBy.join(" "));
+    } else {
+      input.removeAttribute("aria-describedby");
+    }
 
     const name = input.dataset.parameterName || input.name;
     if (!state.validationFieldNames.has(name)) continue;
 
     input.classList.add("is-invalid");
     input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", [...describedBy, "validationPanel"].join(" "));
     input.closest(".field")?.classList.add("field--invalid");
   }
 }
@@ -2185,19 +2297,35 @@ function appendValidationIssueGroup(titleText, issues, severity) {
   validationPanel.append(group);
 }
 
-function updateValidationPanel(issues = []) {
-  validationPanel.replaceChildren();
-
+function updateValidationPanel(issues = [], { announceErrors = false } = {}) {
   if (issues.length === 0) {
+    if (!validationPanel.hidden || validationPanel.childElementCount > 0) {
+      validationPanel.replaceChildren();
+    }
     validationPanel.hidden = true;
+    validationPanel.dataset.validationFingerprint = "";
+    validationPanel.setAttribute("role", "status");
+    validationPanel.setAttribute("aria-live", "polite");
     return;
   }
 
   const { errors, warnings } = partitionValidationIssues(issues);
+  const alertMode = announceErrors && errors.length > 0;
+  const fingerprint = JSON.stringify({
+    mode: alertMode ? "alert" : "status",
+    errors: errors.map(issue => issue.message),
+    warnings: warnings.map(issue => issue.message)
+  });
+  validationPanel.setAttribute("role", alertMode ? "alert" : "status");
+  validationPanel.setAttribute("aria-live", alertMode ? "assertive" : "polite");
   validationPanel.classList.toggle("validation-panel--warning-only", errors.length === 0);
+  validationPanel.hidden = false;
+  if (validationPanel.dataset.validationFingerprint === fingerprint) return;
+
+  validationPanel.replaceChildren();
   appendValidationIssueGroup("Проверьте параметры", errors, "error");
   appendValidationIssueGroup("Предупреждения", warnings, "warning");
-  validationPanel.hidden = false;
+  validationPanel.dataset.validationFingerprint = fingerprint;
 }
 
 function isParameterVisible(parameter, context) {
@@ -2319,6 +2447,10 @@ function createDisplayInput(value, parameterName = null) {
   if (parameterName) {
     input.dataset.parameterName = parameterName;
     input.name = parameterName;
+    const parameter = getParameterDefinition(parameterName);
+    input.setAttribute(
+      "aria-label",
+      parameter ? getFieldLabelText(parameter) : parameterName);
   }
   return input;
 }
@@ -2380,12 +2512,14 @@ function createCompactInput(parameter, options = {}) {
 
   input.dataset.parameterName = parameter.name;
   if (input.name === "") input.name = parameter.name;
+  input.setAttribute("aria-label", getFieldLabelText(parameter));
   input.disabled = Boolean(parameter.isReadOnly);
   setInputValue(input, parameter, options.radioValue !== undefined ? getParameterValue(parameter) : getParameterValue(parameter));
   input.className = options.className || "stops-table__input";
   if (state.validationFieldNames.has(parameter.name)) {
     input.classList.add("is-invalid");
     input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", "validationPanel");
   }
   bindInputChange(input, parameter);
   return input;
@@ -2426,12 +2560,14 @@ function createStopRadio(value) {
   input.name = parameter.name;
   input.value = String(value);
   input.dataset.parameterName = parameter.name;
+  input.setAttribute("aria-label", `${STOP_LOBBY_LABEL} ${value}`);
   input.className = "stops-table__radio";
   input.disabled = Boolean(parameter.isReadOnly);
   input.checked = Number(getParameterValue(parameter)) === value;
   if (state.validationFieldNames.has(parameter.name)) {
     input.classList.add("is-invalid");
     input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", "validationPanel");
   }
   input.addEventListener("change", () => {
     if (!input.checked) return;
@@ -2442,12 +2578,13 @@ function createStopRadio(value) {
   return input;
 }
 
-function createDisplayStopRadio(checked) {
+function createDisplayStopRadio(checked, value) {
   const input = document.createElement("input");
   input.type = "radio";
   input.className = "stops-table__radio";
   input.disabled = true;
   input.checked = checked;
+  input.setAttribute("aria-label", `${STOP_LOBBY_LABEL} ${value}`);
   return input;
 }
 
@@ -2514,7 +2651,7 @@ function createStopsTable(context, options = {}) {
 
     const lobbyCell = document.createElement("td");
     lobbyCell.append(mainSelectionMode.radiosReadOnly
-      ? createDisplayStopRadio(index === lobbyStopIndex)
+      ? createDisplayStopRadio(index === lobbyStopIndex, index)
       : createStopRadio(index));
     row.append(lobbyCell);
 
@@ -2752,8 +2889,13 @@ function wireParameterInput(input, parameter, isDisabled) {
   input.dataset.parameterName = parameter.name;
   input.disabled = isDisabled;
   input.required = Boolean(parameter.isRequired) && !input.disabled;
+  let isComposing = false;
   const handleParameterChange = event => {
     const focusTarget = getInputFocusTarget(input);
+    if (isComposing || event?.isComposing) {
+      state.parameterValues[parameter.name] = input.value;
+      return;
+    }
     if (acceptsDecimalInput(parameter) && event?.type === "input") {
       state.parameterValues[parameter.name] = input.value;
       return;
@@ -2764,6 +2906,13 @@ function wireParameterInput(input, parameter, isDisabled) {
   };
 
   if (input.tagName === "INPUT" || input.tagName === "TEXTAREA") {
+    input.addEventListener("compositionstart", () => {
+      isComposing = true;
+    });
+    input.addEventListener("compositionend", event => {
+      isComposing = false;
+      handleParameterChange(event);
+    });
     input.addEventListener("input", handleParameterChange);
   }
 
@@ -2771,7 +2920,7 @@ function wireParameterInput(input, parameter, isDisabled) {
 }
 
 function createParameterInput(parameter, context) {
-  const field = document.createElement("div");
+  const field = document.createElement("label");
   field.className = "field";
   const hasValidationError = state.validationFieldNames.has(parameter.name);
   if (hasValidationError) {
@@ -2820,10 +2969,13 @@ function createParameterInput(parameter, context) {
   }
 
   wireParameterInput(input, parameter, isDisabled);
+  input.id = `parameter-${encodeURIComponent(parameter.name).replaceAll("%", "-")}`;
+  field.htmlFor = input.id;
   setInputValue(input, parameter, currentValue);
   if (hasValidationError) {
     input.classList.add("is-invalid");
     input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", "validationPanel");
   }
 
   const shouldShowUnit = parameter.unit && input.tagName !== "SELECT" && input.type !== "checkbox" && input.type !== "radio";
@@ -2850,11 +3002,22 @@ function getInputFocusTarget(input) {
   const name = input?.dataset?.parameterName || input?.name || null;
   if (!name) return null;
 
-  return {
+  const focusTarget = {
     name,
     type: input.type,
     value: input.type === "radio" ? input.value : null
   };
+  try {
+    if (typeof input.selectionStart === "number") {
+      focusTarget.selectionStart = input.selectionStart;
+      focusTarget.selectionEnd = input.selectionEnd;
+      focusTarget.selectionDirection = input.selectionDirection;
+    }
+  } catch {
+    // Selection APIs are unavailable for controls such as number inputs.
+  }
+
+  return focusTarget;
 }
 
 function getFocusedParameterTarget() {
@@ -2872,6 +3035,16 @@ function focusParameterInput(focusTarget) {
     || inputs[0];
 
   input?.focus({ preventScroll: true });
+  if (input && typeof focusTarget.selectionStart === "number") {
+    try {
+      input.setSelectionRange(
+        focusTarget.selectionStart,
+        focusTarget.selectionEnd,
+        focusTarget.selectionDirection || "none");
+    } catch {
+      // Some input types cannot restore a text selection.
+    }
+  }
 }
 
 function getViewportScrollPosition() {
@@ -3101,12 +3274,30 @@ function openPreviewFromControl(control) {
   }, control);
 }
 
-function renderJob(job) {
+function renderJob(job, { force = false } = {}) {
+  const fingerprint = JSON.stringify({
+    id: job.id,
+    status: job.status,
+    templateId: job.templateId,
+    createdAt: job.createdAt,
+    finishedAt: job.finishedAt,
+    errorMessage: job.errorMessage,
+    resultFiles: (job.resultFiles || []).map(file => ({
+      fileName: file.fileName,
+      format: file.format,
+      downloadUrl: file.downloadUrl
+    }))
+  });
   state.latestJob = job;
+  if (!force && state.lastRenderedJobFingerprint === fingerprint) return false;
+  state.lastRenderedJobFingerprint = fingerprint;
   const files = job.resultFiles || [];
   const downloadLinks = renderResultFileActions(files);
 
   statusPanel.className = "job-status";
+  statusPanel.setAttribute("role", "status");
+  statusPanel.setAttribute("aria-live", "polite");
+  statusPanel.setAttribute("aria-busy", "true");
   statusPanel.innerHTML = `
     <div class="status ${escapeHtml(job.status.toLowerCase())}">${escapeHtml(job.status)}</div>
     <dl>
@@ -3118,13 +3309,19 @@ function renderJob(job) {
       <dt>Результат</dt><dd>${downloadLinks || ""}</dd>
     </dl>
   `;
+  statusPanel.setAttribute("aria-busy", "false");
   updateDownloadResultButton(job);
+  return true;
 }
 
 function renderStatusError(messages) {
   state.latestJob = null;
+  state.lastRenderedJobFingerprint = "";
   updateDownloadResultButton(null);
   statusPanel.className = "";
+  statusPanel.setAttribute("role", "alert");
+  statusPanel.setAttribute("aria-live", "assertive");
+  statusPanel.setAttribute("aria-busy", "false");
   const error = document.createElement("div");
   error.className = "error";
 
@@ -3138,26 +3335,75 @@ function renderStatusError(messages) {
 }
 
 async function refreshJob(jobId) {
-  const response = await apiFetch(`/api/jobs/${jobId}`);
-  if (!response.ok) return;
-  const job = await sessionRequests.readJson(response);
-  if (job === sessionRequests.stalePayload) return;
-  renderJob(job);
+  if (state.activeJobId !== jobId) return;
+  if (state.pollRequestToken !== null) {
+    scheduleJobPoll(jobId);
+    return;
+  }
+  const requestToken = {};
+  state.pollRequestToken = requestToken;
+  try {
+    const response = await apiFetch(`/api/jobs/${jobId}`);
+    if (!response.ok) {
+      handleJobPollingFailure(jobId);
+      return;
+    }
+    const job = await sessionRequests.readJson(response);
+    if (job === sessionRequests.stalePayload || state.activeJobId !== jobId) return;
+    state.pollFailureCount = 0;
+    state.pollErrorAnnounced = false;
+    renderJob(job);
 
-  if (job.status === "Completed" || job.status === "Failed" || job.status === "Cancelled") {
-    clearInterval(state.pollTimer);
-    state.pollTimer = null;
-    await refreshJobs();
+    if (job.status === "Completed" || job.status === "Failed" || job.status === "Cancelled") {
+      clearTimeout(state.pollTimer);
+      state.pollTimer = null;
+      state.activeJobId = null;
+      await refreshJobs();
+    } else {
+      scheduleJobPoll(jobId);
+    }
+  } catch {
+    handleJobPollingFailure(jobId);
+  } finally {
+    if (state.pollRequestToken === requestToken) {
+      state.pollRequestToken = null;
+    }
   }
 }
 
-async function refreshJobs() {
+function scheduleJobPoll(jobId, delay = 1200) {
+  if (state.activeJobId !== jobId) return;
+  clearTimeout(state.pollTimer);
+  state.pollTimer = setTimeout(() => {
+    state.pollTimer = null;
+    void refreshJob(jobId);
+  }, delay);
+}
+
+function handleJobPollingFailure(jobId) {
+  if (state.activeJobId !== jobId) return;
+  state.pollFailureCount += 1;
+  if (!state.pollErrorAnnounced) {
+    renderStatusError([t("Не удалось обновить статус задания. Повторная проверка продолжится автоматически.")]);
+    state.pollErrorAnnounced = true;
+  }
+  const retryDelay = Math.min(1200 * (2 ** Math.min(state.pollFailureCount, 4)), 15000);
+  scheduleJobPoll(jobId, retryDelay);
+}
+
+async function refreshJobs({ required = false } = {}) {
   const response = await apiFetch("/api/jobs?take=20");
-  if (!response.ok) return;
+  if (!response.ok) {
+    if (required && sessionRequests.isCurrent(response)) {
+      throw new Error("Jobs could not be loaded");
+    }
+    return false;
+  }
   const jobs = await sessionRequests.readJson(response);
-  if (jobs === sessionRequests.stalePayload) return;
+  if (jobs === sessionRequests.stalePayload) return false;
   state.jobs = jobs;
   renderJobs();
+  return true;
 }
 
 function renderJobs() {
@@ -3198,19 +3444,34 @@ async function submitJob(event) {
   rememberCurrentValues();
   const validationIssues = getCurrentValidationIssues();
   const validationErrors = validationIssues.filter(isBlockingValidationIssue);
-  updateValidationPanel(validationIssues);
+  updateValidationPanel(validationIssues, { announceErrors: true });
   applyValidationHighlights(validationErrors);
   if (validationErrors.length > 0) {
     renderStatusError([t("Исправьте параметры перед созданием задания.")]);
-    validationPanel.scrollIntoView({ behavior: "auto", block: "nearest" });
+    const firstInvalidInput = parametersForm.querySelector('[aria-invalid="true"]');
+    const invalidGroup = firstInvalidInput?.closest(".parameter-group");
+    if (invalidGroup?.dataset.category) {
+      state.activeParameterCategory = invalidGroup.dataset.category;
+      applyParameterTabVisibility();
+    }
+    requestAnimationFrame(() => {
+      const focusTarget = firstInvalidInput || validationPanel;
+      focusTarget.focus({ preventScroll: true });
+      focusTarget.scrollIntoView({ behavior: "auto", block: "center" });
+    });
     return;
   }
 
   submitButton.disabled = true;
   state.latestJob = null;
+  state.lastRenderedJobFingerprint = "";
   updateDownloadResultButton(null);
   statusPanel.className = "job-status";
+  statusPanel.setAttribute("role", "status");
+  statusPanel.setAttribute("aria-live", "polite");
+  statusPanel.setAttribute("aria-busy", "true");
   statusPanel.innerHTML = `<div class="status pending">Pending</div>`;
+  statusPanel.setAttribute("aria-busy", "false");
 
   try {
     const response = await apiFetch("/api/jobs", {
@@ -3235,8 +3496,10 @@ async function submitJob(event) {
     await refreshJobs();
     if (!sessionRequests.isCurrent(response)) return;
 
-    clearInterval(state.pollTimer);
-    state.pollTimer = setInterval(() => refreshJob(job.id), 1200);
+    clearTimeout(state.pollTimer);
+    state.pollFailureCount = 0;
+    state.pollErrorAnnounced = false;
+    scheduleJobPoll(job.id);
   } catch {
     renderStatusError([t("Не удалось создать задание. Проверьте соединение с API.")]);
   } finally {
@@ -3251,11 +3514,16 @@ function resetJobForm(event) {
   renderParameters();
 }
 
-async function loadTemplates() {
+async function loadTemplates({ required = false } = {}) {
   const response = await apiFetch("/api/templates");
-  if (!response.ok) return;
+  if (!response.ok) {
+    if (required && sessionRequests.isCurrent(response)) {
+      throw new Error("Templates could not be loaded");
+    }
+    return false;
+  }
   const templates = await sessionRequests.readJson(response);
-  if (templates === sessionRequests.stalePayload) return;
+  if (templates === sessionRequests.stalePayload) return false;
   state.templates = templates;
 
   templateSelect.replaceChildren();
@@ -3268,15 +3536,21 @@ async function loadTemplates() {
 
   renderSelectedTemplate();
   applyEditorSearch();
+  return true;
 }
 
-async function loadProjects(selectedProjectId = null) {
+async function loadProjects(selectedProjectId = null, { required = false } = {}) {
   const response = await apiFetch("/api/projects");
-  if (!response.ok) return;
+  if (!response.ok) {
+    if (required && sessionRequests.isCurrent(response)) {
+      throw new Error("Projects could not be loaded");
+    }
+    return false;
+  }
 
   const previousValue = selectedProjectId || projectSelect.value;
   const projects = await sessionRequests.readJson(response);
-  if (projects === sessionRequests.stalePayload) return;
+  if (projects === sessionRequests.stalePayload) return false;
   state.projects = projects;
   projectSelect.replaceChildren();
 
@@ -3288,7 +3562,7 @@ async function loadProjects(selectedProjectId = null) {
     projectSelect.disabled = true;
     saveConfigurationButton.disabled = true;
     applyEditorSearch();
-    return;
+    return true;
   }
 
   for (const project of state.projects) {
@@ -3305,6 +3579,7 @@ async function loadProjects(selectedProjectId = null) {
   projectSelect.disabled = false;
   saveConfigurationButton.disabled = false;
   applyEditorSearch();
+  return true;
 }
 
 async function saveCurrentConfiguration() {
@@ -3341,6 +3616,9 @@ async function saveCurrentConfiguration() {
   state.editingConfigurationId = savedConfiguration.id || editingConfigurationId;
   updateConfigurationNamePreview(parameters);
   statusPanel.className = "empty";
+  statusPanel.setAttribute("role", "status");
+  statusPanel.setAttribute("aria-live", "polite");
+  statusPanel.setAttribute("aria-busy", "false");
   statusPanel.textContent = editingConfigurationId
     ? "Конфигурация обновлена"
     : "Конфигурация сохранена в проект";
@@ -3366,6 +3644,9 @@ function applyConfiguration(configuration) {
   }
   renderParameters();
   statusPanel.className = "empty";
+  statusPanel.setAttribute("role", "status");
+  statusPanel.setAttribute("aria-live", "polite");
+  statusPanel.setAttribute("aria-busy", "false");
   statusPanel.textContent = "Конфигурация загружена";
 }
 
@@ -3386,9 +3667,13 @@ async function loadConfigurationFromUrl() {
   applyConfiguration(configuration);
 }
 
-async function loadCurrentUser() {
+async function loadCurrentUser({ required = false } = {}) {
   const response = await apiFetch("/api/auth/me");
   if (!response.ok) {
+    if (response.status !== 401 && response.status !== 403
+      && required && sessionRequests.isCurrent(response)) {
+      throw new Error("Current user could not be loaded");
+    }
     state.currentUser = null;
     updateAuthView();
     return false;
@@ -3406,28 +3691,38 @@ async function register(event) {
   registerStatus.hidden = true;
   registerStatus.textContent = "";
 
-  const response = await apiFetch("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userName: registerUserName.value,
-      displayName: registerDisplayName.value,
-      password: registerPassword.value
-    })
-  });
+  try {
+    const response = await apiFetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: registerUserName.value,
+        displayName: registerDisplayName.value,
+        password: registerPassword.value
+      })
+    });
 
-  if (!response.ok) {
-    const messages = await readProblem(response, t("Не удалось отправить заявку"));
+    if (!response.ok) {
+      const messages = await readProblem(response, t("Не удалось отправить заявку"));
+      registerStatus.hidden = false;
+      registerStatus.className = "error";
+      registerStatus.setAttribute("role", "alert");
+      registerStatus.textContent = messages.join(" ");
+      return;
+    }
+
+    registerForm.reset();
+    registerStatus.hidden = false;
+    registerStatus.className = "empty";
+    registerStatus.setAttribute("role", "status");
+    registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
+  } catch (error) {
+    if (error?.name === "AbortError") return;
     registerStatus.hidden = false;
     registerStatus.className = "error";
-    registerStatus.textContent = messages.join(" ");
-    return;
+    registerStatus.setAttribute("role", "alert");
+    registerStatus.textContent = t("Не удалось отправить заявку. Проверьте соединение с API.");
   }
-
-  registerForm.reset();
-  registerStatus.hidden = false;
-  registerStatus.className = "empty";
-  registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
 async function login(event) {
@@ -3437,50 +3732,92 @@ async function login(event) {
   const passwordInput = form.querySelector("[name='password']") || loginPassword;
   passwordInput.setCustomValidity("");
 
-  const response = await apiFetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userName: userNameInput.value,
-      password: passwordInput.value
-    })
-  });
+  try {
+    const response = await apiFetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: userNameInput.value,
+        password: passwordInput.value
+      })
+    });
 
-  if (!response.ok) {
-    passwordInput.setCustomValidity(t("Неверный логин или пароль"));
-    passwordInput.reportValidity();
-    return;
+    if (!response.ok) {
+      if (response.status >= 500) {
+        const recovered = await boot({ focusOnSuccess: true, focusOnError: true });
+        if (recovered === false) {
+          passwordInput.setCustomValidity(t("Не удалось проверить вход. Повторите попытку."));
+          passwordInput.reportValidity();
+        }
+        return;
+      }
+      passwordInput.setCustomValidity(t("Неверный логин или пароль"));
+      passwordInput.reportValidity();
+      return;
+    }
+
+    const currentUser = await sessionRequests.readJson(response);
+    if (currentUser === sessionRequests.stalePayload) return;
+    clearEditorSessionState();
+    state.currentUser = currentUser;
+    passwordInput.value = "";
+    updateAuthView();
+    await boot({ focusOnSuccess: true, focusOnError: true });
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    const recovered = await boot({ focusOnSuccess: true, focusOnError: true });
+    if (recovered === false) {
+      passwordInput.setCustomValidity(t("Не удалось проверить вход. Повторите попытку."));
+      passwordInput.reportValidity();
+    }
   }
-
-  const currentUser = await sessionRequests.readJson(response);
-  if (currentUser === sessionRequests.stalePayload) return;
-  clearEditorSessionState();
-  state.currentUser = currentUser;
-  passwordInput.value = "";
-  updateAuthView();
-  await loadTemplates();
-  await loadProjects();
-  await refreshJobs();
-  await loadConfigurationFromUrl();
 }
 
 async function logout() {
   clearEditorSessionState();
   state.currentUser = null;
   updateAuthView();
-  await apiFetch("/api/auth/logout", { method: "POST" });
+  try {
+    const response = await apiFetch("/api/auth/logout", { method: "POST" });
+    if (!response.ok && response.status !== 401 && response.status !== 403) {
+      showPageLoadFailure({ focus: true, context: "logout" });
+      return;
+    }
+    focusBootDestination(false);
+  } catch {
+    showPageLoadFailure({ focus: true, context: "logout" });
+  }
 }
 
-async function boot() {
+async function boot({ focusOnSuccess = false, focusOnError = false, context = "load" } = {}) {
+  let errorContext = context;
+  syncPageLoadErrorCopy(context);
+  if (pageSkeleton) {
+    pageSkeleton.hidden = false;
+    pageSkeleton.setAttribute("aria-busy", "true");
+  }
+  if (pageLoadError) pageLoadError.hidden = true;
+  if (retryPageLoadButton) retryPageLoadButton.disabled = true;
   try {
-    const authenticated = await loadCurrentUser();
-    if (!authenticated) return;
+    const authenticated = await loadCurrentUser({ required: true });
+    errorContext = "load";
+    syncPageLoadErrorCopy("load");
+    if (!authenticated) {
+      if (focusOnSuccess) focusBootDestination(false);
+      return false;
+    }
 
-    await loadTemplates();
-    await loadProjects();
-    await refreshJobs();
+    await loadTemplates({ required: true });
+    await loadProjects(null, { required: true });
+    await refreshJobs({ required: true });
     await loadConfigurationFromUrl();
+    if (focusOnSuccess) focusBootDestination(true);
+    return true;
+  } catch {
+    showPageLoadFailure({ focus: focusOnError, context: errorContext });
+    return null;
   } finally {
+    if (retryPageLoadButton) retryPageLoadButton.disabled = false;
     hidePageSkeleton();
   }
 }
@@ -3524,8 +3861,14 @@ showAllParametersToggle?.addEventListener("change", event => {
   state.showAllParameters = event.currentTarget.checked;
   applyParameterTabVisibility();
 });
+retryPageLoadButton?.addEventListener("click", () => {
+  const context = pageLoadErrorContext;
+  sessionRequests.invalidate();
+  void boot({ focusOnSuccess: true, focusOnError: true, context });
+});
 window.addEventListener("tflex:languagechange", () => {
-  if (state.latestJob) renderJob(state.latestJob);
+  if (pageLoadError && !pageLoadError.hidden) syncPageLoadErrorCopy();
+  if (state.latestJob) renderJob(state.latestJob, { force: true });
   renderJobs();
   updateDownloadResultButton();
 });

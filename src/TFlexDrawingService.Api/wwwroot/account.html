@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260728-mlt-brand-3">
+  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
 </head>
 <body>
   <div class="app-shell">
@@ -44,20 +44,24 @@
           <span>Личный кабинет</span>
         </div>
 
-        <label class="global-search">
-          <span class="sr-only">Поиск</span>
-          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+        <label class="global-search" hidden>
+          <span class="sr-only">Поиск проектов и конфигураций в личном кабинете</span>
+          <input
+            type="search"
+            aria-label="Поиск проектов и конфигураций в личном кабинете"
+            placeholder="Проекты и конфигурации в личном кабинете">
         </label>
 
         <div class="topbar__actions">
           <form id="loginForm" class="login-form" hidden>
-            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
-            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" aria-label="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль" required>
             <button class="topbar__button" type="submit">Войти</button>
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <a class="user-panel__account-link" href="/account" aria-label="Открыть личный кабинет">
+            <a class="user-panel__account-link" href="/account" aria-labelledby="accountLinkLabel currentUserName currentUserRoleLabel">
+              <span id="accountLinkLabel" class="sr-only">Личный кабинет</span>
               <span class="user-avatar" aria-hidden="true">МЛТ</span>
               <span class="user-panel__meta">
                 <span id="currentUserName"></span>
@@ -70,14 +74,14 @@
       </header>
 
       <section id="pageSkeleton" class="page-skeleton" aria-label="Загрузка страницы" aria-live="polite">
-        <div class="skeleton skeleton--title"></div>
-        <div class="skeleton-grid skeleton-grid--metrics">
+        <div class="skeleton skeleton--title" data-page-loading></div>
+        <div class="skeleton-grid skeleton-grid--metrics" data-page-loading>
           <span class="skeleton"></span>
           <span class="skeleton"></span>
           <span class="skeleton"></span>
           <span class="skeleton"></span>
         </div>
-        <div class="skeleton-grid skeleton-grid--content">
+        <div class="skeleton-grid skeleton-grid--content" data-page-loading>
           <div class="skeleton-card">
             <span class="skeleton skeleton--heading"></span>
             <span class="skeleton"></span>
@@ -91,6 +95,13 @@
             <span class="skeleton skeleton--button"></span>
           </div>
         </div>
+        <section id="pageLoadError" class="panel load-error" role="alert" aria-live="assertive" aria-atomic="true" hidden>
+          <div class="panel__header">
+            <h2 id="pageLoadErrorTitle">Не удалось загрузить личный кабинет</h2>
+          </div>
+          <p id="pageLoadErrorMessage" class="muted">Проверьте сетевое соединение и повторите загрузку.</p>
+          <button id="retryBootButton" class="primary primary--compact" type="button">Повторить</button>
+        </section>
       </section>
 
       <main id="guestMain" class="layout layout--auth" hidden>
@@ -139,7 +150,7 @@
               </label>
 
               <button class="primary" type="submit">Отправить заявку</button>
-              <div id="registerStatus" class="empty" hidden></div>
+              <div id="registerStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
             </form>
 
             <p class="auth-switch">Уже есть аккаунт? <button id="showLoginPanel" class="auth-link" type="button">Войти</button></p>
@@ -151,6 +162,7 @@
         <section class="intro intro--account">
           <h1>Личный кабинет</h1>
           <p>Проекты, сохраненные конфигурации, история выпуска и доступные действия для продавца, инженера и администратора.</p>
+          <p id="currentUserAccessNote" class="role-note" hidden></p>
         </section>
 
         <section class="metrics-row" aria-label="Сводка">
@@ -180,12 +192,16 @@
 
             <div class="account-toolbar">
               <label class="field field--search">
-                <span class="sr-only">Поиск</span>
-                <input id="projectSearchInput" type="search" placeholder="Поиск по проектам, адресу, номеру лифта">
+                <span class="sr-only">Поиск в списке проектов и конфигураций</span>
+                <input
+                  id="projectSearchInput"
+                  type="search"
+                  aria-label="Поиск в списке проектов и конфигураций"
+                  placeholder="Поиск по названию, адресу или номеру запроса">
               </label>
             </div>
 
-            <div id="accountStatus" class="empty" hidden></div>
+            <div id="accountStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
             <div id="projectsList" class="project-list"></div>
 
             <div class="form-grid form-grid--compact account-create">
@@ -229,6 +245,8 @@
             <h1>Центр шаблонов</h1>
             <p>Управление доступностью шаблонов, форматами генерации и пользователями.</p>
           </section>
+
+          <div id="adminStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
           <section class="panel panel--wide template-catalog">
             <div class="panel__header">
@@ -274,7 +292,7 @@
               </label>
               <button id="templateImportButton" class="primary" type="submit">Импортировать</button>
             </form>
-            <div id="templateImportStatus" class="template-import__status" role="status" aria-live="polite" hidden></div>
+            <div id="templateImportStatus" class="template-import__status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
           </section>
 
           <section class="panel panel--wide admin-users-section">
@@ -300,7 +318,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260728-mlt-brand-1"></script>
-  <script type="module" src="/account.js?v=20260728-mlt-brand-1"></script>
+  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/account.js?v=20260806-design-fixes-1"></script>
 </body>
 </html>

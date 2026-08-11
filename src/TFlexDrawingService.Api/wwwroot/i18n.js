@@ -21,8 +21,15 @@ const ENGLISH_BY_RUSSIAN = new Map([
   ["Закрыть меню", "Close menu"],
   ["Открыть личный кабинет", "Open account"],
   ["Поиск", "Search"],
+  ["Поиск: Быстрый доступ", "Search: Quick access"],
   ["Поиск проекта, чертежа, шаблона", "Search projects, drawings, templates"],
+  ["Поиск по текущему разделу", "Search this section"],
   ["Поиск по проектам, адресу, номеру лифта", "Search by project, address, lift number"],
+  ["Поиск по параметрам цены", "Search price parameters"],
+  ["Поиск проектов и конфигураций в личном кабинете", "Search projects and configurations in the account"],
+  ["Проекты и конфигурации в личном кабинете", "Projects and configurations in the account"],
+  ["Поиск в списке проектов и конфигураций", "Search the project and configuration list"],
+  ["Поиск по названию, адресу или номеру запроса", "Search by name, address, or request number"],
   ["Логин", "Username"],
   ["Пароль", "Password"],
   ["Имя", "Name"],
@@ -46,6 +53,20 @@ const ENGLISH_BY_RUSSIAN = new Map([
   ["Расчет базовой цены.", "Calculate the base price."],
   ["Использовать", "Open"],
   ["Конфигуратор чертежей", "Drawing configurator"],
+  ["Режим просмотра: создание и сохранение чертежей доступно ролям Operator и Admin.", "View-only mode: creating and saving drawings requires the Operator or Admin role."],
+  ["Не удалось загрузить конфигуратор", "Could not load the configurator"],
+  ["Проверьте соединение с API и повторите загрузку.", "Check the API connection and try loading again."],
+  ["Выход не подтвержден", "Sign-out not confirmed"],
+  ["Сервер не подтвердил выход. Сессия могла сохраниться. Проверьте состояние еще раз.", "The server did not confirm sign-out. The session may still be active. Check the state again."],
+  ["Проверить снова", "Check again"],
+  ["Не удалось отправить заявку. Проверьте соединение с API.", "The request could not be submitted. Check the API connection."],
+  ["Не удалось проверить вход. Повторите попытку.", "Sign-in could not be verified. Try again."],
+  ["Не удалось обновить статус задания. Повторная проверка продолжится автоматически.", "The job status could not be updated. Automatic retry will continue."],
+  ["Не удалось загрузить личный кабинет", "The account could not be loaded"],
+  ["Проверьте сетевое соединение и повторите загрузку.", "Check your network connection and try loading the account again."],
+  ["Загрузка страницы", "Loading page"],
+  ["Ошибка загрузки", "Loading error"],
+  ["Повторить", "Try again"],
   ["Проект и шаблон", "Project and template"],
   ["Начать заново", "Reset"],
   ["Проект", "Project"],
@@ -68,6 +89,9 @@ const ENGLISH_BY_RUSSIAN = new Map([
   ["Динамический профиль эскалатора", "Dynamic escalator profile"],
   ["Недостаточно размеров HE, alpha, TK и TJ для построения профиля эскалатора.", "HE, alpha, TK, and TJ are required to build the escalator profile."],
   ["Динамический план шахты", "Dynamic shaft plan"],
+  ["Обнаружено пересечение элементов. Проверьте размеры кабины, дверей и противовеса.", "Elements overlap. Check the car, door, and counterweight dimensions."],
+  ["Результат расчета", "Calculation result"],
+  ["Роль Viewer: режим только для просмотра. Создание проектов и выпуск файлов недоступны.", "Viewer role: read-only access. Creating projects and generating files are unavailable."],
   ["Генерация", "Generation"],
   ["Нет активного задания", "No active job"],
   ["Создать чертеж", "Create drawing"],
@@ -396,6 +420,9 @@ function translateCount(value) {
   const searchCount = value.match(/^Найдено:\s+(\d+)$/);
   if (searchCount) return `Found: ${searchCount[1]}`;
 
+  const lobbyLabel = value.match(/^Лобби\s+(\d+)$/);
+  if (lobbyLabel) return `Lobby ${lobbyLabel[1]}`;
+
   return value;
 }
 
@@ -423,6 +450,9 @@ function inferRussianSource(value) {
 
   const searchCount = value.match(/^Found:\s+(\d+)$/);
   if (searchCount) return `Найдено: ${searchCount[1]}`;
+
+  const lobbyLabel = value.match(/^Lobby\s+(\d+)$/);
+  if (lobbyLabel) return `Лобби ${lobbyLabel[1]}`;
 
   return value;
 }

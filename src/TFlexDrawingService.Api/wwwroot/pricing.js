@@ -1,4 +1,4 @@
-import { getLanguage, t } from "./i18n.js?v=20260728-mlt-brand-1";
+import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 
 const state = {
@@ -14,8 +14,10 @@ const state = {
 const sessionRequests = createSessionRequestGuard();
 
 const LIVE_CALCULATION_DELAY_MS = 450;
+const VISUAL_SELECT_TYPEAHEAD_TIMEOUT_MS = 700;
 let liveCalculationTimer = 0;
 let calculationRequestId = 0;
+const visualSelectTypeahead = new WeakMap();
 
 const guestMain = document.querySelector("#guestMain");
 const pricingMain = document.querySelector("#pricingMain");
@@ -30,6 +32,7 @@ const registerStatus = document.querySelector("#registerStatus");
 const userPanel = document.querySelector("#userPanel");
 const currentUserName = document.querySelector("#currentUserName");
 const currentUserRole = document.querySelector("#currentUserRole");
+const pricingAccessNote = document.querySelector("#pricingAccessNote");
 const logoutButton = document.querySelector("#logoutButton");
 const globalSearchInput = document.querySelector(".global-search input");
 const pricingForm = document.querySelector("#pricingForm");
@@ -178,7 +181,7 @@ function canSavePricing() {
 function getRoleLabel() {
   const roles = state.currentUser?.roles || [];
   if (roles.includes("Admin")) return "Admin";
-  if (roles.includes("Operator")) return "Engineer";
+  if (roles.includes("Operator")) return "Operator";
   if (roles.includes("Viewer")) return "Viewer";
   return "";
 }
@@ -196,14 +199,27 @@ function updateAuthView() {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
     const role = getRoleLabel();
     if (currentUserRole) {
-      currentUserRole.hidden = role !== "Admin";
+      currentUserRole.hidden = !role;
       currentUserRole.textContent = role;
+    }
+    if (pricingAccessNote) {
+      const readOnly = role === "Viewer";
+      pricingAccessNote.hidden = !readOnly;
+      pricingAccessNote.textContent = readOnly
+        ? (getLanguage() === "en"
+          ? "Viewer role: calculations are available, but saving specifications and exporting quotations require the Operator or Admin role."
+          : "Роль Viewer: расчет доступен, но сохранение спецификаций и выгрузка ТКП требуют роль Operator или Admin.")
+        : "";
     }
   } else {
     currentUserName.textContent = "";
     if (currentUserRole) {
       currentUserRole.hidden = true;
       currentUserRole.textContent = "";
+    }
+    if (pricingAccessNote) {
+      pricingAccessNote.hidden = true;
+      pricingAccessNote.textContent = "";
     }
   }
 }
@@ -325,16 +341,19 @@ function setupPricingSearch() {
   if (!globalSearchInput || !pricingForm) return;
 
   const status = document.createElement("span");
+  status.id = "pricingSearchStatus";
   status.className = "global-search__status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
+  status.setAttribute("aria-atomic", "true");
+  globalSearchInput.setAttribute("aria-describedby", status.id);
   globalSearchInput.closest(".global-search")?.append(status);
   let matches = [];
   let matchIndex = -1;
 
   const applySearch = () => {
     const query = globalSearchInput.value.trim().toLocaleLowerCase();
-    const candidates = [...pricingForm.querySelectorAll(".field, .pricing-option, .pricing-section .panel__header h2")];
+    const candidates = [...pricingForm.querySelectorAll(".field, .pricing-option, .pricing-section summary h2")];
     candidates.forEach(candidate => candidate.classList.remove("is-search-match"));
     matches = query
       ? candidates.filter(candidate =>
@@ -360,15 +379,42 @@ function setupPricingSearch() {
     event.preventDefault();
     matchIndex = (matchIndex + 1) % matches.length;
     const target = matches[matchIndex];
+    openParentDisclosures(target);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
-    const control = target.matches("input, select, textarea, button")
+    const summary = target.closest("summary");
+    const control = summary || (target.matches("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button")
       ? target
-      : target.querySelector("input, select, textarea, button");
+      : target.querySelector("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button"));
     control?.focus({ preventScroll: true });
   });
 
   window.addEventListener("tflex:languagechange", applySearch);
+}
+
+function openParentDisclosures(target) {
+  const disclosures = [];
+  let disclosure = target?.closest?.("details");
+  while (disclosure) {
+    disclosures.push(disclosure);
+    disclosure = disclosure.parentElement?.closest("details") || null;
+  }
+  disclosures.reverse().forEach(item => {
+    item.open = true;
+  });
+}
+
+function syncPricingAccessibleCopy() {
+  const english = getLanguage() === "en";
+  const searchText = english ? "Search price parameters" : "Поиск по параметрам цены";
+  const searchLabel = globalSearchInput?.closest(".global-search")?.querySelector(".sr-only");
+  if (searchLabel) searchLabel.textContent = searchText;
+  globalSearchInput?.setAttribute("aria-label", searchText);
+  globalSearchInput?.setAttribute("placeholder", searchText);
+  pricingMain?.querySelector(".pricing-result")?.setAttribute(
+    "aria-label",
+    english ? "Calculation result" : "Результат расчета"
+  );
 }
 
 function numberValue(input, fallback = 0) {
@@ -553,41 +599,123 @@ function getVisualOptionMeta(code, select) {
   };
 }
 
+function normalizeVisualSelectField(select, triggerId, labelId) {
+  let field = select?.closest(".field");
+  if (!field) return;
+
+  if (field.tagName === "LABEL") {
+    const replacement = document.createElement("div");
+    for (const attribute of field.attributes) {
+      if (attribute.name !== "for") replacement.setAttribute(attribute.name, attribute.value);
+    }
+    while (field.firstChild) replacement.append(field.firstChild);
+    field.replaceWith(replacement);
+    field = replacement;
+  }
+
+  let label = field.querySelector(":scope > .field__label");
+  if (!label) return;
+  if (label.tagName !== "LABEL") {
+    const replacement = document.createElement("label");
+    for (const attribute of label.attributes) {
+      replacement.setAttribute(attribute.name, attribute.value);
+    }
+    while (label.firstChild) replacement.append(label.firstChild);
+    label.replaceWith(replacement);
+    label = replacement;
+  }
+  label.id = labelId;
+  label.htmlFor = triggerId;
+}
+
 function ensureVisualSelect(select) {
   if (!select?.matches("[data-visual-select]")) return null;
+  const controlId = select.id || `visualSelect${[...document.querySelectorAll("[data-visual-select]")].indexOf(select) + 1}`;
+  if (!select.id) select.id = controlId;
+  const triggerId = `${controlId}VisualTrigger`;
+  const labelId = `${controlId}VisualLabel`;
+  normalizeVisualSelectField(select, triggerId, labelId);
   let picker = select.nextElementSibling;
   if (!picker?.classList.contains("visual-select")) {
+    const menuId = `${controlId}VisualMenu`;
     picker = document.createElement("div");
     picker.className = "visual-select";
     picker.innerHTML = `
-      <button class="visual-select__button" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
-      <div class="visual-select__menu" role="listbox" hidden></div>
+      <button id="${triggerId}" class="visual-select__button" type="button"
+        aria-haspopup="listbox" aria-expanded="false" aria-controls="${menuId}"></button>
+      <div id="${menuId}" class="visual-select__menu" role="listbox" hidden></div>
     `;
     select.after(picker);
-    picker.querySelector(".visual-select__button").addEventListener("click", () => {
-      const isOpen = !picker.querySelector(".visual-select__menu").hidden;
-      closeVisualSelects();
-      setVisualSelectOpen(picker, !isOpen);
+    const button = picker.querySelector(".visual-select__button");
+    const menu = picker.querySelector(".visual-select__menu");
+    button.addEventListener("click", () => {
+      if (!menu.hidden) {
+        setVisualSelectOpen(picker, false);
+        return;
+      }
+      closeVisualSelects({ except: picker });
+      setVisualSelectOpen(picker, true);
     });
+    button.addEventListener("keydown", event => handleVisualSelectTriggerKeydown(event, picker));
+    menu.addEventListener("keydown", event => handleVisualSelectMenuKeydown(event, picker));
   }
+
   select.classList.add("native-select-hidden");
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+  picker.querySelector(".visual-select__menu").setAttribute("aria-labelledby", labelId);
   return picker;
 }
 
-function closeVisualSelects() {
-  document.querySelectorAll(".visual-select").forEach(picker => setVisualSelectOpen(picker, false));
+function getVisualSelectControl(picker) {
+  const select = picker?.previousElementSibling;
+  return select?.matches("[data-visual-select]") ? select : null;
 }
 
-function setVisualSelectOpen(picker, open) {
+function closeVisualSelects({ except = null } = {}) {
+  document.querySelectorAll(".visual-select").forEach(picker => {
+    if (picker !== except) setVisualSelectOpen(picker, false);
+  });
+}
+
+function clearVisualSelectTypeahead(picker) {
+  const state = visualSelectTypeahead.get(picker);
+  if (state?.timer) window.clearTimeout(state.timer);
+  visualSelectTypeahead.delete(picker);
+}
+
+function setVisualSelectOpen(picker, open, { focus = "selected", restoreFocus = false } = {}) {
   const button = picker.querySelector(".visual-select__button");
   const menu = picker.querySelector(".visual-select__menu");
+  const select = getVisualSelectControl(picker);
+  if (!button || !menu || !select) return;
+
+  if (open && select.disabled) return;
   button.setAttribute("aria-expanded", String(open));
   menu.hidden = !open;
+
+  if (!open) {
+    clearVisualSelectTypeahead(picker);
+    menu.replaceChildren();
+    if (restoreFocus) button.focus();
+    return;
+  }
+
+  buildVisualSelectMenu(select, picker);
+  const options = getEnabledVisualOptions(picker);
+  if (options.length === 0) return;
+  const selectedIndex = options.findIndex(option => option.getAttribute("aria-selected") === "true");
+  const focusIndex = focus === "first"
+    ? 0
+    : focus === "last"
+      ? options.length - 1
+      : Math.max(0, selectedIndex);
+  focusVisualOption(picker, focusIndex);
 }
 
 function renderVisualSelectOption(meta, selected = false) {
   return `
-    ${meta.imageUrl ? `<img src="${escapeHtml(meta.imageUrl)}" alt="${escapeHtml(meta.code)}">` : `<span class="visual-select__fallback">${escapeHtml(String(meta.code).slice(0, 2))}</span>`}
+    ${meta.imageUrl ? `<img src="${escapeHtml(meta.imageUrl)}" alt="">` : `<span class="visual-select__fallback" aria-hidden="true">${escapeHtml(String(meta.code).slice(0, 2))}</span>`}
     <span>
       <strong>${escapeHtml(meta.code || t("Не выбрано"))}</strong>
       <small>${escapeHtml(meta.description ? t(meta.description) : t("Без описания"))}</small>
@@ -606,21 +734,186 @@ function syncVisualSelect(select) {
   const selectedCode = selectedOption?.value || "";
   button.innerHTML = renderVisualSelectOption(getVisualOptionMeta(selectedCode, select), true);
   button.disabled = select.disabled;
-  menu.replaceChildren();
+  const labelId = `${select.id || "visualSelect"}VisualLabel`;
+  const value = button.querySelector("strong");
+  const description = button.querySelector("small");
+  if (value) value.id = `${button.id}Value`;
+  if (description) description.id = `${button.id}Description`;
+  button.removeAttribute("aria-label");
+  button.setAttribute("aria-labelledby", [labelId, value?.id].filter(Boolean).join(" "));
+  if (description?.textContent.trim()) {
+    button.setAttribute("aria-describedby", description.id);
+  } else {
+    button.removeAttribute("aria-describedby");
+  }
+  menu.removeAttribute("aria-label");
+  menu.setAttribute("aria-labelledby", labelId);
+  if (!menu.hidden || select.disabled) setVisualSelectOpen(picker, false);
+}
 
-  for (const option of select.options) {
+function buildVisualSelectMenu(select, picker) {
+  const menu = picker.querySelector(".visual-select__menu");
+  menu.replaceChildren();
+  [...select.options].forEach((option, index) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "visual-select__option";
+    item.id = `${menu.id}Option${index}`;
     item.setAttribute("role", "option");
-    item.setAttribute("aria-selected", String(option.value === selectedCode));
-    item.innerHTML = renderVisualSelectOption(getVisualOptionMeta(option.value, select), option.value === selectedCode);
-    item.addEventListener("click", () => {
-      select.value = option.value;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      closeVisualSelects();
-    });
+    item.setAttribute("aria-selected", String(index === select.selectedIndex));
+    item.tabIndex = index === select.selectedIndex ? 0 : -1;
+    item.disabled = option.disabled;
+    item.dataset.optionIndex = String(index);
+    const meta = getVisualOptionMeta(option.value, select);
+    item.dataset.search = `${option.textContent || ""} ${meta.description || ""}`.trim().toLocaleLowerCase();
+    item.innerHTML = renderVisualSelectOption(meta, index === select.selectedIndex);
+    item.addEventListener("click", () => selectVisualOption(picker, item));
     menu.append(item);
+  });
+
+  if (!menu.querySelector(".visual-select__option[tabindex='0']:not(:disabled)")) {
+    const firstEnabled = menu.querySelector(".visual-select__option:not(:disabled)");
+    if (firstEnabled) firstEnabled.tabIndex = 0;
+  }
+}
+
+function getEnabledVisualOptions(picker) {
+  return [...picker.querySelectorAll(".visual-select__option:not(:disabled)")];
+}
+
+function focusVisualOption(picker, index) {
+  const options = getEnabledVisualOptions(picker);
+  if (options.length === 0) return;
+  const normalizedIndex = (index + options.length) % options.length;
+  options.forEach((option, optionIndex) => {
+    option.tabIndex = optionIndex === normalizedIndex ? 0 : -1;
+  });
+  options[normalizedIndex].focus();
+}
+
+function selectVisualOption(picker, item) {
+  const select = getVisualSelectControl(picker);
+  const index = Number(item?.dataset.optionIndex);
+  const option = select?.options[index];
+  if (!select || !option || option.disabled) return;
+  select.selectedIndex = index;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  setVisualSelectOpen(picker, false, { restoreFocus: true });
+}
+
+function isVisualSelectTypeaheadKey(event) {
+  return event.key.length === 1
+    && event.key !== " "
+    && !event.altKey
+    && !event.ctrlKey
+    && !event.metaKey;
+}
+
+function handleVisualSelectTypeahead(picker, key) {
+  const options = getEnabledVisualOptions(picker);
+  if (options.length === 0) return;
+
+  const previous = visualSelectTypeahead.get(picker);
+  if (previous?.timer) window.clearTimeout(previous.timer);
+  const normalizedKey = key.toLocaleLowerCase();
+  let query = `${previous?.query || ""}${normalizedKey}`;
+  if (query.length > 1 && [...query].every(character => character === normalizedKey)) {
+    query = normalizedKey;
+  }
+  const timer = window.setTimeout(
+    () => visualSelectTypeahead.delete(picker),
+    VISUAL_SELECT_TYPEAHEAD_TIMEOUT_MS
+  );
+  visualSelectTypeahead.set(picker, { query, timer });
+
+  const activeIndex = Math.max(0, options.indexOf(document.activeElement));
+  const findMatch = candidateQuery => {
+    for (let offset = 1; offset <= options.length; offset += 1) {
+      const index = (activeIndex + offset) % options.length;
+      if (options[index].dataset.search.startsWith(candidateQuery)) return index;
+    }
+    return -1;
+  };
+  let matchIndex = findMatch(query);
+  if (matchIndex < 0 && query.length > 1) {
+    query = normalizedKey;
+    matchIndex = findMatch(query);
+    visualSelectTypeahead.set(picker, { query, timer });
+  }
+  if (matchIndex >= 0) focusVisualOption(picker, matchIndex);
+}
+
+function handleVisualSelectTriggerKeydown(event, picker) {
+  const menu = picker.querySelector(".visual-select__menu");
+  if (event.key === "Escape") {
+    if (!menu.hidden) {
+      event.preventDefault();
+      setVisualSelectOpen(picker, false, { restoreFocus: true });
+    }
+    return;
+  }
+
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (menu.hidden) {
+      closeVisualSelects({ except: picker });
+      setVisualSelectOpen(picker, true);
+    }
+    return;
+  }
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    closeVisualSelects({ except: picker });
+    const focus = event.key === "Home" ? "first" : event.key === "End" ? "last" : "selected";
+    setVisualSelectOpen(picker, true, { focus });
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const options = getEnabledVisualOptions(picker);
+      const selectedIndex = Math.max(0, options.findIndex(option => option.getAttribute("aria-selected") === "true"));
+      focusVisualOption(picker, selectedIndex + (event.key === "ArrowDown" ? 1 : -1));
+    }
+    return;
+  }
+
+  if (isVisualSelectTypeaheadKey(event)) {
+    event.preventDefault();
+    closeVisualSelects({ except: picker });
+    if (menu.hidden) setVisualSelectOpen(picker, true);
+    handleVisualSelectTypeahead(picker, event.key);
+  }
+}
+
+function handleVisualSelectMenuKeydown(event, picker) {
+  const options = getEnabledVisualOptions(picker);
+  const activeIndex = Math.max(0, options.indexOf(document.activeElement));
+
+  if (event.key === "Tab") {
+    window.setTimeout(() => setVisualSelectOpen(picker, false), 0);
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setVisualSelectOpen(picker, false, { restoreFocus: true });
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    selectVisualOption(picker, document.activeElement);
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    focusVisualOption(picker, activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    focusVisualOption(picker, event.key === "Home" ? 0 : options.length - 1);
+    return;
+  }
+  if (isVisualSelectTypeaheadKey(event)) {
+    event.preventDefault();
+    handleVisualSelectTypeahead(picker, event.key);
   }
 }
 
@@ -1341,9 +1634,23 @@ function renderCalculation() {
 }
 
 function renderWarnings(messages, isError = false) {
-  pricingWarnings.hidden = messages.length === 0;
+  const fingerprint = JSON.stringify({ isError, messages });
+  pricingWarnings.setAttribute("role", isError ? "alert" : "status");
+  pricingWarnings.setAttribute("aria-live", isError ? "assertive" : "polite");
   pricingWarnings.className = isError ? "pricing-warnings is-error" : "pricing-warnings";
+  if (messages.length === 0) {
+    if (!pricingWarnings.hidden || pricingWarnings.childElementCount > 0) {
+      pricingWarnings.replaceChildren();
+    }
+    pricingWarnings.hidden = true;
+    pricingWarnings.dataset.warningFingerprint = "";
+    return;
+  }
+
+  pricingWarnings.hidden = false;
+  if (pricingWarnings.dataset.warningFingerprint === fingerprint) return;
   pricingWarnings.innerHTML = messages.map(message => `<div>${escapeHtml(message)}</div>`).join("");
+  pricingWarnings.dataset.warningFingerprint = fingerprint;
 }
 
 async function savePricing() {
@@ -1397,12 +1704,14 @@ async function register(event) {
   registerStatus.hidden = false;
   if (!response.ok) {
     registerStatus.className = "error";
+    registerStatus.setAttribute("role", "alert");
     registerStatus.textContent = (await readProblem(response, t("Не удалось отправить заявку"))).join(" ");
     return;
   }
 
   registerForm.reset();
   registerStatus.className = "empty";
+  registerStatus.setAttribute("role", "status");
   registerStatus.textContent = t("Заявка отправлена. Доступ появится после подтверждения администратором.");
 }
 
@@ -1465,6 +1774,11 @@ document.addEventListener("click", event => {
     closeVisualSelects();
   }
 });
+document.addEventListener("focusin", event => {
+  if (!event.target.closest(".visual-select")) {
+    closeVisualSelects();
+  }
+});
 pricingProjectSelect.addEventListener("change", () => {
   renderProjectConfigurations();
   renderSavedPricing();
@@ -1479,16 +1793,16 @@ drawingConfigurationSelect.addEventListener("change", () => {
 });
 pricingForm.addEventListener("input", scheduleLiveCalculation);
 pricingForm.addEventListener("change", scheduleLiveCalculation);
+pricingForm.addEventListener("invalid", event => {
+  openParentDisclosures(event.target);
+}, true);
 pricingForm.addEventListener("submit", calculate);
 savePricingButton.addEventListener("click", savePricing);
 downloadTkpButton.addEventListener("click", saveAndDownloadTkp);
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);
-userPanel?.addEventListener("click", event => {
-  if (logoutButton?.contains(event.target)) return;
-  window.location.assign("/account");
-});
+syncPricingAccessibleCopy();
 setupPricingSearch();
 syncMobilePricingSummary();
 const pricingSummary = pricingStatus?.closest(".pricing-total");
@@ -1502,6 +1816,9 @@ if (pricingSummary) {
   });
 }
 window.addEventListener("tflex:languagechange", () => {
+  syncPricingAccessibleCopy();
+  updateAuthView();
+  closeVisualSelects();
   document.querySelectorAll("[data-visual-select] option[value='']").forEach(option => {
     option.textContent = t("Не выбрано");
   });

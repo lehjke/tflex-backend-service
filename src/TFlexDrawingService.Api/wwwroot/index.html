@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Инженерный центр — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260728-mlt-brand-3">
+  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
 </head>
 <body>
   <div class="app-shell">
@@ -46,22 +46,25 @@
 
         <label class="global-search">
           <span class="sr-only">Поиск</span>
-          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+          <input type="search" placeholder="Поиск: Быстрый доступ" aria-label="Поиск: Быстрый доступ">
         </label>
 
         <div class="topbar__actions">
           <form id="loginForm" class="login-form" hidden>
-            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
-            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" aria-label="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль" required>
             <button class="topbar__button" type="submit">Войти</button>
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <span class="user-avatar" aria-hidden="true">МЛТ</span>
-            <span class="user-panel__meta">
-              <span id="currentUserName"></span>
-              <small id="currentUserRole">User</small>
-            </span>
+            <a class="user-panel__account-link" href="/account" aria-labelledby="accountLinkLabel currentUserName currentUserRole">
+              <span id="accountLinkLabel" class="sr-only">Личный кабинет</span>
+              <span class="user-avatar" aria-hidden="true">МЛТ</span>
+              <span class="user-panel__meta">
+                <span id="currentUserName"></span>
+                <small id="currentUserRole">User</small>
+              </span>
+            </a>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
         </div>
@@ -90,7 +93,7 @@
             </label>
 
             <button class="primary" type="submit">Отправить заявку</button>
-            <div id="registerStatus" class="empty" hidden></div>
+            <div id="registerStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
           </form>
         </section>
       </main>
@@ -102,7 +105,7 @@
         </section>
 
         <section class="home-module-showcase" aria-label="Быстрый доступ">
-          <a class="home-template-card" data-template-card href="/drawings" aria-label="Использовать создание чертежей" aria-expanded="false">
+          <article class="home-template-card" data-template-card aria-labelledby="drawingsCardTitle">
             <span class="home-template-card__hero" aria-hidden="true">
               <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
                 <image href="/assets/card-create-drawings-open-1.svg" width="752" height="565"/>
@@ -110,13 +113,13 @@
             </span>
             <span class="home-template-card__content">
               <span class="home-template-card__heading">
-                <span class="home-template-card__title">Создание чертежей</span>
+                <span id="drawingsCardTitle" class="home-template-card__title">Создание чертежей</span>
                 <span class="home-template-card__badge">TFlex шаблоны</span>
               </span>
               <span class="home-template-card__description">Создание строительных заданий через САПР TFlex.</span>
             </span>
             <span class="home-template-card__footer">
-              <span class="home-template-card__button">Использовать</span>
+              <a class="home-template-card__button" href="/drawings" aria-label="Использовать создание чертежей">Использовать</a>
               <span class="home-template-card__meta">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M12 7.5v8M8.5 11l3.5-3.5 3.5 3.5"></path>
@@ -126,9 +129,9 @@
                 <span>активных шаблонов</span>
               </span>
             </span>
-          </a>
+          </article>
 
-          <a class="home-template-card" data-template-card href="/pricing" aria-label="Использовать расчет цен" aria-expanded="false">
+          <article class="home-template-card" data-template-card aria-labelledby="pricingCardTitle">
             <span class="home-template-card__hero" aria-hidden="true">
               <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
                 <image href="/assets/card-pricing-open.svg" width="752" height="565"/>
@@ -136,21 +139,21 @@
             </span>
             <span class="home-template-card__content">
               <span class="home-template-card__heading">
-                <span class="home-template-card__title">Расчет цен</span>
+                <span id="pricingCardTitle" class="home-template-card__title">Расчет цен</span>
               </span>
               <span class="home-template-card__description">Расчет базовой цены.</span>
             </span>
             <span class="home-template-card__footer">
-              <span class="home-template-card__button">Использовать</span>
+              <a class="home-template-card__button" href="/pricing" aria-label="Использовать расчет цен">Использовать</a>
             </span>
-          </a>
+          </article>
         </section>
 
       </main>
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260728-mlt-brand-1"></script>
-  <script type="module" src="/home.js?v=20260728-mlt-brand-1"></script>
+  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/home.js?v=20260806-design-fixes-1"></script>
 </body>
 </html>

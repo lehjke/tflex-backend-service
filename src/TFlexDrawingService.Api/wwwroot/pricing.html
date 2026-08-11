@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Базовая цена — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260728-mlt-brand-3">
+  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
 </head>
 <body>
   <div class="app-shell">
@@ -45,23 +45,26 @@
         </div>
 
         <label class="global-search">
-          <span class="sr-only">Поиск</span>
-          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+          <span class="sr-only">Поиск по параметрам цены</span>
+          <input type="search" aria-label="Поиск по параметрам цены" placeholder="Поиск по параметрам цены">
         </label>
 
         <div class="topbar__actions">
           <form id="loginForm" class="login-form" hidden>
-            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
-            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" aria-label="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль" required>
             <button class="topbar__button" type="submit">Войти</button>
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <span class="user-avatar" aria-hidden="true">МЛТ</span>
-            <span class="user-panel__meta">
-              <span id="currentUserName"></span>
-              <small id="currentUserRole">User</small>
-            </span>
+            <a class="user-panel__account-link" href="/account" aria-labelledby="accountLinkLabel currentUserName currentUserRole">
+              <span id="accountLinkLabel" class="sr-only">Личный кабинет</span>
+              <span class="user-avatar" aria-hidden="true">МЛТ</span>
+              <span class="user-panel__meta">
+                <span id="currentUserName"></span>
+                <small id="currentUserRole">User</small>
+              </span>
+            </a>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
         </div>
@@ -90,7 +93,7 @@
             </label>
 
             <button class="primary" type="submit">Отправить заявку</button>
-            <div id="registerStatus" class="empty" hidden></div>
+            <div id="registerStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
           </form>
         </section>
       </main>
@@ -98,9 +101,10 @@
       <main id="pricingMain" class="layout layout--pricing" data-authenticated-main hidden>
         <section class="intro">
           <h1>Расчет базовой цены</h1>
+          <p id="pricingAccessNote" class="role-note" hidden></p>
         </section>
 
-        <aside class="pricing-mobile-summary" aria-live="polite">
+        <aside class="pricing-mobile-summary" aria-hidden="true">
           <span id="mobilePricingStatus">Не рассчитано</span>
           <strong id="mobileTotalCny">0 CNY</strong>
           <small id="mobileTotalConverted">0 RUB</small>
@@ -109,10 +113,8 @@
         <section class="panel panel--wide pricing-workspace">
           <div class="pricing-grid">
             <form id="pricingForm" class="pricing-form">
-              <div class="pricing-section">
-                <div class="panel__header">
-                  <h2>Проект и спецификация</h2>
-                </div>
+              <details class="pricing-section" open>
+                <summary class="panel__header"><h2>Проект и спецификация</h2></summary>
                 <div class="pricing-fields pricing-fields--two">
                   <label class="field">
                     <span class="field__label">Проект</span>
@@ -136,12 +138,10 @@
                     </select>
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section">
-                <div class="panel__header">
-                  <h2>Основные параметры</h2>
-                </div>
+              <details class="pricing-section" open>
+                <summary class="panel__header"><h2>Основные параметры</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Поставщик</span>
@@ -232,12 +232,10 @@
                     <input id="smecLightingSupplyInput" value="220V, 50 Hz" readonly>
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section smec-excel-section" data-smec-only>
-                <div class="panel__header">
-                  <h2>Шахта и основные размеры</h2>
-                </div>
+              <details class="pricing-section smec-excel-section" data-smec-only open>
+                <summary class="panel__header"><h2>Шахта и основные размеры</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина шахты (AH), мм</span>
@@ -288,12 +286,10 @@
                     <input id="doorHeightInput" type="number" min="0" step="1" value="2100">
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Идентификация и этажи</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Идентификация и этажи</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Наименование</span>
@@ -328,12 +324,10 @@
                     <input id="xiziOtherFloorsInput" placeholder="2-27">
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Шахта</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Шахта</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина шахты, мм</span>
@@ -360,12 +354,10 @@
                     <input id="xiziPitInput" type="number" min="0" step="1">
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Характеристики кабины</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Характеристики кабины</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина кабины, мм</span>
@@ -388,12 +380,10 @@
                     <input id="xiziDecorationWeightInput" type="number" min="0" step="1" value="0">
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Двери</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Двери</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Высота дверей, мм</span>
@@ -425,12 +415,10 @@
                   </label>
                 </div>
                 <div id="decorationPreview" class="finish-preview" hidden></div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Отделка кабины XIZI</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Отделка кабины XIZI</h2></summary>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Дизайн по каталогу</span>
@@ -477,12 +465,10 @@
                     <select id="xiziCopButtonSelect" data-visual-select data-description="Кнопки COP"></select>
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section" data-xizi-only>
-                <div class="panel__header">
-                  <h2>Отделка на этажной площадке</h2>
-                </div>
+              <details class="pricing-section" data-xizi-only open>
+                <summary class="panel__header"><h2>Отделка на этажной площадке</h2></summary>
                 <div class="xizi-floor-group">
                   <h3>Основной посадочный этаж</h3>
                   <div class="pricing-fields pricing-fields--three">
@@ -517,12 +503,10 @@
                   </label>
                   </div>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section smec-excel-section" data-smec-only>
-                <div class="panel__header">
-                  <h2>Кабина</h2>
-                </div>
+              <details class="pricing-section smec-excel-section" data-smec-only open>
+                <summary class="panel__header"><h2>Кабина</h2></summary>
                 <div class="smec-card-picker" id="carDesignPicker"></div>
                 <div class="pricing-fields pricing-fields--three visual-field-grid">
                   <label class="field">
@@ -582,12 +566,10 @@
                     <select id="wheelchairButtonSelect" data-visual-select></select>
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section smec-excel-section" data-smec-only>
-                <div class="panel__header">
-                  <h2>Этажные площадки</h2>
-                </div>
+              <details class="pricing-section smec-excel-section" data-smec-only open>
+                <summary class="panel__header"><h2>Этажные площадки</h2></summary>
                 <div class="smec-landing-grid">
                   <div class="smec-landing-grid__head"></div>
                   <div class="smec-landing-grid__head">Основной этаж</div>
@@ -684,12 +666,10 @@
                     <select id="hallLanternSelect" data-visual-select></select>
                   </label>
                 </div>
-              </div>
+              </details>
 
-              <div class="pricing-section">
-                <div class="panel__header">
-                  <h2>Опции и комплектация</h2>
-                </div>
+              <details class="pricing-section" open>
+                <summary class="panel__header"><h2>Опции и комплектация</h2></summary>
                 <div class="pricing-fields pricing-fields--two" data-xizi-only>
                   <label class="field">
                     <span class="field__label">AC</span>
@@ -705,7 +685,7 @@
                   <span class="field__label">Прочие требования</span>
                   <textarea id="smecOtherRequirementsInput" rows="4" placeholder="1 EI60&#10;2 Kickplate ZDT-001&#10;3 Handrail ZDT-501"></textarea>
                 </label>
-              </div>
+              </details>
 
               <div class="pricing-actions">
                 <button class="primary" type="submit">Рассчитать</button>
@@ -714,8 +694,8 @@
               </div>
             </form>
 
-            <aside class="pricing-result" aria-live="polite">
-              <div class="pricing-total">
+            <aside class="pricing-result" aria-label="Результат расчета">
+              <div class="pricing-total" role="status" aria-live="polite" aria-atomic="true">
                 <span id="pricingStatus" class="pricing-status">Не рассчитано</span>
                 <strong id="totalCny">0 CNY</strong>
                 <small id="totalConverted">0 RUB</small>
@@ -729,7 +709,7 @@
                 </div>
               </div>
 
-              <div id="pricingWarnings" class="pricing-warnings" hidden></div>
+              <div id="pricingWarnings" class="pricing-warnings" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
               <div class="pricing-result__block">
                 <h2>Сохраненные спецификации</h2>
@@ -744,7 +724,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260728-mlt-brand-1"></script>
-  <script type="module" src="/pricing.js?v=20260728-mlt-brand-1"></script>
+  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/pricing.js?v=20260806-design-fixes-1"></script>
 </body>
 </html>

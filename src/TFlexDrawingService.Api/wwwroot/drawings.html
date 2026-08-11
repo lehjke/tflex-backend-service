@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Создание чертежей — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260728-mlt-brand-3">
+  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
 </head>
 <body>
   <div class="app-shell">
@@ -45,19 +45,20 @@
         </div>
 
         <label class="global-search">
-          <span class="sr-only">Поиск</span>
-          <input type="search" placeholder="Поиск проекта, чертежа, шаблона">
+          <span class="sr-only">Поиск по текущему разделу</span>
+          <input type="search" placeholder="Поиск по текущему разделу" aria-label="Поиск по текущему разделу">
         </label>
 
         <div class="topbar__actions">
           <form id="loginForm" class="login-form" hidden>
-            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" required>
-            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" required>
+            <input id="loginUserName" name="userName" autocomplete="username" placeholder="Логин" aria-label="Логин" required>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль" required>
             <button class="topbar__button" type="submit">Войти</button>
           </form>
 
           <div id="userPanel" class="user-panel" hidden>
-            <a class="user-panel__account-link" href="/account" aria-label="Открыть личный кабинет">
+            <a class="user-panel__account-link" href="/account" aria-labelledby="accountLinkLabel currentUserName currentUserRoleLabel">
+              <span id="accountLinkLabel" class="sr-only">Личный кабинет</span>
               <span class="user-avatar" aria-hidden="true">МЛТ</span>
               <span class="user-panel__meta">
               <span id="currentUserName"></span>
@@ -88,6 +89,12 @@
             <span class="skeleton skeleton--short"></span>
           </div>
         </div>
+      </section>
+
+      <section id="pageLoadError" class="panel load-error" role="alert" hidden>
+        <h2 id="pageLoadErrorTitle">Не удалось загрузить конфигуратор</h2>
+        <p id="pageLoadErrorMessage">Проверьте соединение с API и повторите загрузку.</p>
+        <button id="retryPageLoadButton" class="primary" type="button">Повторить</button>
       </section>
 
       <main id="guestMain" class="layout layout--auth" hidden>
@@ -146,7 +153,8 @@
 
       <main id="appMain" class="layout layout--editor" hidden>
         <section class="intro">
-          <h1>Конфигуратор чертежей</h1>
+          <h1 id="editorHeading" tabindex="-1">Конфигуратор чертежей</h1>
+          <p id="roleAccessNote" class="role-note" hidden></p>
         </section>
 
         <section class="editor-form-stack">
@@ -194,10 +202,10 @@
               </div>
               <div id="parameterTabs" class="parameter-tabs" aria-label="Категории параметров"></div>
               <div id="parametersForm" class="parameters"></div>
-              <div id="parameterReadyBanner" class="ready-banner" hidden>Конфигурация готова к генерации PDF/DWG/DXF.</div>
+              <div id="parameterReadyBanner" class="ready-banner" role="status" aria-live="polite" aria-atomic="true" hidden>Конфигурация готова к генерации PDF/DWG/DXF.</div>
             </section>
 
-            <div id="validationPanel" class="validation-panel" hidden></div>
+            <div id="validationPanel" class="validation-panel" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></div>
           </form>
         </section>
 
@@ -213,7 +221,8 @@
               Предпросмотр доступен для шаблонов LEHY-L-PRO, LEHY-PRO и K-II-TYPE.
             </div>
             <div id="shaftPreviewContent" class="shaft-preview">
-              <div id="shaftPreviewCanvas" class="shaft-preview__canvas" aria-label="Динамический план шахты"></div>
+              <div id="shaftPreviewCanvas" class="shaft-preview__canvas"></div>
+              <div id="shaftCollisionStatus" class="preview-collision-status" role="alert" aria-live="assertive" hidden></div>
               <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
             </div>
           </section>
@@ -221,9 +230,8 @@
           <section class="panel panel--status">
             <div class="panel__header">
               <h2>Генерация</h2>
-              <span class="queue-badge">Queue 0/50</span>
             </div>
-            <div id="statusPanel" class="empty">Нет активного задания</div>
+            <div id="statusPanel" class="empty" role="status" aria-live="polite" aria-atomic="true">Нет активного задания</div>
             <div class="generation-actions">
               <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
               <button id="previewResultButton" class="secondary" type="button" disabled>Предпросмотр PDF</button>
@@ -257,7 +265,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260728-mlt-brand-1"></script>
-  <script type="module" src="/app.js?v=20260728-mlt-brand-1-signed-floor"></script>
+  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/app.js?v=20260807-show-all-1"></script>
 </body>
 </html>
