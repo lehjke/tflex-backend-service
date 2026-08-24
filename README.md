@@ -141,8 +141,9 @@ dotnet run --project src\TFlexDrawingService.Worker
 фиксирует `Production` в окружении служб.
 
 Production API должен быть доступен пользователю только по HTTPS. Штатная схема:
-API слушает `http://127.0.0.1:5011`, а Caddy принимает публичные `80/443`,
-перенаправляет HTTP на HTTPS и проксирует запросы на loopback. Публичный
-`http://0.0.0.0` installer отклоняет из-за `Secure` cookie. Полная инструкция,
-rollback и Windows/T-FLEX CI описаны в
+Windows NAT отображает порт контейнера как `5011:8080`, отдельное правило
+Windows Firewall блокирует доступ к 5011/5012 не с loopback, а Caddy принимает
+публичные `80/443`, перенаправляет HTTP на HTTPS и проксирует запросы на
+`http://127.0.0.1:5011`. Публичный `http://0.0.0.0` installer отклоняет из-за
+`Secure` cookie. Полная инструкция, rollback и Windows/T-FLEX CI описаны в
 [`docs/server-bootstrap.md`](docs/server-bootstrap.md).

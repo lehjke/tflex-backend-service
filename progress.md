@@ -22,5 +22,5 @@
 - [x] PowerShell parser and deployment contract checks
 - [x] .NET unit tests (153 passed)
 - [x] Windows API and Worker publish (`win-x64`)
-- [ ] Windows Docker image build
+- [x] Windows Docker image build
 - [ ] Windows Server hybrid runtime smoke test

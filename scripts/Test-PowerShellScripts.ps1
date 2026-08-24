@@ -224,7 +224,11 @@ $requiredHybridContracts = @(
     'ReverseProxy__KnownProxies__0=$DockerNatGateway',
     'source=$storageDirectory,target=$storageDirectory',
     'source=$templatesDirectory,target=$templatesDirectory',
-    '127.0.0.1:${HostPort}:8080',
+    '"--publish", "${HostPort}:8080"',
+    'Set-ContainerPortLoopbackFirewall',
+    'New-NetFirewallRule',
+    '127.0.0.2-255.255.255.255',
+    '$recentOutput.Enqueue($line)',
     '"--urls", "http://+:8080"',
     '"container", "ls", "--all", "--format", "{{.Names}}"',
     'Retrying once without cached layers.',
@@ -237,6 +241,9 @@ foreach ($contract in $requiredHybridContracts) {
 }
 if ($hybridDeploymentText.Contains('& docker container inspect $Name *> $null')) {
     throw "The first hybrid deployment must not treat a missing container as a native-command failure."
+}
+if ($hybridDeploymentText.Contains('127.0.0.1:${HostPort}:8080')) {
+    throw "Windows container NAT does not support binding a published port to a host IP address."
 }
 
 $hybridServiceUpdateIndex = $hybridDeploymentText.IndexOf(

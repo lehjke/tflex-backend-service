@@ -132,3 +132,35 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($health) -or $health -eq "null") {
             throw "The API image must include a Docker health check."
           }
+
+      - name: Smoke-test Windows container run contract
+        shell: powershell
+        run: |
+          $smokeRoot = "C:\tflex-container-smoke"
+          $apiDirectory = Join-Path $smokeRoot "Api"
+          $storageDirectory = Join-Path $smokeRoot "storage"
+          $templatesDirectory = Join-Path $smokeRoot "templates"
+          New-Item -ItemType Directory -Force -Path $apiDirectory, $storageDirectory, $templatesDirectory | Out-Null
+          Set-Content -LiteralPath (Join-Path $apiDirectory "appsettings.Production.json") -Value "{}" -Encoding UTF8
+
+          try {
+            docker container run --detach `
+              --name tflex-drawing-api-run-contract `
+              --isolation process `
+              --publish 52112:8080 `
+              --mount "type=bind,source=$apiDirectory,target=C:\tflex-config,readonly" `
+              --mount "type=bind,source=$storageDirectory,target=$storageDirectory" `
+              --mount "type=bind,source=$templatesDirectory,target=$templatesDirectory" `
+              --entrypoint powershell `
+              tflex-drawing-service-api:ci `
+              -NoProfile -Command "Start-Sleep -Seconds 30"
+            if ($LASTEXITCODE -ne 0) { throw "Windows API container run contract failed." }
+
+            $running = docker container inspect tflex-drawing-api-run-contract --format '{{.State.Running}}'
+            if ($LASTEXITCODE -ne 0 -or $running.Trim() -ne "true") {
+              throw "Windows API smoke container did not remain running."
+            }
+          }
+          finally {
+            docker container rm --force tflex-drawing-api-run-contract 2>$null
+          }

@@ -74,6 +74,7 @@ $ErrorActionPreference = "Stop"
 $ApiServiceName = "TFlexDrawingService.Api"
 $WorkerServiceName = "TFlexDrawingService.Worker"
 $AuthenticatedUsersSid = "S-1-5-11"
+$ContainerPortFirewallRuleName = "TFlexDrawingService.Api.ContainerPorts.LoopbackOnly"
 
 function Write-Step {
     param([string]$Message)
@@ -95,10 +96,35 @@ function Invoke-Native {
     )
 
     Write-Host "Running: $FilePath" -ForegroundColor DarkGray
-    & $FilePath @Arguments
-    $exitCode = $LASTEXITCODE
+    $recentOutput = [Collections.Generic.Queue[string]]::new()
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 can surface redirected native stderr as a
+        # NativeCommandError when the caller uses ErrorActionPreference=Stop.
+        $ErrorActionPreference = "Continue"
+        & $FilePath @Arguments 2>&1 | ForEach-Object {
+            $line = [string]$_
+            Write-Host $line
+            if ($recentOutput.Count -ge 80) {
+                $null = $recentOutput.Dequeue()
+            }
+            $recentOutput.Enqueue($line)
+        }
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if ($AllowedExitCodes -notcontains $exitCode) {
-        throw "Native command '$FilePath' failed with exit code $exitCode."
+        $detail = ($recentOutput.ToArray() -join [Environment]::NewLine).Trim()
+        if ($detail.Length -gt 4096) {
+            $detail = "[truncated] " + $detail.Substring($detail.Length - 4096)
+        }
+        if ([string]::IsNullOrWhiteSpace($detail)) {
+            throw "Native command '$FilePath' failed with exit code $exitCode."
+        }
+        throw "Native command '$FilePath' failed with exit code $exitCode`: $detail"
     }
 }
 
@@ -109,8 +135,15 @@ function Invoke-NativeCapture {
         [int[]]$AllowedExitCodes = @(0)
     )
 
-    $output = @(& $FilePath @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& $FilePath @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($AllowedExitCodes -notcontains $exitCode) {
         $detail = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
         if ($detail.Length -gt 4096) {
@@ -376,6 +409,36 @@ function Get-DockerNatGateway {
     return $value
 }
 
+function Set-ContainerPortLoopbackFirewall {
+    param([int[]]$Ports)
+
+    # Windows container NAT does not support HOST_IP:HOST_PORT:CONTAINER_PORT.
+    # Docker therefore publishes on the host, while this explicit block rule
+    # rejects every non-loopback IPv4 source. Explicit block rules take
+    # precedence over the ALLOW rule created by HNS for a published port.
+    $remoteIpv4ExceptLoopback = @(
+        "0.0.0.0-126.255.255.255",
+        "127.0.0.2-255.255.255.255"
+    )
+    $localPorts = @($Ports | Sort-Object -Unique | ForEach-Object { [string]$_ })
+
+    Remove-NetFirewallRule `
+        -Name $ContainerPortFirewallRuleName `
+        -ErrorAction SilentlyContinue
+    New-NetFirewallRule `
+        -Name $ContainerPortFirewallRuleName `
+        -DisplayName "T-FLEX Drawing API container ports (loopback only)" `
+        -Description "Blocks non-loopback access to the internal API container ports." `
+        -Group "T-FLEX Drawing Service" `
+        -Enabled True `
+        -Profile Any `
+        -Direction Inbound `
+        -Action Block `
+        -Protocol TCP `
+        -LocalPort $localPorts `
+        -RemoteAddress $remoteIpv4ExceptLoopback | Out-Null
+}
+
 function Start-ApiContainer {
     param(
         [string]$Name,
@@ -392,7 +455,7 @@ function Start-ApiContainer {
         "container", "run", "--detach",
         "--name", $Name,
         "--isolation", "process",
-        "--publish", "127.0.0.1:${HostPort}:8080",
+        "--publish", "${HostPort}:8080",
         "--mount", "type=bind,source=$apiDirectory,target=C:\tflex-config,readonly",
         "--mount", "type=bind,source=$storageDirectory,target=$storageDirectory",
         "--mount", "type=bind,source=$templatesDirectory,target=$templatesDirectory",
@@ -600,6 +663,9 @@ try {
     Grant-ContainerDirectoryAccess `
         -Path $templatesDirectory `
         -Rights ([Security.AccessControl.FileSystemRights]::Modify)
+
+    Write-Step "Restricting the published API container ports to loopback clients"
+    Set-ContainerPortLoopbackFirewall -Ports @($ApiHostPort, $CandidateHostPort)
 
     $dockerNatGateway = Get-DockerNatGateway
     Write-Step "Smoke-testing the candidate API container"

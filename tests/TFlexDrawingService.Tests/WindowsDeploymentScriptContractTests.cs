@@ -635,7 +635,12 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.Contains("ReverseProxy__KnownProxies__0=$DockerNatGateway", hybrid, StringComparison.Ordinal);
         Assert.Contains("source=$storageDirectory,target=$storageDirectory", hybrid, StringComparison.Ordinal);
         Assert.Contains("source=$templatesDirectory,target=$templatesDirectory", hybrid, StringComparison.Ordinal);
-        Assert.Contains("127.0.0.1:${HostPort}:8080", hybrid, StringComparison.Ordinal);
+        Assert.Contains("\"--publish\", \"${HostPort}:8080\"", hybrid, StringComparison.Ordinal);
+        Assert.DoesNotContain("127.0.0.1:${HostPort}:8080", hybrid, StringComparison.Ordinal);
+        Assert.Contains("Set-ContainerPortLoopbackFirewall", hybrid, StringComparison.Ordinal);
+        Assert.Contains("New-NetFirewallRule", hybrid, StringComparison.Ordinal);
+        Assert.Contains("127.0.0.2-255.255.255.255", hybrid, StringComparison.Ordinal);
+        Assert.Contains("$recentOutput.Enqueue($line)", hybrid, StringComparison.Ordinal);
         Assert.Contains("\"--urls\", \"http://+:8080\"", hybrid, StringComparison.Ordinal);
         Assert.Contains(
             "\"container\", \"ls\", \"--all\", \"--format\", \"{{.Names}}\"",
