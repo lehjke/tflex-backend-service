@@ -71,6 +71,18 @@ public sealed class WindowsDeploymentScriptContractTests
             "& $FilePath @Arguments 2>&1 | ForEach-Object",
             bootstrap,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "$previousErrorActionPreference = $ErrorActionPreference",
+            bootstrap,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$ErrorActionPreference = \"Continue\"",
+            bootstrap,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$ErrorActionPreference = $previousErrorActionPreference",
+            bootstrap,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "$output = & $FilePath @Arguments",
             bootstrap,

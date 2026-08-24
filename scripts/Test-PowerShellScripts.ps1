@@ -189,6 +189,11 @@ if ($credentialPrintIndex -lt 0 -or
 if (-not $bootstrapText.Contains('& $FilePath @Arguments 2>&1 | ForEach-Object')) {
     throw "The Windows bootstrapper must stream child installer output."
 }
+if (-not $bootstrapText.Contains('$previousErrorActionPreference = $ErrorActionPreference') -or
+    -not $bootstrapText.Contains('$ErrorActionPreference = "Continue"') -or
+    -not $bootstrapText.Contains('$ErrorActionPreference = $previousErrorActionPreference')) {
+    throw "The Windows bootstrapper must use native exit codes instead of treating successful stderr output as a terminating error."
+}
 if ($bootstrapText.Contains('$output = & $FilePath @Arguments')) {
     throw "The Windows bootstrapper must not buffer generated bootstrap credentials until child exit."
 }

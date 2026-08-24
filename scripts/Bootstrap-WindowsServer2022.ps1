@@ -150,13 +150,26 @@ function Invoke-Native {
     # Do not print arguments. This helper is also used to launch the service
     # installer, and future parameters must not accidentally expose a secret.
     Write-Host "Running: $FilePath" -ForegroundColor DarkGray
-    & $FilePath @Arguments 2>&1 | ForEach-Object {
-        # Stream child output instead of buffering it. The installer prints the
-        # generated bootstrap credential before it can seed persistent storage,
-        # so operators must see that output even if deployment later fails.
-        Write-Host ([string]$_)
+    $previousErrorActionPreference = $ErrorActionPreference
+    $exitCode = $null
+    try {
+        # Windows PowerShell 5.1 wraps redirected native stderr as ErrorRecord.
+        # Git writes normal fetch/progress messages to stderr, so Stop would turn
+        # a successful git command into a terminating NativeCommandError. Let the
+        # native process finish and use its exit code as the source of truth.
+        $ErrorActionPreference = "Continue"
+        & $FilePath @Arguments 2>&1 | ForEach-Object {
+            # Stream child output instead of buffering it. The installer prints
+            # the generated bootstrap credential before it can seed persistent
+            # storage, so operators must see it even if deployment later fails.
+            Write-Host ([string]$_)
+        }
+        $exitCode = $LASTEXITCODE
     }
-    $exitCode = $LASTEXITCODE
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if ($AllowedExitCodes -notcontains $exitCode) {
         throw "Native command '$FilePath' failed with exit code $exitCode."
     }
