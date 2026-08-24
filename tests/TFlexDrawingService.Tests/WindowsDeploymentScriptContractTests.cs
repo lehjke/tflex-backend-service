@@ -614,6 +614,14 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.Contains("source=$templatesDirectory,target=$templatesDirectory", hybrid, StringComparison.Ordinal);
         Assert.Contains("127.0.0.1:${HostPort}:8080", hybrid, StringComparison.Ordinal);
         Assert.Contains("\"--urls\", \"http://+:8080\"", hybrid, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"container\", \"ls\", \"--all\", \"--format\", \"{{.Names}}\"",
+            hybrid,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "& docker container inspect $Name *> $null",
+            hybrid,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("source=C:\\,", hybrid, StringComparison.OrdinalIgnoreCase);
 
         var serviceUpdate = hybrid.IndexOf(

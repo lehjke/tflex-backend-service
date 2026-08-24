@@ -215,12 +215,16 @@ $requiredHybridContracts = @(
     'source=$storageDirectory,target=$storageDirectory',
     'source=$templatesDirectory,target=$templatesDirectory',
     '127.0.0.1:${HostPort}:8080',
-    '"--urls", "http://+:8080"'
+    '"--urls", "http://+:8080"',
+    '"container", "ls", "--all", "--format", "{{.Names}}"'
 )
 foreach ($contract in $requiredHybridContracts) {
     if (-not $hybridDeploymentText.Contains($contract)) {
         throw "The hybrid deployment script is missing required contract '$contract'."
     }
+}
+if ($hybridDeploymentText.Contains('& docker container inspect $Name *> $null')) {
+    throw "The first hybrid deployment must not treat a missing container as a native-command failure."
 }
 
 $hybridServiceUpdateIndex = $hybridDeploymentText.IndexOf(

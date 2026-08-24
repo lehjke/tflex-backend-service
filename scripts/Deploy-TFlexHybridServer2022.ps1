@@ -171,8 +171,18 @@ function Get-HttpErrorResponseDetail {
 
 function Test-ContainerExists {
     param([string]$Name)
-    & docker container inspect $Name *> $null
-    return $LASTEXITCODE -eq 0
+
+    # `docker inspect` writes "No such container" to stderr for the expected
+    # first-deployment case. Windows PowerShell 5.1 promotes that stderr record
+    # to a terminating NativeCommandError when ErrorActionPreference is Stop.
+    # Listing container names avoids using an error response as normal control
+    # flow while still failing closed when the Docker daemon itself is broken.
+    $containerNames = Invoke-NativeCapture -FilePath "docker" -Arguments @(
+        "container", "ls", "--all", "--format", "{{.Names}}"
+    )
+    return @($containerNames | Where-Object {
+        [string]::Equals($_.Trim(), $Name, [StringComparison]::Ordinal)
+    }).Count -gt 0
 }
 
 function Test-ContainerRunning {
