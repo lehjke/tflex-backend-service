@@ -11,15 +11,29 @@ function readWebSource(fileName) {
   return fs.readFileSync(path.join(webRoot, fileName), "utf8");
 }
 
-test("home navigation commits through links without a timer or pointer-down navigation", () => {
+test("home cards keep link navigation and restore interruptible disclosure motion", () => {
   const html = readWebSource("index.html");
   const source = readWebSource("home.js");
+  const styles = readWebSource("styles.css");
 
   assert.match(html, /<article class="home-template-card"/u);
   assert.match(html, /<a class="home-template-card__button" href="\/drawings"/u);
   assert.match(html, /<a class="home-template-card__button" href="\/pricing"/u);
   assert.doesNotMatch(source, /addEventListener\("pointerdown"/u);
-  assert.doesNotMatch(source, /templateCardCloseTimers|openTemplateCard|setTemplateCardState/u);
+  assert.match(source, /function setTemplateCardState\(card, isOpen\)/u);
+  assert.match(source, /function openTemplateCard\(card\)/u);
+  assert.match(source, /function scheduleTemplateCardClose\(card\)/u);
+  assert.match(source, /addEventListener\("pointerenter"/u);
+  assert.match(source, /addEventListener\("pointerleave"/u);
+  assert.match(source, /addEventListener\("focusin"/u);
+  assert.match(source, /addEventListener\("focusout"/u);
+  assert.match(source, /setupTemplateCards\(\);/u);
+  assert.match(styles, /\.home-template-card \{[\s\S]*?height: 240px;[\s\S]*?transition: height 0\.34s/u);
+  assert.match(styles, /\.home-template-card\.is-open \{\s*height: 459px;/u);
+  assert.match(styles, /\.home-template-card__description \{[\s\S]*?opacity: 0;[\s\S]*?transition: opacity/u);
+  assert.match(styles, /\.home-template-card\.is-open \.home-template-card__description \{\s*opacity: 1;/u);
+  assert.match(styles, /@media \(max-width: 620px\) \{[\s\S]*?\.home-template-card\.is-open \{\s*height: 500px;/u);
+  assert.match(styles, /\.home-template-card\.is-open \.home-template-card__footer \{[\s\S]*?flex-direction: column;/u);
 });
 
 test("pricing uses progressive disclosure and a lazy keyboard-operated visual listbox", () => {
@@ -173,7 +187,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260821-pricing-summary-radius-1/u,
+      /\/styles\.css\?v=20260824-home-card-motion-1/u,
       `${pageName} must load the current parameter-control stylesheet`);
   }
 });

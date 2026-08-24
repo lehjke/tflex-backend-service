@@ -21,6 +21,7 @@ const currentUserRole = document.querySelector("#currentUserRole");
 const logoutButton = document.querySelector("#logoutButton");
 const activeTemplateCount = document.querySelector("#activeTemplateCount");
 const globalSearchInput = document.querySelector(".global-search input");
+const templateCardCloseTimers = new WeakMap();
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -207,6 +208,56 @@ function setupHomeCards() {
   }
 }
 
+function setTemplateCardState(card, isOpen) {
+  if (!card) return;
+
+  card.classList.toggle("is-open", isOpen);
+  card.setAttribute("aria-expanded", isOpen ? "true" : "false");
+}
+
+function closeTemplateCard(card) {
+  if (!card) return;
+
+  window.clearTimeout(templateCardCloseTimers.get(card));
+  templateCardCloseTimers.delete(card);
+  setTemplateCardState(card, false);
+}
+
+function scheduleTemplateCardClose(card) {
+  if (!card) return;
+
+  window.clearTimeout(templateCardCloseTimers.get(card));
+  templateCardCloseTimers.set(card, window.setTimeout(() => {
+    if (!card.matches(":hover") && !card.matches(":focus-within")) {
+      closeTemplateCard(card);
+    }
+  }, 120));
+}
+
+function openTemplateCard(card) {
+  if (!card) return;
+
+  for (const otherCard of document.querySelectorAll("[data-template-card]")) {
+    if (otherCard !== card) closeTemplateCard(otherCard);
+  }
+
+  window.clearTimeout(templateCardCloseTimers.get(card));
+  templateCardCloseTimers.delete(card);
+  setTemplateCardState(card, true);
+}
+
+function setupTemplateCards() {
+  for (const card of document.querySelectorAll("[data-template-card]")) {
+    setTemplateCardState(card, false);
+    card.addEventListener("pointerenter", () => openTemplateCard(card));
+    card.addEventListener("pointerleave", () => scheduleTemplateCardClose(card));
+    card.addEventListener("focusin", () => openTemplateCard(card));
+    card.addEventListener("focusout", event => {
+      if (!card.contains(event.relatedTarget)) scheduleTemplateCardClose(card);
+    });
+  }
+}
+
 function setupHomeSearch() {
   if (!globalSearchInput) return;
 
@@ -264,6 +315,7 @@ loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);
 
 setupHomeCards();
+setupTemplateCards();
 setupHomeSearch();
 try {
   if (await loadCurrentUser()) {
