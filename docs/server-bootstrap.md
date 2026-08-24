@@ -40,7 +40,122 @@ publisher `Microsoft Corporation`. При любом несовпадении з
 получать ожидаемый digest динамически из того же ответа или release channel,
 откуда скачивается артефакт: это создало бы непроверенный TOFU.
 
-## Первая установка или обновление
+## Гибридное развертывание: API в Docker, Worker и T-FLEX как службы
+
+Рекомендуемая production-схема для Windows Server 2022:
+
+- `TFlexDrawingService.Api` запускается в Windows-контейнере на базе
+  `mcr.microsoft.com/dotnet/aspnet:10.0-windowsservercore-ltsc2022`;
+- `TFlexDrawingService.Worker` и `TFlexAutomationRunner.exe` работают на хосте;
+- установленный и активированный T-FLEX CAD 17 остается на хосте;
+- Caddy остается Windows-службой и проксирует HTTPS на
+  `http://127.0.0.1:5011`;
+- API и Worker используют одни физические каталоги `storage` и `templates`.
+
+Контейнер монтирует `storage` и `templates` по тем же абсолютным путям, которые
+видит Worker. Это обязательное условие: SQLite хранит абсолютные пути рабочих
+каталогов и сгенерированных файлов. Каталоги должны находиться на локальном NTFS,
+а не на SMB/NFS/OneDrive.
+
+Docker Compose не требуется: на Windows Server Docker Engine не поставляет
+Compose, а в гибридной схеме управляется один контейнер. Скрипт использует Docker
+CLI и назначает контейнеру restart policy `unless-stopped`.
+
+### Предварительные требования новой машины
+
+1. Windows Server 2022 со всеми накопительными обновлениями.
+2. Установленный и активированный T-FLEX CAD 17 с `TFlexAPI.dll` и
+   `TFlexAPI3D.dll`.
+3. Поддерживаемый Windows container runtime (Moby/Docker CE, Mirantis Container
+   Runtime или совместимый Docker Engine), настроенный на Windows containers.
+4. DNS домена направлен на сервер; входящие TCP 80/443 разрешены.
+
+T-FLEX нельзя установить автоматически из этого репозитория: это лицензируемый
+продукт, а активация зависит от выданной лицензии. Container runtime также
+устанавливается отдельно по процедуре, утвержденной администратором сервера. После
+его установки проверка должна вернуть `windows`:
+
+```powershell
+docker info --format '{{.OSType}}'
+```
+
+### Одна команда для полной установки или полного обновления
+
+Запустите в Windows PowerShell 5.1 от имени администратора. Одна и та же команда
+подходит для чистой машины после выполнения предварительных требований и для
+последующих полных обновлений:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$script = "$env:TEMP\Deploy-TFlexHybridServer2022.ps1"
+Invoke-WebRequest `
+  "https://raw.githubusercontent.com/lehjke/tflex-backend-service/main/scripts/Deploy-TFlexHybridServer2022.ps1" `
+  -OutFile $script `
+  -UseBasicParsing
+
+& $script `
+  -RepositoryUrl "https://github.com/lehjke/tflex-backend-service.git" `
+  -Branch "main" `
+  -InstallRoot "C:\Services\TFlexDrawingService" `
+  -TFlexCadProgramDir "C:\Program Files\T-FLEX CAD 17\Program" `
+  -Domain "lehjke.online" `
+  -AcmeEmail "admin@example.com"
+```
+
+Команда выполняет полный цикл:
+
+1. освобождает внутренний порт от предыдущего API-контейнера;
+2. через существующий транзакционный installer обновляет исходники, Worker,
+   Runner, конфигурацию и шаблоны;
+3. проверяет реальный T-FLEX Open API и нативный API;
+4. строит новый Windows-образ API из того же commit;
+5. запускает candidate-контейнер на временном loopback-порту и проверяет
+   readiness и границу аутентификации;
+6. останавливает и отключает нативную службу API;
+7. запускает production-контейнер на `127.0.0.1:5011`;
+8. проверяет `/api/health/ready`, Worker и аутентификацию;
+9. устанавливает или обновляет Caddy и проверяет публичный HTTPS endpoint.
+
+При ошибке до переключения восстанавливается предыдущий контейнер. Если
+обновление служб прошло, но Docker build/start не удался, скрипт возвращает в
+работу обновленный нативный API на порту 5011. Поэтому не требуется вручную
+переключать Caddy во время rollback.
+
+Для локальной установки без публичного HTTPS вместо `Domain` и `AcmeEmail`
+передайте `-SkipCaddy`. Это диагностический вариант, доступный только через
+`http://127.0.0.1:5011`.
+
+### Состояние после успешного запуска
+
+```powershell
+docker ps --filter "name=tflex-drawing-api"
+Get-Service TFlexDrawingService.Api, TFlexDrawingService.Worker, Caddy
+Invoke-WebRequest http://127.0.0.1:5011/api/health/ready -UseBasicParsing
+Invoke-WebRequest https://lehjke.online/api/health/ready -UseBasicParsing
+```
+
+Ожидаемое состояние:
+
+- контейнер `tflex-drawing-api` — `Up` и затем `healthy`;
+- `TFlexDrawingService.Api` — `Stopped`, startup type `Disabled` (аварийный
+  fallback остается установленным);
+- `TFlexDrawingService.Worker` — `Running`;
+- `Caddy` — `Running`;
+- локальный и публичный readiness — HTTP 200.
+
+Для ручного аварийного возврата к нативному API:
+
+```powershell
+docker stop tflex-drawing-api
+docker rm tflex-drawing-api
+Set-Service TFlexDrawingService.Api -StartupType Automatic
+Start-Service TFlexDrawingService.Api
+Invoke-WebRequest http://127.0.0.1:5011/api/health/ready -UseBasicParsing
+```
+
+## Классическое развертывание обеих частей как Windows-служб
+
+### Первая установка или обновление
 
 ```powershell
 $script = "$env:TEMP\Install-TFlexDrawingService.ps1"

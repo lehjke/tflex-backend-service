@@ -130,6 +130,7 @@ test("responsive and user-preference contracts cover the audited breakpoints", (
   assert.match(source, /\.pricing-mobile-summary \{[\s\S]*?top: 96px/u);
   assert.match(source, /\.pricing-section > summary\.panel__header \{\s*flex-direction: row/u);
   assert.match(source, /\.pricing-section \{[\s\S]*?background: #ffffff;/u);
+  assert.match(source, /\.pricing-result \{[\s\S]*?border-radius: var\(--radius\);/u);
   assert.doesNotMatch(source, /\.smec-excel-section \{[\s\S]*?background:/u);
   assert.match(source, /\.shaft-preview-svg__door--collision \{[\s\S]*?stroke: var\(--bad\)/u);
   assert.match(source, /@media \(prefers-contrast: more\)/u);
@@ -172,8 +173,35 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260807-pricing-sections-1/u,
+      /\/styles\.css\?v=20260821-pricing-summary-radius-1/u,
       `${pageName} must load the current parameter-control stylesheet`);
+  }
+});
+
+test("all pages resolve authentication behind a pixel-matched loading shell", () => {
+  const variants = new Map([
+    ["index.html", "home"],
+    ["drawings.html", "editor"],
+    ["pricing.html", "pricing"],
+    ["account.html", "account"]
+  ]);
+
+  for (const [fileName, variant] of variants) {
+    const html = readWebSource(fileName);
+    assert.match(
+      html,
+      new RegExp(`id="pageSkeleton" class="page-skeleton page-skeleton--${variant}"[^>]*aria-busy="true"`, "u"),
+      `${fileName} must start in its matching loading shell`);
+    assert.match(html, /<main id="guestMain"[^>]* hidden>/u, `${fileName} must not flash the access form`);
+    assert.ok(
+      html.indexOf('id="pageSkeleton"') < html.indexOf('id="guestMain"'),
+      `${fileName} must render loading before auth-dependent content`);
+  }
+
+  for (const fileName of ["home.js", "pricing.js"]) {
+    const source = readWebSource(fileName);
+    assert.match(source, /function hidePageSkeleton\(\)/u);
+    assert.match(source, /finally \{\s*hidePageSkeleton\(\);\s*\}/u);
   }
 });
 

@@ -1,0 +1,38 @@
+# escape=`
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-windowsservercore-ltsc2022 AS build
+ARG BUILD_CONFIGURATION=Release
+
+WORKDIR C:\source
+
+COPY ["src/TFlexDrawingService.Core/TFlexDrawingService.Core.csproj", "src/TFlexDrawingService.Core/"]
+COPY ["src/TFlexDrawingService.Infrastructure/TFlexDrawingService.Infrastructure.csproj", "src/TFlexDrawingService.Infrastructure/"]
+COPY ["src/TFlexDrawingService.Api/TFlexDrawingService.Api.csproj", "src/TFlexDrawingService.Api/"]
+RUN dotnet restore "src/TFlexDrawingService.Api/TFlexDrawingService.Api.csproj"
+
+COPY ["src/TFlexDrawingService.Core/", "src/TFlexDrawingService.Core/"]
+COPY ["src/TFlexDrawingService.Infrastructure/", "src/TFlexDrawingService.Infrastructure/"]
+COPY ["src/TFlexDrawingService.Api/", "src/TFlexDrawingService.Api/"]
+RUN dotnet publish "src/TFlexDrawingService.Api/TFlexDrawingService.Api.csproj" `
+    --configuration %BUILD_CONFIGURATION% `
+    --no-restore `
+    --output C:\publish `
+    /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-windowsservercore-ltsc2022 AS final
+
+WORKDIR C:\app
+COPY --from=build C:\publish .
+
+ENV ASPNETCORE_ENVIRONMENT=Production `
+    DOTNET_ENVIRONMENT=Production `
+    ASPNETCORE_URLS=http://+:8080
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 `
+    CMD powershell -NoProfile -Command `
+        "try { $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 http://127.0.0.1:8080/api/health/live; if ($response.StatusCode -ne 200) { exit 1 } } catch { exit 1 }"
+
+USER ContainerUser
+ENTRYPOINT ["dotnet", "TFlexDrawingService.Api.dll"]

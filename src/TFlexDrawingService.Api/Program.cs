@@ -34,6 +34,28 @@ var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 };
 
 var builder = WebApplication.CreateBuilder(args);
+var externalConfigurationFile = Environment.GetEnvironmentVariable("TFLEX_CONFIGURATION_FILE");
+if (!string.IsNullOrWhiteSpace(externalConfigurationFile))
+{
+    var configurationPath = Path.GetFullPath(externalConfigurationFile);
+    if (!File.Exists(configurationPath))
+    {
+        throw new FileNotFoundException(
+            "The external production configuration file was not found.",
+            configurationPath);
+    }
+
+    builder.Configuration.AddJsonFile(
+        configurationPath,
+        optional: false,
+        reloadOnChange: false);
+    builder.Configuration.AddEnvironmentVariables();
+    if (args.Length > 0)
+    {
+        builder.Configuration.AddCommandLine(args);
+    }
+}
+
 var securityOptions = builder.Configuration.GetSection("Security").Get<SecurityOptions>() ?? new SecurityOptions();
 SecurityOptionsValidation.Validate(securityOptions, builder.Environment.IsDevelopment());
 
@@ -58,6 +80,21 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
     options.KnownProxies.Add(IPAddress.Loopback);
     options.KnownProxies.Add(IPAddress.IPv6Loopback);
+    foreach (var configuredProxy in builder.Configuration
+                 .GetSection("ReverseProxy:KnownProxies")
+                 .Get<string[]>() ?? [])
+    {
+        if (!IPAddress.TryParse(configuredProxy, out var proxyAddress))
+        {
+            throw new InvalidOperationException(
+                $"ReverseProxy:KnownProxies contains invalid IP address '{configuredProxy}'.");
+        }
+
+        if (!options.KnownProxies.Contains(proxyAddress))
+        {
+            options.KnownProxies.Add(proxyAddress);
+        }
+    }
 });
 builder.Services.AddSingleton<ConfiguredUserStore>();
 builder.Services.AddSingleton<ProjectStore>();

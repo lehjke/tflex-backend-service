@@ -37,6 +37,17 @@ DOTNET_ENVIRONMENT=Development \
 
 API обслуживает веб-форму на своем корневом URL. Worker забирает задания из SQLite-очереди, копирует исходный шаблон в изолированный каталог попытки `storage/jobs/{jobId}/attempt-{leaseHash}` и создает mock-результат в таком же каталоге под `storage/generated/{jobId}`.
 
+## Production-развертывание
+
+Рекомендуемый вариант на Windows Server 2022 запускает API в
+Windows-контейнере, а Worker/Runner/T-FLEX оставляет Windows-службой. Полная
+установка, обновление, проверка candidate-контейнера и rollback выполняются
+скриптом `scripts/Deploy-TFlexHybridServer2022.ps1`.
+
+Команда для чистой машины и повторного обновления приведена в
+`docs/server-bootstrap.md`. Классическая установка API и Worker как двух
+Windows-служб сохранена как аварийный fallback.
+
 ## Добавление шаблона администратором
 
 В личном кабинете администратора откройте «Центр шаблонов» и загрузите:

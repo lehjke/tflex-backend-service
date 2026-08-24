@@ -85,3 +85,50 @@ jobs:
           -p:NuGetAuditLevel=high
           -warnaserror:NU1903,NU1904
           --verbosity minimal
+
+  windows-api-container:
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify Windows container engine
+        shell: powershell
+        run: |
+          $dockerService = Get-Service -Name docker -ErrorAction Stop
+          if ($dockerService.Status -ne "Running") {
+            Start-Service -Name docker
+            $dockerService.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
+          }
+          $osType = docker info --format '{{.OSType}}'
+          if ($LASTEXITCODE -ne 0) { throw "docker info failed." }
+          if ($osType.Trim() -ne "windows") {
+            throw "The CI Docker engine is not configured for Windows containers."
+          }
+
+      - name: Free space for Windows base-image layers
+        shell: powershell
+        run: |
+          docker system prune --all --force
+          if ($LASTEXITCODE -ne 0) { throw "Docker cleanup failed." }
+
+      - name: Build API Windows container
+        shell: powershell
+        run: |
+          docker build --pull --file Dockerfile.api --tag tflex-drawing-service-api:ci .
+          if ($LASTEXITCODE -ne 0) { throw "Windows API container build failed." }
+
+      - name: Inspect API container image
+        shell: powershell
+        run: |
+          $user = docker image inspect tflex-drawing-service-api:ci --format '{{.Config.User}}'
+          if ($LASTEXITCODE -ne 0) { throw "Container image inspection failed." }
+          if ($user.Trim() -ne "ContainerUser") {
+            throw "The API image must run as ContainerUser."
+          }
+          $health = docker image inspect tflex-drawing-service-api:ci --format '{{json .Config.Healthcheck}}'
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($health) -or $health -eq "null") {
+            throw "The API image must include a Docker health check."
+          }

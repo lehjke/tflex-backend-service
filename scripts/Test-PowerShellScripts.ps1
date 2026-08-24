@@ -40,9 +40,11 @@ if ($parseFailures.Count -gt 0) {
 $installerPath = Join-Path $PSScriptRoot "Install-TFlexDrawingService.ps1"
 $bootstrapPath = Join-Path $PSScriptRoot "Bootstrap-WindowsServer2022.ps1"
 $caddyInstallerPath = Join-Path $PSScriptRoot "Install-CaddyAcmeProxy.ps1"
+$hybridDeploymentPath = Join-Path $PSScriptRoot "Deploy-TFlexHybridServer2022.ps1"
 $installerText = Get-Content -LiteralPath $installerPath -Raw
 $bootstrapText = Get-Content -LiteralPath $bootstrapPath -Raw
 $caddyInstallerText = Get-Content -LiteralPath $caddyInstallerPath -Raw
+$hybridDeploymentText = Get-Content -LiteralPath $hybridDeploymentPath -Raw
 
 $requiredInstallerContracts = @(
     'VariableName "DOTNET_ENVIRONMENT"',
@@ -199,6 +201,43 @@ if (-not $bootstrapText.Contains(
         '$healthEndpoint = if ($SkipRunnerHealthCheck) { "live" } else { "ready" }') -or
     -not $bootstrapText.Contains('$statusCode -ne 503')) {
     throw "Diagnostic bootstrap must accept liveness only while keeping readiness at HTTP 503."
+}
+
+$requiredHybridContracts = @(
+    'Docker is not configured for Windows containers.',
+    'Assert-CleanSource $effectiveSourceRoot',
+    'Smoke-testing the candidate API container',
+    'Disable-NativeApiService',
+    'Enable-NativeApiFallback',
+    '$AuthenticatedUsersSid = "S-1-5-11"',
+    'TFLEX_CONFIGURATION_FILE=C:\tflex-config\appsettings.Production.json',
+    'ReverseProxy__KnownProxies__0=$DockerNatGateway',
+    'source=$storageDirectory,target=$storageDirectory',
+    'source=$templatesDirectory,target=$templatesDirectory',
+    '127.0.0.1:${HostPort}:8080',
+    '"--urls", "http://+:8080"'
+)
+foreach ($contract in $requiredHybridContracts) {
+    if (-not $hybridDeploymentText.Contains($contract)) {
+        throw "The hybrid deployment script is missing required contract '$contract'."
+    }
+}
+
+$hybridServiceUpdateIndex = $hybridDeploymentText.IndexOf(
+    'Invoke-ServiceDeployment $bootstrapPath')
+$hybridCandidateIndex = $hybridDeploymentText.IndexOf(
+    'Smoke-testing the candidate API container')
+$hybridNativeDisableIndex = $hybridDeploymentText.IndexOf(
+    'Disable-NativeApiService',
+    $hybridCandidateIndex)
+$hybridFinalHealthIndex = $hybridDeploymentText.IndexOf(
+    'Assert-AuthenticationBoundary $ApiHostPort',
+    $hybridNativeDisableIndex)
+if ($hybridServiceUpdateIndex -lt 0 -or
+    $hybridCandidateIndex -le $hybridServiceUpdateIndex -or
+    $hybridNativeDisableIndex -le $hybridCandidateIndex -or
+    $hybridFinalHealthIndex -le $hybridNativeDisableIndex) {
+    throw "The hybrid deployment must validate a candidate before disabling the native API and validating the final container."
 }
 
 $requiredBootstrapDownloadContracts = @(

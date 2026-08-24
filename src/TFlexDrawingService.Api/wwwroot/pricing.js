@@ -21,6 +21,7 @@ const visualSelectTypeahead = new WeakMap();
 
 const guestMain = document.querySelector("#guestMain");
 const pricingMain = document.querySelector("#pricingMain");
+const pageSkeleton = document.querySelector("#pageSkeleton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -222,6 +223,12 @@ function updateAuthView() {
       pricingAccessNote.textContent = "";
     }
   }
+}
+
+function hidePageSkeleton() {
+  if (!pageSkeleton) return;
+  pageSkeleton.removeAttribute("aria-busy");
+  pageSkeleton.hidden = true;
 }
 
 async function apiFetch(url, options = {}) {
@@ -1828,8 +1835,15 @@ window.addEventListener("tflex:languagechange", () => {
   syncMobilePricingSummary();
 });
 
-if (await loadCurrentUser()) {
-  await Promise.allSettled([loadCatalog(), loadProjects()]);
+try {
+  if (await loadCurrentUser()) {
+    await Promise.allSettled([loadCatalog(), loadProjects()]);
+    updateAuthView();
+    if (isAuthenticated()) scheduleLiveCalculation();
+  }
+} catch {
+  state.currentUser = null;
   updateAuthView();
-  if (isAuthenticated()) scheduleLiveCalculation();
+} finally {
+  hidePageSkeleton();
 }

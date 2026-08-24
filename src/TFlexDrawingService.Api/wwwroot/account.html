@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
+  <link rel="stylesheet" href="/styles.css?v=20260821-pricing-summary-radius-1">
 </head>
 <body>
   <div class="app-shell">
@@ -73,27 +73,39 @@
         </div>
       </header>
 
-      <section id="pageSkeleton" class="page-skeleton" aria-label="Загрузка страницы" aria-live="polite">
-        <div class="skeleton skeleton--title" data-page-loading></div>
-        <div class="skeleton-grid skeleton-grid--metrics" data-page-loading>
-          <span class="skeleton"></span>
-          <span class="skeleton"></span>
-          <span class="skeleton"></span>
-          <span class="skeleton"></span>
+      <section id="pageSkeleton" class="page-skeleton page-skeleton--account" aria-label="Загрузка страницы" aria-busy="true">
+        <span class="sr-only">Загрузка страницы</span>
+        <div class="skeleton-intro" data-page-loading aria-hidden="true">
+          <span class="skeleton skeleton--page-title"></span>
+          <span class="skeleton skeleton--copy skeleton--copy-long"></span>
+          <span class="skeleton skeleton--copy skeleton--copy-medium"></span>
         </div>
-        <div class="skeleton-grid skeleton-grid--content" data-page-loading>
-          <div class="skeleton-card">
+        <div class="skeleton-account-metrics" data-page-loading aria-hidden="true">
+          <span class="skeleton-account-metric"><i class="skeleton skeleton--metric-value"></i><i class="skeleton skeleton--copy skeleton--copy-meta"></i></span>
+          <span class="skeleton-account-metric"><i class="skeleton skeleton--metric-value"></i><i class="skeleton skeleton--copy skeleton--copy-meta"></i></span>
+          <span class="skeleton-account-metric"><i class="skeleton skeleton--metric-value"></i><i class="skeleton skeleton--copy skeleton--copy-meta"></i></span>
+          <span class="skeleton-account-metric"><i class="skeleton skeleton--metric-value"></i><i class="skeleton skeleton--copy skeleton--copy-meta"></i></span>
+        </div>
+        <div class="skeleton-account-columns" data-page-loading aria-hidden="true">
+          <section class="skeleton-panel skeleton-account-panel">
             <span class="skeleton skeleton--heading"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton skeleton--short"></span>
-          </div>
-          <div class="skeleton-card">
-            <span class="skeleton skeleton--heading"></span>
-            <span class="skeleton"></span>
-            <span class="skeleton skeleton--short"></span>
-            <span class="skeleton skeleton--button"></span>
-          </div>
+            <span class="skeleton skeleton--search"></span>
+            <span class="skeleton skeleton--list-row"></span>
+            <span class="skeleton skeleton--list-row"></span>
+            <span class="skeleton skeleton--list-row skeleton--list-row-short"></span>
+            <div class="skeleton-field-grid skeleton-field-grid--two skeleton-account-create">
+              <span class="skeleton skeleton--field skeleton--field-wide"></span>
+              <span class="skeleton skeleton--field"></span>
+              <span class="skeleton skeleton--field"></span>
+              <span class="skeleton skeleton--button skeleton--button-full skeleton--field-wide"></span>
+            </div>
+          </section>
+          <section class="skeleton-panel skeleton-account-panel">
+            <span class="skeleton skeleton--heading skeleton--heading-wide"></span>
+            <span class="skeleton skeleton--configuration-card"></span>
+            <span class="skeleton skeleton--configuration-card"></span>
+            <span class="skeleton skeleton--configuration-card skeleton--configuration-card-short"></span>
+          </section>
         </div>
         <section id="pageLoadError" class="panel load-error" role="alert" aria-live="assertive" aria-atomic="true" hidden>
           <div class="panel__header">

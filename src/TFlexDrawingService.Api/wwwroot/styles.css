@@ -366,75 +366,403 @@ html[lang="en"] .brand__logo--en {
 .page-skeleton {
   display: grid;
   gap: 24px;
-  width: min(100%, 1280px);
-  padding: 38px 32px 56px;
-  margin: 0 auto;
-}
-
-.skeleton-grid {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-}
-
-.skeleton-grid--metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.skeleton-grid--metrics .skeleton {
-  height: 92px;
-}
-
-.skeleton-grid--content {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.74fr);
-  align-items: start;
-}
-
-.skeleton-card {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgb(255 255 255 / 82%);
-  box-shadow: var(--shadow-soft);
+  width: auto;
+  margin: 0 clamp(24px, 2.6vw, 56px) 0 clamp(24px, 2vw, 40px);
+  padding: 34px 0 64px;
 }
 
 .skeleton {
   position: relative;
   display: block;
   min-width: 0;
-  height: 44px;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 7px;
   background: linear-gradient(90deg, #e8ebf1 0%, #f7f8fa 48%, #e8ebf1 100%);
   background-size: 220% 100%;
   animation: skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
-.skeleton--title {
-  width: min(520px, 78vw);
-  height: 46px;
-  border-radius: 12px;
+.skeleton-intro {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  min-height: 37px;
+}
+
+.skeleton--page-title {
+  width: min(360px, 72%);
+  height: 34px;
+  border-radius: 8px;
+}
+
+.skeleton--page-title-wide {
+  width: min(470px, 78%);
 }
 
 .skeleton--heading {
-  width: min(260px, 70%);
-  height: 28px;
+  width: min(190px, 58%);
+  height: 22px;
 }
 
-.skeleton--short {
+.skeleton--heading-wide {
+  width: min(280px, 76%);
+}
+
+.skeleton--copy {
+  width: 100%;
+  height: 13px;
+  border-radius: 5px;
+}
+
+.skeleton--copy-long {
+  width: min(760px, 92%);
+}
+
+.skeleton--copy-medium {
+  width: min(520px, 72%);
+}
+
+.skeleton--copy-short {
   width: 58%;
 }
 
-.skeleton--button {
-  width: min(240px, 48%);
-  height: 48px;
+.skeleton--copy-meta {
+  width: min(150px, 48%);
+  height: 12px;
 }
 
-.skeleton--preview {
-  height: clamp(220px, 28vw, 360px);
+.skeleton--field {
+  height: 64px;
+}
+
+.skeleton--field-wide {
+  grid-column: 1 / -1;
+}
+
+.skeleton--button {
+  width: 153px;
+  height: 48px;
+  border-radius: 8px;
+}
+
+.skeleton--button-small {
+  width: 120px;
+  height: 44px;
+}
+
+.skeleton--button-full {
+  width: 100%;
+  height: 44px;
+}
+
+.skeleton-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.skeleton-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.skeleton-field-grid {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.skeleton-field-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.skeleton-field-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.page-skeleton--home,
+.page-skeleton--account,
+.page-skeleton--pricing {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.skeleton-home-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.skeleton-home-card {
+  display: grid;
+  grid-template-rows: 220px auto 80px;
+  width: min(100%, 444px);
+  min-height: 420px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #d7dae3, 0 1px 2px rgb(16 26 56 / 4%);
+}
+
+.skeleton-home-card--compact {
+  min-height: 399px;
+}
+
+.skeleton-home-card__hero {
+  height: 210px;
+  margin: 10px 10px 0;
+  border-radius: 0;
+}
+
+.skeleton-home-card__content {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 118px;
+  padding: 20px 27px 18px;
+}
+
+.skeleton-home-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 80px;
+  border-top: 1px solid #d7dae3;
+  padding: 14px 27px 18px;
+}
+
+.page-skeleton--editor {
+  grid-template-columns: minmax(520px, 1.2fr) minmax(360px, 0.8fr);
+  gap: 20px 33px;
+  align-items: start;
+}
+
+.page-skeleton--editor > .skeleton-intro {
+  grid-column: 1 / -1;
+}
+
+.skeleton-editor-form {
+  display: grid;
+  grid-column: 1;
+  gap: 20px;
+  min-width: 0;
+}
+
+.skeleton-editor-config,
+.skeleton-editor-parameters,
+.skeleton-editor-preview,
+.skeleton-editor-status,
+.skeleton-editor-jobs {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 20px;
+}
+
+.skeleton-editor-config {
+  min-height: 217px;
+}
+
+.skeleton-editor-parameters {
+  min-height: 640px;
+}
+
+.skeleton--toggle {
+  width: 190px;
+  height: 28px;
+}
+
+.skeleton-tab-row {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.skeleton--tab {
+  flex: 0 0 138px;
+  height: 44px;
+}
+
+.skeleton--tab-short {
+  flex-basis: 104px;
+}
+
+.skeleton-preview-stack {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  gap: 24px;
+  min-width: 0;
+}
+
+.skeleton-editor-preview {
+  min-height: 760px;
+}
+
+.skeleton--shaft-preview {
+  height: 490px;
+}
+
+.skeleton-metric-lines {
+  display: grid;
+  gap: 12px;
+}
+
+.skeleton-editor-status {
+  min-height: 250px;
+}
+
+.skeleton--status-box {
+  height: 58px;
+}
+
+.skeleton-editor-jobs {
+  grid-column: 1;
+  min-height: 220px;
+}
+
+.skeleton--table-head {
+  height: 38px;
+}
+
+.skeleton--table-row {
+  height: 52px;
+}
+
+.skeleton-account-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 99px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.skeleton-account-metric {
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 24px;
+  border-right: 1px solid var(--line);
+}
+
+.skeleton-account-metric:last-child {
+  border-right: 0;
+}
+
+.skeleton--metric-value {
+  width: 48px;
+  height: 25px;
+}
+
+.skeleton-account-columns {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.96fr) minmax(420px, 1fr);
+  gap: 31px;
+  align-items: start;
+}
+
+.skeleton-account-panel {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 593px;
+  padding: 20px;
+}
+
+.skeleton--search {
+  width: min(100%, 560px);
+  height: 44px;
+}
+
+.skeleton--list-row {
+  height: 62px;
+}
+
+.skeleton--list-row-short {
+  width: 76%;
+}
+
+.skeleton-account-create {
+  margin-top: 2px;
+}
+
+.skeleton--configuration-card {
+  height: 112px;
+}
+
+.skeleton--configuration-card-short {
+  height: 86px;
+}
+
+.skeleton-pricing-workspace {
+  overflow: hidden;
+}
+
+.skeleton-pricing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  align-items: start;
+}
+
+.skeleton-pricing-form {
+  display: grid;
+  min-width: 0;
+}
+
+.skeleton-pricing-section {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  min-height: 241px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skeleton-pricing-section--parameters {
+  min-height: 420px;
+}
+
+.skeleton-pricing-result {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 796px;
+  padding: 22px;
+  border-left: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.skeleton-result-total {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.skeleton--total {
+  width: 62%;
+  height: 30px;
+}
+
+.skeleton--result-row {
+  height: 58px;
+}
+
+.skeleton--result-row-tall {
+  height: 92px;
 }
 
 @keyframes skeleton-shimmer {
@@ -1939,6 +2267,7 @@ textarea.is-invalid:focus {
   overflow-y: auto;
   padding: 22px;
   border-left: 1px solid var(--line);
+  border-radius: var(--radius);
   background: var(--surface-soft);
 }
 
@@ -3616,6 +3945,16 @@ summary:focus-visible,
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .skeleton-pricing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .skeleton-pricing-result {
+    min-height: 560px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
   .pricing-result {
     position: static;
     max-height: none;
@@ -3627,6 +3966,10 @@ summary:focus-visible,
 
 @media (max-width: 1200px) {
   .account-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .skeleton-account-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -3672,11 +4015,19 @@ summary:focus-visible,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .layout--editor {
+  .layout--editor,
+  .page-skeleton--editor {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .preview-stack {
+    position: static;
+    grid-column: 1;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.75fr);
+  }
+
+  .skeleton-preview-stack {
     position: static;
     grid-column: 1;
     grid-row: auto;
@@ -3865,11 +4216,16 @@ summary:focus-visible,
 
   .page-skeleton {
     width: min(100% - 40px, 760px);
+    margin: 0 auto;
     padding: 26px 0 44px;
   }
 
-  .skeleton-grid--content {
-    grid-template-columns: 1fr;
+  .skeleton-home-cards {
+    justify-items: stretch;
+  }
+
+  .skeleton-home-card {
+    width: min(100%, 444px);
   }
 
   .topbar {
@@ -4062,20 +4418,54 @@ summary:focus-visible,
 
   .page-skeleton {
     width: min(100% - 40px, 760px);
+    margin: 0 auto;
     padding-top: 28px;
     padding-bottom: 40px;
   }
 
-  .skeleton-grid--metrics {
+  .skeleton-account-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .skeleton-card {
+  .skeleton-account-metric:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .skeleton-account-metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .skeleton-account-panel,
+  .skeleton-editor-config,
+  .skeleton-editor-parameters,
+  .skeleton-editor-preview,
+  .skeleton-editor-status,
+  .skeleton-editor-jobs {
     padding: 18px;
   }
 
-  .skeleton--title {
-    height: 34px;
+  .skeleton--page-title {
+    height: 29px;
+  }
+
+  .skeleton-field-grid--two,
+  .skeleton-field-grid--three,
+  .skeleton-preview-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .skeleton-editor-preview {
+    min-height: 540px;
+  }
+
+  .skeleton--shaft-preview {
+    height: 300px;
+  }
+
+  .skeleton-home-card__footer {
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: 104px;
   }
 
   .sidebar {

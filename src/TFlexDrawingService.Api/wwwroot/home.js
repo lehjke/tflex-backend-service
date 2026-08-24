@@ -6,6 +6,7 @@ const state = {
 
 const guestMain = document.querySelector("#guestMain");
 const authenticatedMain = document.querySelector("[data-authenticated-main]");
+const pageSkeleton = document.querySelector("#pageSkeleton");
 const loginForm = document.querySelector("#loginForm");
 const loginUserName = document.querySelector("#loginUserName");
 const loginPassword = document.querySelector("#loginPassword");
@@ -54,6 +55,12 @@ function updateAuthView() {
     if (currentUserName) currentUserName.textContent = "";
     if (currentUserRole) currentUserRole.hidden = true;
   }
+}
+
+function hidePageSkeleton() {
+  if (!pageSkeleton) return;
+  pageSkeleton.removeAttribute("aria-busy");
+  pageSkeleton.hidden = true;
 }
 
 async function apiFetch(url, options = {}) {
@@ -258,6 +265,13 @@ logoutButton?.addEventListener("click", logout);
 
 setupHomeCards();
 setupHomeSearch();
-if (await loadCurrentUser()) {
-  await loadActiveTemplateCount();
+try {
+  if (await loadCurrentUser()) {
+    await loadActiveTemplateCount();
+  }
+} catch {
+  state.currentUser = null;
+  updateAuthView();
+} finally {
+  hidePageSkeleton();
 }

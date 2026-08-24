@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Базовая цена — МЛТ</title>
   <link rel="icon" href="/assets/mlt-logo-ru-stacked-light-bg.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260807-pricing-sections-1">
+  <link rel="stylesheet" href="/styles.css?v=20260821-pricing-summary-radius-1">
 </head>
 <body>
   <div class="app-shell">
@@ -70,7 +70,55 @@
         </div>
       </header>
 
-      <main id="guestMain" class="layout layout--auth">
+      <section id="pageSkeleton" class="page-skeleton page-skeleton--pricing" aria-label="Загрузка страницы" aria-busy="true">
+        <span class="sr-only">Загрузка страницы</span>
+        <div class="skeleton-intro" aria-hidden="true">
+          <span class="skeleton skeleton--page-title skeleton--page-title-wide"></span>
+        </div>
+        <div class="skeleton-panel skeleton-pricing-workspace" aria-hidden="true">
+          <div class="skeleton-pricing-grid">
+            <div class="skeleton-pricing-form">
+              <section class="skeleton-pricing-section skeleton-pricing-section--project">
+                <span class="skeleton skeleton--heading"></span>
+                <div class="skeleton-field-grid skeleton-field-grid--two">
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                </div>
+              </section>
+              <section class="skeleton-pricing-section skeleton-pricing-section--parameters">
+                <span class="skeleton skeleton--heading"></span>
+                <div class="skeleton-field-grid skeleton-field-grid--three">
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                  <span class="skeleton skeleton--field"></span>
+                </div>
+              </section>
+            </div>
+            <aside class="skeleton-pricing-result">
+              <div class="skeleton-result-total">
+                <span class="skeleton skeleton--copy skeleton--copy-short"></span>
+                <span class="skeleton skeleton--total"></span>
+                <span class="skeleton skeleton--copy skeleton--copy-meta"></span>
+              </div>
+              <span class="skeleton skeleton--heading"></span>
+              <span class="skeleton skeleton--result-row"></span>
+              <span class="skeleton skeleton--result-row"></span>
+              <span class="skeleton skeleton--heading"></span>
+              <span class="skeleton skeleton--result-row skeleton--result-row-tall"></span>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <main id="guestMain" class="layout layout--auth" hidden>
         <section class="panel panel--wide auth-panel">
           <div class="panel__header">
             <h2>Заявка на доступ</h2>
@@ -725,6 +773,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
-  <script type="module" src="/pricing.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/pricing.js?v=20260821-loading-shell-1"></script>
 </body>
 </html>
