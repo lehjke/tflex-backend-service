@@ -74,6 +74,8 @@ $requiredInstallerContracts = @(
     'LsaRemoveAccountRights',
     'Test-ServiceAccountSidInUse',
     'Remove-LogOnAsServiceRightIfUnused',
+    'ConvertTo-ReadOnlySecureString',
+    'PSAvoidUsingUsernameAndPasswordParams',
     '/api/projects',
     'appsettings.Development.json'
 )
@@ -81,6 +83,9 @@ foreach ($contract in $requiredInstallerContracts) {
     if (-not $installerText.Contains($contract)) {
         throw "The service installer is missing required deployment contract '$contract'."
     }
+}
+if ($installerText.Contains('ConvertTo-SecureString')) {
+    throw "The Windows installer must construct SecureString values without the analyzer-blocked plaintext conversion cmdlet."
 }
 
 $forbiddenInstallerContracts = @(
@@ -221,7 +226,9 @@ $requiredHybridContracts = @(
     'source=$templatesDirectory,target=$templatesDirectory',
     '127.0.0.1:${HostPort}:8080',
     '"--urls", "http://+:8080"',
-    '"container", "ls", "--all", "--format", "{{.Names}}"'
+    '"container", "ls", "--all", "--format", "{{.Names}}"',
+    'Retrying once without cached layers.',
+    '"--no-cache"'
 )
 foreach ($contract in $requiredHybridContracts) {
     if (-not $hybridDeploymentText.Contains($contract)) {

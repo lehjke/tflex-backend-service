@@ -133,6 +133,20 @@ function Resolve-FullPath {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function ConvertTo-ReadOnlySecureString {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $secureString = [Security.SecureString]::new()
+    foreach ($character in $Value.ToCharArray()) {
+        $secureString.AppendChar($character)
+    }
+    $secureString.MakeReadOnly()
+    return $secureString
+}
+
 function Assert-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -396,6 +410,10 @@ function Set-BootstrapAdminRecoveryFileAcl {
 }
 
 function Write-BootstrapAdminRecovery {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        "PSAvoidUsingUsernameAndPasswordParams",
+        "",
+        Justification = "The generated password is protected with machine-scoped DPAPI before the recovery document is written.")]
     param(
         [string]$Path,
         [string]$UserName,
@@ -1324,6 +1342,10 @@ namespace TFlexDrawingService.Install
 }
 
 function Set-ServiceAccount {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        "PSAvoidUsingUsernameAndPasswordParams",
+        "",
+        Justification = "The Win32 ChangeServiceConfig boundary requires the account name and password as separate values; they are never added to process arguments.")]
     param(
         [string]$Name,
         [string]$User,
@@ -2381,10 +2403,7 @@ try {
             $apiExe = Join-Path $apiDir "TFlexDrawingService.Api.exe"
             $workerExe = Join-Path $workerDir "TFlexDrawingService.Worker.exe"
             $serviceCredential = if (-not [string]::IsNullOrWhiteSpace($ServiceUser)) {
-                $secureServicePassword = ConvertTo-SecureString `
-                    $resolvedServicePassword `
-                    -AsPlainText `
-                    -Force
+                $secureServicePassword = ConvertTo-ReadOnlySecureString $resolvedServicePassword
                 [System.Management.Automation.PSCredential]::new(
                     $ServiceUser,
                     $secureServicePassword)

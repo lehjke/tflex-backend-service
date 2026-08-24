@@ -155,6 +155,12 @@ public sealed class WindowsDeploymentScriptContractTests
             "Invoke-Sc @(\"config\", $Name, \"obj=\"",
             installer,
             StringComparison.Ordinal);
+        Assert.Contains("ConvertTo-ReadOnlySecureString", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("ConvertTo-SecureString", installer, StringComparison.Ordinal);
+        Assert.Contains(
+            "PSAvoidUsingUsernameAndPasswordParams",
+            installer,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -619,6 +625,11 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.Contains("Enable-NativeApiFallback", hybrid, StringComparison.Ordinal);
         Assert.Contains("--restart", hybrid, StringComparison.Ordinal);
         Assert.Contains("unless-stopped", hybrid, StringComparison.Ordinal);
+        Assert.Contains(
+            "Retrying once without cached layers.",
+            hybrid,
+            StringComparison.Ordinal);
+        Assert.Contains("\"--no-cache\"", hybrid, StringComparison.Ordinal);
         Assert.Contains("$AuthenticatedUsersSid = \"S-1-5-11\"", hybrid, StringComparison.Ordinal);
         Assert.Contains("TFLEX_CONFIGURATION_FILE=C:\\tflex-config\\appsettings.Production.json", hybrid, StringComparison.Ordinal);
         Assert.Contains("ReverseProxy__KnownProxies__0=$DockerNatGateway", hybrid, StringComparison.Ordinal);
@@ -673,6 +684,11 @@ public sealed class WindowsDeploymentScriptContractTests
             StringComparison.Ordinal);
         Assert.Contains("dotnet restore", dockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet publish", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("ENV NUGET_PACKAGES=C:\\nuget\\packages", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--force", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--no-cache", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--disable-parallel", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("&& dotnet publish", dockerfile, StringComparison.Ordinal);
         Assert.Contains("HEALTHCHECK", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER ContainerUser", dockerfile, StringComparison.Ordinal);
         Assert.Contains(

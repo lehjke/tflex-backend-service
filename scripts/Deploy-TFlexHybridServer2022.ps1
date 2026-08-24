@@ -563,7 +563,23 @@ try {
         $buildArguments += "--pull"
     }
     $buildArguments += $effectiveSourceRoot
-    Invoke-Native -FilePath "docker" -Arguments $buildArguments
+    try {
+        Invoke-Native -FilePath "docker" -Arguments $buildArguments
+    }
+    catch {
+        Write-Warning "The initial Docker build failed. Retrying once without cached layers."
+        $retryBuildArguments = @(
+            "build",
+            "--no-cache",
+            "--file", $dockerfilePath,
+            "--tag", $image
+        )
+        if (-not $SkipDockerPull) {
+            $retryBuildArguments += "--pull"
+        }
+        $retryBuildArguments += $effectiveSourceRoot
+        Invoke-Native -FilePath "docker" -Arguments $retryBuildArguments
+    }
 
     $apiDirectory = Join-Path $InstallRoot "Api"
     $storageDirectory = Join-Path $InstallRoot "storage"
