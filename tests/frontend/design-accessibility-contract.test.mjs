@@ -29,11 +29,32 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   assert.match(source, /addEventListener\("focusout"/u);
   assert.match(source, /setupTemplateCards\(\);/u);
   assert.match(styles, /\.home-template-card \{[\s\S]*?height: 240px;[\s\S]*?transition: height 0\.34s/u);
+  assert.match(styles, /\.home-template-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
+  assert.match(styles, /\.home-template-card__hero \{[\s\S]*?top: var\(--home-card-padding\);[\s\S]*?left: var\(--home-card-padding\);[\s\S]*?border-radius: var\(--home-card-inner-radius\);/u);
+  assert.match(styles, /\.skeleton-home-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
   assert.match(styles, /\.home-template-card\.is-open \{\s*height: 459px;/u);
   assert.match(styles, /\.home-template-card__description \{[\s\S]*?opacity: 0;[\s\S]*?transition: opacity/u);
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__description \{\s*opacity: 1;/u);
   assert.match(styles, /@media \(max-width: 620px\) \{[\s\S]*?\.home-template-card\.is-open \{\s*height: 500px;/u);
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__footer \{[\s\S]*?flex-direction: column;/u);
+});
+
+test("major surfaces share a 16px exterior and close nesting remains concentric", () => {
+  const styles = readWebSource("styles.css");
+
+  assert.match(styles, /--radius: 8px;\s*--surface-radius: 16px;[\s\S]*?--panel-padding: 16px;[\s\S]*?--panel-radius: var\(--surface-radius\);/u);
+  assert.match(styles, /\.panel \{[\s\S]*?border-radius: var\(--panel-radius\);/u);
+  assert.match(styles, /\.skeleton-panel \{[\s\S]*?border-radius: var\(--panel-radius\);/u);
+  assert.match(styles, /\.metrics-row \{[\s\S]*?border-radius: var\(--surface-radius\);/u);
+  assert.match(styles, /\.skeleton-account-metrics \{[\s\S]*?border-radius: var\(--surface-radius\);/u);
+  assert.match(styles, /\.sidebar__help \{[\s\S]*?--sidebar-help-padding: 8px;[\s\S]*?border-radius: calc\(var\(--sidebar-help-padding\) \+ var\(--sidebar-help-inner-radius\)\);/u);
+  assert.match(styles, /\.pricing-option \{[\s\S]*?--pricing-option-padding: 10px;[\s\S]*?border-radius: calc\(var\(--pricing-option-padding\) \+ var\(--pricing-option-inner-radius\)\);/u);
+  assert.match(styles, /\.finish-preview \{[\s\S]*?--finish-preview-padding: 10px;[\s\S]*?border-radius: calc\(var\(--finish-preview-padding\) \+ var\(--finish-preview-inner-radius\)\);/u);
+  assert.match(styles, /\.smec-design-card \{[\s\S]*?--smec-card-padding: 10px;[\s\S]*?border-radius: calc\(var\(--smec-card-padding\) \+ var\(--smec-card-inner-radius\)\);/u);
+  assert.match(styles, /\.visual-select \{[\s\S]*?--visual-menu-option-radius: calc\(var\(--surface-radius\) - var\(--visual-menu-padding\)\);/u);
+  assert.match(styles, /\.visual-select__menu \{[\s\S]*?border-radius: var\(--surface-radius\);/u);
+  assert.match(styles, /\.pricing-result \{[\s\S]*?border-radius: 0 var\(--surface-radius\) var\(--surface-radius\) 0;/u);
+  assert.match(styles, /\.shaft-preview \{[\s\S]*?--shaft-preview-padding: 8px;[\s\S]*?border-radius: calc\(var\(--shaft-preview-padding\) \+ var\(--shaft-preview-inner-radius\)\);/u);
 });
 
 test("pricing uses progressive disclosure and a lazy keyboard-operated visual listbox", () => {
@@ -144,7 +165,7 @@ test("responsive and user-preference contracts cover the audited breakpoints", (
   assert.match(source, /\.pricing-mobile-summary \{[\s\S]*?top: 96px/u);
   assert.match(source, /\.pricing-section > summary\.panel__header \{\s*flex-direction: row/u);
   assert.match(source, /\.pricing-section \{[\s\S]*?background: #ffffff;/u);
-  assert.match(source, /\.pricing-result \{[\s\S]*?border-radius: var\(--radius\);/u);
+  assert.match(source, /\.pricing-result \{[\s\S]*?border-radius: 0 var\(--surface-radius\) var\(--surface-radius\) 0;/u);
   assert.doesNotMatch(source, /\.smec-excel-section \{[\s\S]*?background:/u);
   assert.match(source, /\.shaft-preview-svg__door--collision \{[\s\S]*?stroke: var\(--bad\)/u);
   assert.match(source, /@media \(prefers-contrast: more\)/u);
@@ -187,8 +208,23 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260824-home-card-motion-1/u,
-      `${pageName} must load the current parameter-control stylesheet`);
+      /\/styles\.css\?v=20260825-panel-spacing-16-1/u,
+      `${pageName} must load the current stylesheet`);
+  }
+});
+
+test("all frontend pages use the icon-only MLT favicon", () => {
+  const favicon = readWebSource("assets/mlt-mark-favicon.svg");
+  assert.match(favicon, /viewBox="111 51 112 112"/u);
+  assert.equal(favicon.match(/<polygon\b/gu)?.length, 1);
+  assert.doesNotMatch(favicon, /<path\b/u);
+
+  const pageNames = ["index.html", "drawings.html", "pricing.html", "account.html"];
+  for (const pageName of pageNames) {
+    assert.match(
+      readWebSource(pageName),
+      /<link rel="icon" href="\/assets\/mlt-mark-favicon\.svg\?v=20260825-mlt-mark-1" type="image\/svg\+xml">/u,
+      `${pageName} must load the icon-only MLT favicon`);
   }
 });
 

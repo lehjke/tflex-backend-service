@@ -21,9 +21,12 @@ public sealed class WindowsDeploymentScriptContractTests
         RepositoryRoot,
         "scripts",
         "Deploy-TFlexHybridServer2022.ps1");
-    private static readonly string ApiDockerfilePath = Path.Combine(
+    private static readonly string LinuxApiDockerfilePath = Path.Combine(
         RepositoryRoot,
         "Dockerfile.api");
+    private static readonly string WindowsApiDockerfilePath = Path.Combine(
+        RepositoryRoot,
+        "Dockerfile.api.windows");
     private static readonly string ApiProgramPath = Path.Combine(
         RepositoryRoot,
         "src",
@@ -619,7 +622,7 @@ public sealed class WindowsDeploymentScriptContractTests
 
         Assert.Contains("Docker is not configured for Windows containers.", hybrid, StringComparison.Ordinal);
         Assert.Contains("Assert-CleanSource $effectiveSourceRoot", hybrid, StringComparison.Ordinal);
-        Assert.Contains("Dockerfile.api", hybrid, StringComparison.Ordinal);
+        Assert.Contains("Dockerfile.api.windows", hybrid, StringComparison.Ordinal);
         Assert.Contains("Smoke-testing the candidate API container", hybrid, StringComparison.Ordinal);
         Assert.Contains("Disable-NativeApiService", hybrid, StringComparison.Ordinal);
         Assert.Contains("Enable-NativeApiFallback", hybrid, StringComparison.Ordinal);
@@ -676,7 +679,7 @@ public sealed class WindowsDeploymentScriptContractTests
     [Fact]
     public void ApiContainerUsesWindowsServerCoreNonAdminAndExternalConfiguration()
     {
-        var dockerfile = File.ReadAllText(ApiDockerfilePath);
+        var dockerfile = File.ReadAllText(WindowsApiDockerfilePath);
         var program = File.ReadAllText(ApiProgramPath);
 
         Assert.Contains(
@@ -710,6 +713,32 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.Contains("builder.Configuration.AddCommandLine(args);", program, StringComparison.Ordinal);
         Assert.Contains("ReverseProxy:KnownProxies", program, StringComparison.Ordinal);
         Assert.Contains("IPAddress.TryParse", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinuxApiContainerIsPortableNonRootAndSelfContained()
+    {
+        var dockerfile = File.ReadAllText(LinuxApiDockerfilePath);
+
+        Assert.Contains("mcr.microsoft.com/dotnet/sdk:10.0", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("mcr.microsoft.com/dotnet/aspnet:10.0", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("dotnet restore", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--force", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--no-cache", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("--disable-parallel", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("&& dotnet publish", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("dotnet publish", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("Paths__ProjectRoot=/workspace", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("COPY --chown=$APP_UID:$APP_UID", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("VOLUME [\"/workspace/storage\"]", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("HEALTHCHECK", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("/api/health/live", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
+        Assert.Contains(
+            "ENTRYPOINT [\"dotnet\", \"TFlexDrawingService.Api.dll\"]",
+            dockerfile,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("windowsservercore", dockerfile, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepositoryRoot()

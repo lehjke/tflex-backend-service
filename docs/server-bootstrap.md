@@ -108,7 +108,7 @@ Invoke-WebRequest `
 2. через существующий транзакционный installer обновляет исходники, Worker,
    Runner, конфигурацию и шаблоны;
 3. проверяет реальный T-FLEX Open API и нативный API;
-4. строит новый Windows-образ API из того же commit;
+4. строит новый Windows-образ API из `Dockerfile.api.windows` того же commit;
 5. публикует временный порт candidate-контейнера через Windows NAT, блокирует
    к нему внешний доступ правилом Windows Firewall и проверяет readiness и
    границу аутентификации через loopback;

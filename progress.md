@@ -2,25 +2,27 @@
 
 ## Environment Detection
 - [x] .NET version detection (version: 10.0)
-- [x] Container OS selection (Windows Server Core LTSC 2022)
+- [x] Linux distribution selection (distribution: Ubuntu 24.04 via official .NET image)
+- [x] Windows deployment compatibility review (Windows Server Core LTSC 2022 retained)
 
 ## Configuration Changes
-- [x] External production configuration support
-- [x] Reverse-proxy trust configuration
+- [x] Application configuration verification for environment variable support
+- [x] NuGet package source configuration (no private feeds required)
 
 ## Containerization
-- [x] API Dockerfile
-- [x] `.dockerignore`
+- [x] Cross-platform Linux Dockerfile creation
+- [x] Windows Dockerfile separation
+- [x] `.dockerignore` verification
 - [x] Multi-stage SDK/runtime image
-- [x] Non-administrator runtime user
-- [x] Persistent storage/template bind mounts
-- [x] API health check
-- [x] Hybrid Windows deployment wrapper
-- [x] Native API rollback path
+- [x] Project-first NuGet restore layers
+- [x] Non-root runtime user configuration
+- [x] Persistent storage and template paths
+- [x] Linux health check
+- [x] Windows deployment script compatibility
 
 ## Verification
-- [x] PowerShell parser and deployment contract checks
-- [x] .NET unit tests (153 passed)
-- [x] Windows API and Worker publish (`win-x64`)
-- [x] Windows Docker image build
-- [ ] Windows Server hybrid runtime smoke test
+- [x] Linux Docker build success (`linux/arm64` locally; `linux/amd64` verification job added to CI)
+- [x] Linux container HTTP smoke test (root, liveness and templates returned HTTP 200)
+- [x] Docker health status (`healthy`)
+- [x] Windows deployment contract tests (included in 154 passing .NET tests)
+- [x] Portable .NET tests (154 passed)

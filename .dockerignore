@@ -1,5 +1,7 @@
 bin/
 obj/
+**/bin/
+**/obj/
 .dockerignore
 Dockerfile
 Dockerfile.*
@@ -17,7 +19,6 @@ Dockerfile.*
 docs/
 scripts/
 storage/
-templates/
 tests/
 tmp/
 tools/

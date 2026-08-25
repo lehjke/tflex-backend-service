@@ -37,10 +37,39 @@ DOTNET_ENVIRONMENT=Development \
 
 API обслуживает веб-форму на своем корневом URL. Worker забирает задания из SQLite-очереди, копирует исходный шаблон в изолированный каталог попытки `storage/jobs/{jobId}/attempt-{leaseHash}` и создает mock-результат в таком же каталоге под `storage/generated/{jobId}`.
 
+### API в Docker на macOS и Linux
+
+API имеет отдельный Linux-образ, который собирается для поддерживаемой Docker
+платформы, включая `linux/amd64` и `linux/arm64`:
+
+```bash
+docker build --file Dockerfile.api --tag tflex-drawing-service-api:local .
+docker volume create tflex-drawing-storage
+docker run --detach \
+  --name tflex-drawing-api \
+  --publish 127.0.0.1:5011:8080 \
+  --mount type=volume,source=tflex-drawing-storage,target=/workspace/storage \
+  --env ASPNETCORE_ENVIRONMENT=Development \
+  --env DOTNET_ENVIRONMENT=Development \
+  --env Security__RequireAuthentication=false \
+  tflex-drawing-service-api:local
+```
+
+После запуска интерфейс доступен на `http://127.0.0.1:5011`, а liveness — на
+`http://127.0.0.1:5011/api/health/live`. Отключение аутентификации в этой
+команде предназначено только для локальной loopback-разработки. В production
+необходимо передать конфигурацию пользователей и оставить
+`Security:RequireAuthentication=true`.
+
+Каталог шаблонов включен в образ. Для сохранения шаблонов, импортированных через
+административный интерфейс, смонтируйте отдельный постоянный каталог в
+`/workspace/templates`.
+
 ## Production-развертывание
 
-Рекомендуемый вариант на Windows Server 2022 запускает API в
-Windows-контейнере, а Worker/Runner/T-FLEX оставляет Windows-службой. Полная
+Рекомендуемый вариант на Windows Server 2022 запускает API из
+`Dockerfile.api.windows`, а Worker/Runner/T-FLEX оставляет Windows-службой. Linux
+образ `Dockerfile.api` используется на macOS/Linux и не меняет серверную схему. Полная
 установка, обновление, проверка candidate-контейнера и rollback выполняются
 скриптом `scripts/Deploy-TFlexHybridServer2022.ps1`.
 

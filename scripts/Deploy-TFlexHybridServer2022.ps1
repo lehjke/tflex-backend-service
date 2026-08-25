@@ -608,9 +608,9 @@ try {
     $serviceDeploymentSucceeded = $true
 
     $effectiveSourceRoot = Get-EffectiveSourceRoot
-    $dockerfilePath = Join-Path $effectiveSourceRoot "Dockerfile.api"
+    $dockerfilePath = Join-Path $effectiveSourceRoot "Dockerfile.api.windows"
     if (-not (Test-Path -LiteralPath $dockerfilePath -PathType Leaf)) {
-        throw "Dockerfile.api was not found under SourceRoot '$effectiveSourceRoot'."
+        throw "Dockerfile.api.windows was not found under SourceRoot '$effectiveSourceRoot'."
     }
     Assert-CleanSource $effectiveSourceRoot
 
