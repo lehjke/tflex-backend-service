@@ -589,6 +589,120 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
         return specification;
     }
 
+    public async Task<PricingSpecification?> UpdatePricingSpecificationAsync(
+        string specificationId,
+        string? ownerUserName,
+        string? projectConfigurationId,
+        string name,
+        PricingCalculationRequest request,
+        PricingCalculationResult calculation,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await GetPricingSpecificationAsync(
+            specificationId,
+            ownerUserName,
+            cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var normalizedConfigurationId = string.IsNullOrWhiteSpace(projectConfigurationId)
+            ? null
+            : projectConfigurationId.Trim();
+        if (normalizedConfigurationId is not null)
+        {
+            var configuration = await GetConfigurationAsync(
+                normalizedConfigurationId,
+                ownerUserName,
+                cancellationToken);
+            if (configuration is null
+                || !string.Equals(configuration.ProjectId, existing.ProjectId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        var updated = existing with
+        {
+            ProjectConfigurationId = normalizedConfigurationId,
+            Name = NormalizeName(name, "Спецификация"),
+            Supplier = calculation.Supplier,
+            Series = calculation.Series,
+            Status = calculation.Status,
+            TotalCny = calculation.TotalCny,
+            TargetCurrency = calculation.TargetCurrency,
+            TotalConverted = calculation.TotalConverted,
+            RequestJson = JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            CalculationJson = JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE PricingSpecifications
+            SET ProjectConfigurationId = $projectConfigurationId,
+                Name = $name,
+                Supplier = $supplier,
+                Series = $series,
+                Status = $status,
+                TotalCny = $totalCny,
+                TargetCurrency = $targetCurrency,
+                TotalConverted = $totalConverted,
+                RequestJson = $requestJson,
+                CalculationJson = $calculationJson,
+                UpdatedAt = $updatedAt
+            WHERE Id = $id
+              AND ProjectId IN (
+                SELECT Id FROM UserProjects WHERE $ownerUserName IS NULL OR OwnerUserName = $ownerUserName
+              );
+            """;
+        command.Parameters.AddWithValue("$id", updated.Id);
+        command.Parameters.AddWithValue("$projectConfigurationId", (object?)updated.ProjectConfigurationId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$name", updated.Name);
+        command.Parameters.AddWithValue("$supplier", updated.Supplier);
+        command.Parameters.AddWithValue("$series", updated.Series);
+        command.Parameters.AddWithValue("$status", updated.Status);
+        command.Parameters.AddWithValue("$totalCny", updated.TotalCny);
+        command.Parameters.AddWithValue("$targetCurrency", updated.TargetCurrency);
+        command.Parameters.AddWithValue("$totalConverted", updated.TotalConverted);
+        command.Parameters.AddWithValue("$requestJson", updated.RequestJson);
+        command.Parameters.AddWithValue("$calculationJson", updated.CalculationJson);
+        command.Parameters.AddWithValue("$updatedAt", FormatDate(updated.UpdatedAt));
+        AddNullableUserName(command, ownerUserName);
+
+        try
+        {
+            return await command.ExecuteNonQueryAsync(cancellationToken) > 0 ? updated : null;
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return null;
+        }
+    }
+
+    public async Task<bool> DeletePricingSpecificationAsync(
+        string specificationId,
+        string? ownerUserName,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM PricingSpecifications
+            WHERE Id = $id
+              AND ProjectId IN (
+                SELECT Id FROM UserProjects WHERE $ownerUserName IS NULL OR OwnerUserName = $ownerUserName
+              );
+            """;
+        command.Parameters.AddWithValue("$id", specificationId);
+        AddNullableUserName(command, ownerUserName);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private SqliteConnection CreateConnection()
     {
         var connectionString = new SqliteConnectionStringBuilder

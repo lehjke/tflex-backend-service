@@ -109,28 +109,28 @@ test("manual intermediate levels are preserved while the top remains derived", (
   });
 });
 
-test("main=true makes lobby radios read-only and main=false enables explicit selection", () => {
+test("main=false keeps first floor automatic and main=true enables explicit lobby selection", () => {
   assert.deepEqual(getMainSelectionMode(true), {
-    automatic: true,
-    manual: false,
-    radiosReadOnly: true
+    automatic: false,
+    manual: true,
+    radiosReadOnly: false
   });
   assert.equal(resolveMainFloor({
     mainValue: true,
     selectedMainFloor: 3,
     lobbyStopIndex: 1,
     stops: 3
-  }), 1);
+  }), 3);
 
   assert.deepEqual(getMainSelectionMode(false), {
-    automatic: false,
-    manual: true,
-    radiosReadOnly: false
+    automatic: true,
+    manual: false,
+    radiosReadOnly: true
   });
   assert.equal(resolveMainFloor({
     mainValue: false,
     selectedMainFloor: 3,
     lobbyStopIndex: 1,
     stops: 3
-  }), 3);
+  }), 1);
 });

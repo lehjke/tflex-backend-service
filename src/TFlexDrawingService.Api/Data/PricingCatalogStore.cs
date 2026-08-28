@@ -9,6 +9,12 @@ namespace TFlexDrawingService.Api.Data;
 
 public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpClientFactory httpClientFactory)
 {
+    private static readonly HashSet<string> ExcludedSmecSeries = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "LEHY-H",
+        "LEHY-M-II"
+    };
+
     private readonly Lazy<PricingCatalog> _catalog = new(() =>
     {
         var path = Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json");
@@ -33,7 +39,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             catalog.Currency,
             catalog.GeneratedAt,
             catalog.Xizi.Series,
-            catalog.Smec.Series,
+            catalog.Smec.Series.Where(series => !ExcludedSmecSeries.Contains(series)).ToArray(),
             catalog.Xizi.BasePrices.Select(item => item.Capacity).Distinct().Order().ToArray(),
             catalog.Xizi.BasePrices.Select(item => item.Speed).Distinct().Order().ToArray(),
             catalog.Xizi.Doors.Select(item => item.Width).Distinct().Order().ToArray(),
@@ -51,7 +57,10 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             catalog.Smec.VisualItems.Where(item => HasText(item.Code)).ToArray(),
             catalog.Smec.Power,
             catalog.Smec.SpecFields,
-            catalog.Smec.ChoiceGroups,
+            catalog.Smec.ChoiceGroups.Select(group => group with
+            {
+                Options = group.Options.Where(option => !ExcludedSmecSeries.Contains(option)).ToArray()
+            }).ToArray(),
             catalog.Smec.FloorPatterns);
     }
 
@@ -162,7 +171,28 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             specification.RequestJson,
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
-        return TkpDocxBuilder.Build(specification, project, request, calculation);
+        var templatePath = Path.Combine(
+            environment.ContentRootPath,
+            "Data",
+            "Templates",
+            string.Equals(specification.Supplier, "XIZI", StringComparison.OrdinalIgnoreCase)
+                ? "TKP-XIZI.docx"
+                : "TKP-SMEC.docx");
+        var assetsRoot = Path.Combine(environment.ContentRootPath, "wwwroot", "assets");
+        return TkpDocxBuilder.Build(templatePath, assetsRoot, Catalog, specification, project, request, calculation);
+    }
+
+    public byte[] BuildPricingRequestXlsx(PricingSpecification specification, UserProject? project)
+    {
+        var request = JsonSerializer.Deserialize<PricingCalculationRequest>(
+            specification.RequestJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var templatePath = Path.Combine(
+            environment.ContentRootPath,
+            "Data",
+            "Templates",
+            "shablon_zaprosa.xlsx");
+        return PricingRequestXlsxBuilder.Build(templatePath, specification, project, request);
     }
 
     private void CalculateXizi(
@@ -206,7 +236,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 manufacturer,
                 "Car door",
                 "-",
-                "None",
+                fireRating,
                 carDoorFinish,
                 "Дверь кабины",
                 1,
@@ -223,7 +253,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                     manufacturer,
                     "2nd door",
                     "-",
-                    "None",
+                    fireRating,
                     carDoorFinish,
                     "Вторая дверь проходной кабины",
                     1,
@@ -280,14 +310,17 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         AddXiziCabinFinish(catalog, request, lines, warnings, blockers);
         AddXiziPanels(catalog, request, doorCount, lines, warnings, blockers);
         AddXiziLocalRequirements(catalog, request, lines, warnings, blockers);
-        AddXiziOption(catalog, request, "40HQ", lines, warnings, blockers);
+        var defaultContainerCode = catalog.Options.FirstOrDefault(item =>
+            EqualsText(item.Code, "CONTAINER_40HQ") || EqualsText(item.Code, "40HQ"))?.Code;
+        if (HasText(defaultContainerCode)
+            && !(request.Options ?? []).Any(option => EqualsText(option, defaultContainerCode)))
+        {
+            AddXiziOption(catalog, request, defaultContainerCode!, lines, warnings, blockers);
+        }
 
         foreach (var option in request.Options ?? [])
         {
-            if (!EqualsText(option, "40HQ"))
-            {
-                AddXiziOption(catalog, request, option, lines, warnings, blockers);
-            }
+            AddXiziOption(catalog, request, option, lines, warnings, blockers);
         }
 
         var airConditioner = GetSpecificationField(request, "AC");
@@ -384,37 +417,37 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var speed = request.Speed;
         decimal surcharge = 0;
 
-        if (capacity > 1000 && SameNumber(speed, 1m) && pit < 1400 && overhead < 4150)
+        if (capacity is 1350 or 1600 && (SameNumber(speed, 2m) || SameNumber(speed, 2.5m)))
         {
-            surcharge = 6000;
-        }
-        else if (capacity > 1000 && SameNumber(speed, 1.75m) && pit < 1450 && overhead < 4500)
-        {
-            surcharge = 6000;
-        }
-        else if (capacity <= 1000 && SameNumber(speed, 1m) && pit < 1400 && overhead < 4150)
-        {
-            surcharge = 5000;
-        }
-        else if (capacity <= 1000 && SameNumber(speed, 1.75m) && pit < 1450 && overhead < 4500)
-        {
-            surcharge = 5000;
-        }
-        else if (capacity <= 1000 && SameNumber(speed, 2m))
-        {
-            surcharge = 5000;
-        }
-        else if (capacity <= 1000 && SameNumber(speed, 2.5m))
-        {
-            surcharge = 6000;
+            surcharge = 10000;
         }
         else if (capacity is 1150 or 1250 or 1275 && (SameNumber(speed, 2m) || SameNumber(speed, 2.5m)))
         {
             surcharge = 8000;
         }
-        else if (capacity is 1350 or 1600 && (SameNumber(speed, 2m) || SameNumber(speed, 2.5m)))
+        else if (capacity < 1000 && SameNumber(speed, 1m) && (pit < 1400 || overhead < 4150))
         {
-            surcharge = 10000;
+            surcharge = 6000;
+        }
+        else if (capacity < 1000 && SameNumber(speed, 1.75m) && (pit < 1450 || overhead < 4500))
+        {
+            surcharge = 6000;
+        }
+        else if (capacity >= 1000 && SameNumber(speed, 1m) && (pit < 1400 || overhead < 4150))
+        {
+            surcharge = 5000;
+        }
+        else if (capacity >= 1000 && SameNumber(speed, 1.75m) && (pit < 1450 || overhead < 4500))
+        {
+            surcharge = 5000;
+        }
+        else if (capacity >= 1000 && SameNumber(speed, 2m))
+        {
+            surcharge = 5000;
+        }
+        else if (capacity >= 1000 && SameNumber(speed, 2.5m))
+        {
+            surcharge = 6000;
         }
 
         if (surcharge > 0)
@@ -449,11 +482,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> warnings,
         List<string> blockers)
     {
-        var multiplier = request.CapacityKg >= 1600 ? 1.44m : request.CapacityKg > 1050 ? 1.2m : 1m;
+        var multiplier = request.CapacityKg >= 1600 ? 1.5m : request.CapacityKg > 1050 ? 1.2m : 1m;
         var carHeight = GetSpecificationNumber(request, "Car Height");
         var design = GetSpecificationField(request, "Cabin Design");
+        var isBaseDesign = EqualsText(design, "U-CR126-BASE");
 
-        if (EqualsText(design, "U-CR126"))
+        if (isBaseDesign)
         {
             AddXiziDecorationLine(
                 catalog,
@@ -482,31 +516,34 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 blockers);
         }
 
-        AddXiziDecorationLine(
-            catalog,
-            "Ceiling",
-            GetSpecificationField(request, "Ceiling"),
-            "Потолок",
-            multiplier,
-            carHeight,
-            false,
-            lines,
-            warnings,
-            blockers);
-        AddXiziDecorationLine(
-            catalog,
-            "Floor",
-            GetSpecificationField(request, "Floor"),
-            "Пол",
-            multiplier,
-            carHeight,
-            false,
-            lines,
-            warnings,
-            blockers);
+        if (isBaseDesign)
+        {
+            AddXiziDecorationLine(
+                catalog,
+                "Ceiling",
+                GetSpecificationField(request, "Ceiling"),
+                "Потолок",
+                multiplier,
+                carHeight,
+                false,
+                lines,
+                warnings,
+                blockers);
+            AddXiziDecorationLine(
+                catalog,
+                "Floor",
+                GetSpecificationField(request, "Floor"),
+                "Пол",
+                multiplier,
+                carHeight,
+                false,
+                lines,
+                warnings,
+                blockers);
+        }
 
         var mirrorWall = GetSpecificationField(request, "Mirror Wall");
-        if (HasText(mirrorWall) && !ContainsAny(mirrorWall!, "Нет", "None"))
+        if (isBaseDesign && HasText(mirrorWall) && !ContainsAny(mirrorWall!, "Нет", "None", "NO"))
         {
             AddXiziDecorationLine(
                 catalog,
@@ -523,7 +560,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
         var handrail = GetSpecificationField(request, "Handrail");
         var handrailPosition = GetSpecificationField(request, "Handrail Position");
-        if (HasText(handrail)
+        if (isBaseDesign
+            && HasText(handrail)
             && HasText(handrailPosition)
             && !ContainsAny(handrailPosition!, "Нет", "None"))
         {
@@ -585,7 +623,14 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             return;
         }
 
-        var amount = price * multiplier;
+        var resolvedMultiplier = category == "Car design"
+            ? multiplier == 1.5m && entry.Multiplier1600Plus is not null
+                ? entry.Multiplier1600Plus.Value
+                : multiplier == 1.2m && entry.Multiplier10501600 is not null
+                    ? entry.Multiplier10501600.Value
+                    : multiplier
+            : multiplier;
+        var amount = price * resolvedMultiplier;
         if (includeHeight
             && carHeight > 0
             && TryReadDecimal(entry.Height, out var standardHeight)
@@ -724,6 +769,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             return;
         }
 
+        if (TryCalculateXiziFormulaOption(request, entry.Code, out var formulaPrice))
+        {
+            AddReadyLine(lines, $"option-{NormalizeCode(option)}", $"Опция {option}", formulaPrice, formulaPrice);
+            return;
+        }
+
         if (!TryReadDecimal(entry.Price, out var basePrice))
         {
             AddCatalogValue(lines, warnings, blockers, "option", $"Опция {option}", entry.Price, true);
@@ -759,6 +810,35 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         }
 
         AddReadyLine(lines, $"option-{normalized}", $"Опция {option}", amount, amount);
+    }
+
+    private static bool TryCalculateXiziFormulaOption(
+        PricingCalculationRequest request,
+        string code,
+        out decimal amount)
+    {
+        var normalized = NormalizeCode(code);
+        var travel = GetSpecificationNumber(request, "Travel Height") / 1000m;
+        var overhead = GetSpecificationNumber(request, "Overhead") / 1000m;
+        var pit = GetSpecificationNumber(request, "Pit") / 1000m;
+        var buildingHeight = travel + overhead + pit;
+        amount = normalized switch
+        {
+            "CWTSIDE" or "CWTSAFETY" => 4500m + buildingHeight * 4m,
+            "COP2" => 1508m + (request.Stops - 10) * 45m,
+            "CCTV" => 14m * (travel + overhead + 16m),
+            "TC" => 21m * (travel + overhead + 16m),
+            "EARTHQUAKEEMERGENCYRETURN" => 3500m + 300m * (buildingHeight / 1.5m - buildingHeight / 2.5m),
+            "ACCOLDSMALL" when request.CapacityKg <= 1350 => 3654m + 11m * (travel + overhead + 12m),
+            "ACCOLDLARGE" when request.CapacityKg > 1350 => 4583m + 11m * (travel + overhead + 12m),
+            "ACHEATSMALL" when request.CapacityKg <= 1350 => 3983m + 11m * (travel + overhead + 12m),
+            "ACHEATLARGE" when request.CapacityKg > 1350 => 4925m + 11m * (travel + overhead + 12m),
+            "HAD" => 600m + 101m * request.DoorCount,
+            "RUSPITINSPECTIONBOX" => 1050m + 24m * (travel + overhead + 16m),
+            "RUSHOISTWAYLIGHTINGBY" => (buildingHeight / 4m - buildingHeight / 7m) * 15m,
+            _ => 0m
+        };
+        return amount != 0m || normalized is "COP2";
     }
 
     private static void AddXiziAirConditioner(
@@ -833,17 +913,17 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
     {
         if (ContainsAny(value ?? "", "GOLD"))
         {
-            return "AISI304 GOLD HSS";
+            return "ti-gold";
         }
         if (ContainsAny(value ?? "", "AISI304"))
         {
-            return "AISI304";
+            return "aisi-304";
         }
         if (ContainsAny(value ?? "", "AISI443", "Нерж"))
         {
-            return "AISI443";
+            return "aisi-443";
         }
-        return "Painted Steel";
+        return "painted-steel";
     }
 
     private static bool IsXiziThroughCar(string? value)
@@ -859,6 +939,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         out ContainerInfo? container)
     {
         var catalog = Catalog.Smec;
+        if (ExcludedSmecSeries.Contains(request.Series))
+        {
+            blockers.Add($"Модель {request.Series} исключена из расчета цены.");
+            container = null;
+            return;
+        }
         var speed = SameNumber(request.Speed, 1.6m) ? 1.75m : request.Speed;
         var baseEntry = catalog.BasePrices.FirstOrDefault(item =>
             SeriesMatches(item.Series, request.Series)
@@ -1925,7 +2011,12 @@ public sealed record PriceEntry(
     string? Description = null,
     bool? IsStandard = null,
     string? ImageUrl = null,
-    IReadOnlyList<JsonElement?>? Prices = null);
+    IReadOnlyList<JsonElement?>? Prices = null,
+    decimal? Multiplier10501600 = null,
+    decimal? Multiplier1600Plus = null,
+    string? Type = null,
+    string? Formula = null,
+    bool? ShowInKp = null);
 
 public sealed record SmecCarDesignEntry(
     string Code,

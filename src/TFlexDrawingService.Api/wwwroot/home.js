@@ -1,4 +1,4 @@
-import { t } from "./i18n.js?v=20260806-design-fixes-1";
+import { t } from "./i18n.js?v=20260826-design-fixes-1";
 
 const state = {
   currentUser: null

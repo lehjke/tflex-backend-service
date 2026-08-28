@@ -1243,6 +1243,99 @@ var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pr
 });
 RequirePolicy(savePricingSpecificationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
+var updatePricingSpecificationEndpoint = app.MapPut("/api/pricing-specifications/{specificationId}", async (
+    string specificationId,
+    PricingSpecificationSaveRequest? request,
+    ProjectStore projects,
+    PricingCatalogStore pricing,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var ownerScope = GetProjectOwnerScope(context.User, securityOptions);
+    var existing = await projects.GetPricingSpecificationAsync(
+        specificationId,
+        ownerScope,
+        cancellationToken);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    var validationErrors = ValidatePricingRequest(request?.Request);
+    if (validationErrors.Count > 0)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = validationErrors.ToArray()
+        });
+    }
+
+    var pricingRequest = request!.Request!;
+    if (!string.IsNullOrWhiteSpace(pricingRequest.ProjectId)
+        && !string.Equals(pricingRequest.ProjectId, existing.ProjectId, StringComparison.Ordinal))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["projectId"] = ["Pricing specification cannot be moved to another project."]
+        });
+    }
+
+    if (!string.IsNullOrWhiteSpace(pricingRequest.ProjectConfigurationId))
+    {
+        var projectConfiguration = await projects.GetConfigurationAsync(
+            pricingRequest.ProjectConfigurationId,
+            ownerScope,
+            cancellationToken);
+        if (projectConfiguration is null
+            || !string.Equals(projectConfiguration.ProjectId, existing.ProjectId, StringComparison.Ordinal))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["projectConfigurationId"] = ["Project configuration was not found in the target project."]
+            });
+        }
+    }
+
+    var calculation = await pricing.CalculateAsync(pricingRequest, cancellationToken);
+    if (calculation.Status == "blocked")
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = calculation.Blockers.ToArray()
+        });
+    }
+
+    var name = string.IsNullOrWhiteSpace(request.Name)
+        ? pricingRequest.Name ?? existing.Name
+        : request.Name;
+    var updated = await projects.UpdatePricingSpecificationAsync(
+        specificationId,
+        ownerScope,
+        pricingRequest.ProjectConfigurationId,
+        name,
+        pricingRequest,
+        calculation,
+        cancellationToken);
+
+    return updated is null ? Results.NotFound() : Results.Ok(ToPricingSpecificationDto(updated));
+});
+RequirePolicy(updatePricingSpecificationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
+
+var deletePricingSpecificationEndpoint = app.MapDelete("/api/pricing-specifications/{specificationId}", async (
+    string specificationId,
+    ProjectStore projects,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    return await projects.DeletePricingSpecificationAsync(
+        specificationId,
+        GetProjectOwnerScope(context.User, securityOptions),
+        cancellationToken)
+        ? Results.NoContent()
+        : Results.NotFound();
+});
+RequirePolicy(deletePricingSpecificationEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
+
 var pricingSpecificationEndpoint = app.MapGet("/api/pricing-specifications/{specificationId}", async (
     string specificationId,
     ProjectStore projects,
@@ -1286,6 +1379,36 @@ var pricingTkpEndpoint = app.MapGet("/api/pricing-specifications/{specificationI
         fileName);
 });
 RequirePolicy(pricingTkpEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var pricingRequestXlsxEndpoint = app.MapGet("/api/pricing-specifications/{specificationId}/request-xlsx", async (
+    string specificationId,
+    ProjectStore projects,
+    PricingCatalogStore pricing,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var specification = await projects.GetPricingSpecificationAsync(
+        specificationId,
+        GetProjectOwnerScope(context.User, securityOptions),
+        cancellationToken);
+    if (specification is null)
+    {
+        return Results.NotFound();
+    }
+
+    var project = await projects.GetProjectAsync(
+        specification.ProjectId,
+        GetProjectOwnerScope(context.User, securityOptions),
+        cancellationToken);
+    var bytes = pricing.BuildPricingRequestXlsx(specification, project);
+    var fileName = $"{SanitizeFileName(specification.Name)}-request.xlsx";
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.File(
+        bytes,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        fileName);
+});
+RequirePolicy(pricingRequestXlsxEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 app.Map("/api/{**path}", () => Results.Problem(
     statusCode: StatusCodes.Status404NotFound,

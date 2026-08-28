@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+
+# Runtime-only image for environments that publish the application separately,
+# for example with a mounted local NuGet package cache.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+ARG APP_UID=1654
+
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /workspace/storage /workspace/templates \
+    && chown -R "$APP_UID:$APP_UID" /workspace
+
+WORKDIR /app
+COPY . .
+COPY --from=templates --chown=$APP_UID:$APP_UID . /workspace/templates/
+
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    DOTNET_ENVIRONMENT=Production \
+    ASPNETCORE_URLS=http://+:8080 \
+    Paths__ProjectRoot=/workspace
+
+EXPOSE 8080
+VOLUME ["/workspace/storage"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl --fail --silent --show-error http://127.0.0.1:8080/api/health/live || exit 1
+
+USER $APP_UID
+ENTRYPOINT ["dotnet", "TFlexDrawingService.Api.dll"]

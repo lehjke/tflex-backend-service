@@ -17,8 +17,8 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   const styles = readWebSource("styles.css");
 
   assert.match(html, /<article class="home-template-card"/u);
-  assert.match(html, /<a class="home-template-card__button" href="\/drawings"/u);
-  assert.match(html, /<a class="home-template-card__button" href="\/pricing"/u);
+  assert.match(html, /<a class="home-template-card__button" href="\/drawings">Создать чертёж<\/a>/u);
+  assert.match(html, /<a class="home-template-card__button" href="\/pricing">Рассчитать цену<\/a>/u);
   assert.doesNotMatch(source, /addEventListener\("pointerdown"/u);
   assert.match(source, /function setTemplateCardState\(card, isOpen\)/u);
   assert.match(source, /function openTemplateCard\(card\)/u);
@@ -31,12 +31,12 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   assert.match(styles, /\.home-template-card \{[\s\S]*?height: 240px;[\s\S]*?transition: height 0\.34s/u);
   assert.match(styles, /\.home-template-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
   assert.match(styles, /\.home-template-card__hero \{[\s\S]*?top: var\(--home-card-padding\);[\s\S]*?left: var\(--home-card-padding\);[\s\S]*?border-radius: var\(--home-card-inner-radius\);/u);
-  assert.match(styles, /\.skeleton-home-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
   assert.match(styles, /\.home-template-card\.is-open \{\s*height: 459px;/u);
   assert.match(styles, /\.home-template-card__description \{[\s\S]*?opacity: 0;[\s\S]*?transition: opacity/u);
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__description \{\s*opacity: 1;/u);
   assert.match(styles, /@media \(max-width: 620px\) \{[\s\S]*?\.home-template-card\.is-open \{\s*height: 500px;/u);
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__footer \{[\s\S]*?flex-direction: column;/u);
+  assert.match(styles, /\.skeleton-home-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
 });
 
 test("major surfaces share a 16px exterior and close nesting remains concentric", () => {
@@ -53,18 +53,21 @@ test("major surfaces share a 16px exterior and close nesting remains concentric"
   assert.match(styles, /\.smec-design-card \{[\s\S]*?--smec-card-padding: 10px;[\s\S]*?border-radius: calc\(var\(--smec-card-padding\) \+ var\(--smec-card-inner-radius\)\);/u);
   assert.match(styles, /\.visual-select \{[\s\S]*?--visual-menu-option-radius: calc\(var\(--surface-radius\) - var\(--visual-menu-padding\)\);/u);
   assert.match(styles, /\.visual-select__menu \{[\s\S]*?border-radius: var\(--surface-radius\);/u);
-  assert.match(styles, /\.pricing-result \{[\s\S]*?border-radius: 0 var\(--surface-radius\) var\(--surface-radius\) 0;/u);
+  assert.match(styles, /\.pricing-result \{[\s\S]*?border: 1px solid var\(--line\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
   assert.match(styles, /\.shaft-preview \{[\s\S]*?--shaft-preview-padding: 8px;[\s\S]*?border-radius: calc\(var\(--shaft-preview-padding\) \+ var\(--shaft-preview-inner-radius\)\);/u);
 });
 
-test("pricing uses progressive disclosure and a lazy keyboard-operated visual listbox", () => {
+test("pricing keeps all categories visible and uses a lazy keyboard-operated visual listbox", () => {
   const html = readWebSource("pricing.html");
   const source = readWebSource("pricing.js");
-  const disclosures = html.match(/<details class="pricing-section/gu) || [];
-  const initiallyOpen = html.match(/<details class="pricing-section[^>]* open>/gu) || [];
+  const sections = html.match(/<section class="pricing-section/gu) || [];
 
-  assert.equal(disclosures.length, 12);
-  assert.equal(initiallyOpen.length, 12);
+  assert.equal(sections.length, 12);
+  assert.doesNotMatch(html, /<details class="pricing-section/gu);
+  assert.doesNotMatch(html, /<summary class="panel__header/gu);
+  assert.match(html, /class="pricing-live-note">Расчёт обновляется автоматически/u);
+  assert.match(html, /class="secondary pricing-recalculate" type="submit">Обновить расчёт/u);
+  assert.doesNotMatch(html, /class="primary" type="submit">Рассчитать/u);
   assert.match(source, /select\.tabIndex = -1/u);
   assert.match(source, /select\.setAttribute\("aria-hidden", "true"\)/u);
   assert.match(source, /menu\.replaceChildren\(\)/u);
@@ -81,6 +84,16 @@ test("pricing uses progressive disclosure and a lazy keyboard-operated visual li
   assert.match(html, /class="pricing-mobile-summary" aria-hidden="true"/u);
   assert.match(html, /id="pricingWarnings"[^>]*role="status"[^>]*aria-live="polite"/u);
   assert.match(source, /pricingWarnings\.setAttribute\("role", isError \? "alert" : "status"\)/u);
+  assert.match(source, /width="44" height="40" loading="lazy" decoding="async"/u);
+  assert.match(source, /width="76" height="72" loading="lazy" decoding="async"/u);
+  assert.match(source, /width="34" height="34" loading="lazy" decoding="async"/u);
+  assert.doesNotMatch(source, /aria-hidden="true">✓/u);
+  assert.match(source, /async function loadRequestedPricingSpecification\(\)/u);
+  assert.match(source, /state\.editingSpecificationId = specification\.id/u);
+  assert.match(source, /method: editingId \? "PUT" : "POST"/u);
+  assert.match(source, /Сохранить изменения/u);
+  assert.match(source, /data-exclusive-group="xizi-iled"/u);
+  assert.match(source, /\^ILED\(\?:\\s\|_\)\/i/u);
 });
 
 test("editor exposes labels, preserves text selection, announces collisions, and can retry boot", () => {
@@ -89,7 +102,13 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260807-show-all-1/u);
+  assert.match(html, /\/app\.js\?v=20260827-lobby-units-1/u);
+  assert.doesNotMatch(html, /id="createTopButton"/u);
+  assert.ok(
+    html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
+    "generation card must be rendered before the shaft plan"
+  );
+  assert.match(html, /class="panel panel--status"[\s\S]*?id="submitButton"[^>]*form="jobForm"/u);
   assert.match(source, /document\.createElement\("label"\)/u);
   assert.match(source, /input\.setSelectionRange\(/u);
   assert.match(source, /compositionstart/u);
@@ -98,6 +117,13 @@ test("editor exposes labels, preserves text selection, announces collisions, and
   assert.match(html, /id="validationPanel"[^>]*role="status"[^>]*aria-live="polite"/u);
   assert.match(source, /function updateValidationPanel\(issues = \[\], \{ announceErrors = false \} = \{\}\)/u);
   assert.match(source, /updateValidationPanel\(validationIssues, \{ announceErrors: true \}\)/u);
+  assert.match(source, /className = "field-error-message"/u);
+  assert.match(source, /message\.dataset\.validationInline = "true"/u);
+  assert.match(source, /link\.href = `#\$\{inputId\}`/u);
+  assert.match(source, /window\.confirm\(t\("Сбросить все параметры/u);
+  assert.match(source, /function setJobSubmitDisabled\(disabled\)/u);
+  assert.match(source, /parameterTabs\.scrollBy/u);
+  assert.match(source, /new ResizeObserver\(updateParameterTabScrollControls\)/u);
   assert.match(html, /id="shaftCollisionStatus"[^>]*role="alert"/u);
   assert.match(source, /\.shaft-preview-svg__door--collision/u);
   assert.match(source, /previewImage\?\.setAttribute\("aria-describedby", "shaftCollisionStatus"\)/u);
@@ -136,6 +162,11 @@ test("account protects destructive and duplicate generation actions and recovers
   const source = readWebSource("account.js");
 
   assert.match(source, /async function deleteConfiguration[\s\S]*?if \(!confirm\(confirmation\)\)/u);
+  assert.match(source, /async function deletePricingSpecification[\s\S]*?if \(!confirm\(confirmation\)\)/u);
+  assert.match(source, /apiFetch\(`\/api\/projects\/\$\{project\.id\}\/pricing-specifications`\)/u);
+  assert.match(source, /href="\/pricing\?specificationId=\$\{encodeURIComponent\(specification\.id\)\}">Редактировать/u);
+  assert.match(source, />Скачать ТКП<\/a>/u);
+  assert.match(source, /getPricingAmountLabel\(specification\)/u);
   assert.match(source, /activeGenerationActions: new Map\(\)/u);
   assert.match(source, /state\.activeGenerationActions\.has\(generationKey\)/u);
   assert.match(source, /finally \{[\s\S]*?state\.activeGenerationActions\.delete\(generationKey\)/u);
@@ -154,6 +185,9 @@ test("account protects destructive and duplicate generation actions and recovers
   assert.match(source, /const authenticated = await loadCurrentUser\(\);\s*errorContext = "load"/u);
   assert.match(source, /showPageLoadError\(\{ context: errorContext \}\)/u);
   assert.match(source, /response\.status === 401 \|\| response\.status === 403/u);
+  assert.match(html, /id="toggleProjectCreateButton"[\s\S]*?aria-controls="accountCreateForm"[\s\S]*?aria-expanded="false"/u);
+  assert.match(html, /id="accountCreateForm"[^>]*hidden/u);
+  assert.doesNotMatch(source, /details\.open = configurations\.length/u);
 });
 
 test("responsive and user-preference contracts cover the audited breakpoints", () => {
@@ -163,9 +197,10 @@ test("responsive and user-preference contracts cover the audited breakpoints", (
   assert.match(source, /@media \(max-width: 1280px\)[\s\S]*?\.pricing-grid \{\s*grid-template-columns: minmax\(0, 1fr\)/u);
   assert.match(source, /@media \(max-width: 1200px\)[\s\S]*?\.account-columns \{\s*grid-template-columns: minmax\(0, 1fr\)/u);
   assert.match(source, /\.pricing-mobile-summary \{[\s\S]*?top: 96px/u);
-  assert.match(source, /\.pricing-section > summary\.panel__header \{\s*flex-direction: row/u);
+  assert.match(source, /\.pricing-section > \.panel__header \{\s*flex-direction: row/u);
   assert.match(source, /\.pricing-section \{[\s\S]*?background: #ffffff;/u);
-  assert.match(source, /\.pricing-result \{[\s\S]*?border-radius: 0 var\(--surface-radius\) var\(--surface-radius\) 0;/u);
+  assert.match(source, /\.pricing-result \{[\s\S]*?border: 1px solid var\(--line\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
+  assert.doesNotMatch(source, /(?:^|\n)\.pricing-result \{[^}]*border-left: 0;/u);
   assert.doesNotMatch(source, /\.smec-excel-section \{[\s\S]*?background:/u);
   assert.match(source, /\.shaft-preview-svg__door--collision \{[\s\S]*?stroke: var\(--bad\)/u);
   assert.match(source, /@media \(prefers-contrast: more\)/u);
@@ -174,6 +209,11 @@ test("responsive and user-preference contracts cover the audited breakpoints", (
   assert.match(source, /\.intro p\.role-note:not\(\[hidden\]\)/u);
   assert.match(source, /input:focus,[\s\S]*?box-shadow: none;/u);
   assert.match(source, /#parametersForm input:not\(:disabled\),[\s\S]*?cursor: pointer;/u);
+  assert.match(source, /@media \(max-width: 900px\)[\s\S]*?\.topbar \{\s*display: none;/u);
+  assert.match(source, /@media \(max-width: 620px\)[\s\S]*?textarea \{\s*font-size: 16px;/u);
+  assert.match(source, /\.generation-actions \.primary \{\s*grid-column: 1 \/ -1;/u);
+  assert.doesNotMatch(source, /#submitButton:not\(\[hidden\]\) \{[\s\S]*?position: fixed;/u);
+  assert.match(shell, /const mobileSearchQuery = window\.matchMedia\("\(max-width: 900px\)"\)/u);
   assert.doesNotMatch(source, /outline: 3px solid var\(--focus\)/u);
   assert.doesNotMatch(source, /box-shadow: 0 0 0 3px rgb\(24 47 96/u);
   assert.match(shell, /workspace\.inert = true/u);
@@ -189,7 +229,7 @@ test("all frontend modules share one i18n instance", () => {
       .map(match => ({ fileName, version: match[1] })));
 
   assert.equal(imports.length, moduleNames.length);
-  assert.deepEqual([...new Set(imports.map(item => item.version))], ["20260806-design-fixes-1"]);
+  assert.deepEqual([...new Set(imports.map(item => item.version))], ["20260826-design-fixes-1"]);
 
   for (const fileName of ["app.js", "account.js"]) {
     assert.match(
@@ -203,13 +243,51 @@ test("all frontend modules share one i18n instance", () => {
   assert.match(i18n, /const lobbyLabel = value\.match\(\/\^Лобби/u);
 });
 
+test("SMEC drawing templates expose the same inline dimension units as XIZI templates", () => {
+  const catalog = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "templates/templates.json"), "utf8"));
+  const smecTemplateIds = new Set([
+    "lehy_l_pro_320_1050",
+    "lehy_l_pro_1050_2500",
+    "lehy_pro_side_cwt",
+    "lehy_pro_rear_cwt"
+  ]);
+  const millimeterFields = new Set([
+    "AA", "AA_1", "BB", "BB_1", "JJ", "HH",
+    "min_AH", "AH_1", "min_BH", "BH_1",
+    "min_OH", "OH_1", "min_PD", "PD_1"
+  ]);
+
+  for (const template of catalog.templates.filter(item => smecTemplateIds.has(item.id))) {
+    const byName = new Map(template.parameters.map(parameter => [parameter.name, parameter]));
+    assert.equal(byName.get("TR")?.unit, "м", `${template.id}: TR must be rendered in metres`);
+    for (const name of millimeterFields) {
+      assert.equal(byName.get(name)?.unit, "мм", `${template.id}: ${name} must be rendered in millimetres`);
+    }
+  }
+});
+
 test("all frontend pages share the current stylesheet cache key", () => {
   const pageNames = ["index.html", "drawings.html", "pricing.html", "account.html"];
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260825-panel-spacing-16-1/u,
+      /\/styles\.css\?v=20260827-asset-grouping-1/u,
       `${pageName} must load the current stylesheet`);
+  }
+});
+
+test("all pages expose skip navigation, stable logo dimensions, and current navigation state", () => {
+  const pageNames = ["index.html", "drawings.html", "pricing.html", "account.html"];
+  for (const pageName of pageNames) {
+    const html = readWebSource(pageName);
+    assert.match(html, /<a class="skip-link" href="#mainContent">Перейти к основному содержимому<\/a>/u);
+    assert.match(html, /<div id="mainContent" class="main-content-anchor" tabindex="-1"><\/div>/u);
+    assert.match(html, /class="brand__logo--ru"[^>]*width="300" height="114"/u);
+    assert.match(html, /class="brand__logo--en"[^>]*width="300" height="118"/u);
+  }
+
+  for (const pageName of ["drawings.html", "pricing.html", "account.html"]) {
+    assert.match(readWebSource(pageName), /class="is-active"[^>]*aria-current="page"/u);
   }
 });
 

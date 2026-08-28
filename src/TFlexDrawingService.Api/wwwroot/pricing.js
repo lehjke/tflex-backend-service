@@ -1,12 +1,20 @@
-import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+import {
+  evaluateDrawingConfigurationValidation,
+  resolveDrawingDoorCount,
+  resolveDrawingConfigurationValues,
+  toTravelHeightMillimeters
+} from "./drawing-configuration-values.js?v=20260827-door-count-1";
 
 const state = {
   currentUser: null,
   catalog: null,
+  templatesById: new Map(),
   projects: [],
   configurationsByProjectId: new Map(),
   pricingByProjectId: new Map(),
+  editingSpecificationId: null,
   lastCalculation: null,
   lastRequest: null,
   xiziInitialized: false
@@ -15,6 +23,22 @@ const sessionRequests = createSessionRequestGuard();
 
 const LIVE_CALCULATION_DELAY_MS = 450;
 const VISUAL_SELECT_TYPEAHEAD_TIMEOUT_MS = 700;
+const TEMPLATE_PRICING_RULE_FIELDS = Object.freeze({
+  r_AA: ["AA"],
+  r_BB: ["BB"],
+  r_JJ: ["JJ"],
+  r_JJ_AA: ["AA", "JJ"],
+  r_HH_HL: ["HH", "HL"],
+  r_AH: ["AH"],
+  r_BH_1: ["BH"],
+  r_BH_2: ["BH"],
+  r_AREA: ["AA", "BB"],
+  r_stops: ["stops"],
+  r_TR: ["TR"],
+  r_speed: ["speed"],
+  r_PD: ["PD"],
+  r_OH: ["OH"]
+});
 let liveCalculationTimer = 0;
 let calculationRequestId = 0;
 const visualSelectTypeahead = new WeakMap();
@@ -159,6 +183,7 @@ const e312Toggle = document.querySelector("#e312Toggle");
 const smecOtherRequirementsInput = document.querySelector("#smecOtherRequirementsInput");
 const savePricingButton = document.querySelector("#savePricingButton");
 const downloadTkpButton = document.querySelector("#downloadTkpButton");
+const downloadRequestXlsxButton = document.querySelector("#downloadRequestXlsxButton");
 const pricingStatus = document.querySelector("#pricingStatus");
 const totalCny = document.querySelector("#totalCny");
 const totalConverted = document.querySelector("#totalConverted");
@@ -179,6 +204,10 @@ function canSavePricing() {
   return roles.includes("Admin") || roles.includes("Operator");
 }
 
+function localized(ru, en) {
+  return getLanguage() === "en" ? en : ru;
+}
+
 function getRoleLabel() {
   const roles = state.currentUser?.roles || [];
   if (roles.includes("Admin")) return "Admin";
@@ -195,6 +224,7 @@ function updateAuthView() {
   if (pricingMain) pricingMain.hidden = !authenticated;
   if (savePricingButton) savePricingButton.hidden = !authenticated || !canSavePricing();
   if (downloadTkpButton) downloadTkpButton.hidden = !authenticated || !canSavePricing();
+  if (downloadRequestXlsxButton) downloadRequestXlsxButton.hidden = !authenticated || !canSavePricing();
 
   if (authenticated) {
     currentUserName.textContent = state.currentUser.displayName || state.currentUser.userName;
@@ -300,6 +330,7 @@ function clearPricingSessionState() {
   state.projects = [];
   state.configurationsByProjectId = new Map();
   state.pricingByProjectId = new Map();
+  state.editingSpecificationId = null;
   state.lastCalculation = null;
   state.lastRequest = null;
   state.xiziInitialized = false;
@@ -339,6 +370,7 @@ function clearPricingSessionState() {
   if (rateInfo) rateInfo.textContent = "";
   if (savePricingButton) savePricingButton.disabled = true;
   if (downloadTkpButton) downloadTkpButton.disabled = true;
+  if (downloadRequestXlsxButton) downloadRequestXlsxButton.disabled = true;
 
   syncAllVisualSelects();
   syncMobilePricingSummary();
@@ -360,7 +392,7 @@ function setupPricingSearch() {
 
   const applySearch = () => {
     const query = globalSearchInput.value.trim().toLocaleLowerCase();
-    const candidates = [...pricingForm.querySelectorAll(".field, .pricing-option, .pricing-section summary h2")];
+    const candidates = [...pricingForm.querySelectorAll(".field, .pricing-option, .pricing-section > .panel__header h2")];
     candidates.forEach(candidate => candidate.classList.remove("is-search-match"));
     matches = query
       ? candidates.filter(candidate =>
@@ -389,27 +421,16 @@ function setupPricingSearch() {
     openParentDisclosures(target);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
-    const summary = target.closest("summary");
-    const control = summary || (target.matches("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button")
+    const control = target.matches("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button")
       ? target
-      : target.querySelector("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button"));
+      : target.querySelector("input:not([aria-hidden='true']), select:not([aria-hidden='true']), textarea, button");
     control?.focus({ preventScroll: true });
   });
 
   window.addEventListener("tflex:languagechange", applySearch);
 }
 
-function openParentDisclosures(target) {
-  const disclosures = [];
-  let disclosure = target?.closest?.("details");
-  while (disclosure) {
-    disclosures.push(disclosure);
-    disclosure = disclosure.parentElement?.closest("details") || null;
-  }
-  disclosures.reverse().forEach(item => {
-    item.open = true;
-  });
-}
+function openParentDisclosures() {}
 
 function syncPricingAccessibleCopy() {
   const english = getLanguage() === "en";
@@ -468,7 +489,9 @@ function getSmecChoices(name, fallback = []) {
 }
 
 function getSmecModelOptions(eleSeries) {
-  return getSmecChoices(`Ele Type: ${eleSeries}`, getSmecChoices("Ele Type", state.catalog?.smecSeries || []));
+  const excluded = new Set(["lehy-h", "lehy-m-ii"]);
+  return getSmecChoices(`Ele Type: ${eleSeries}`, getSmecChoices("Ele Type", state.catalog?.smecSeries || []))
+    .filter(value => !excluded.has(String(value).trim().toLowerCase()));
 }
 
 function updateSmecModels(selectedValue = null) {
@@ -523,6 +546,7 @@ function getXiziChoices(name, fallback = []) {
 function mapXiziModelToSeries(model) {
   const normalized = String(model || "").toLowerCase();
   if (normalized.includes("g3")) return "G3";
+  if (normalized.includes("mrl-t") || normalized.includes("mrl t")) return "UN-Victor MRL(T)";
   if (normalized.includes("mrl")) return "UN-Victor MRL";
   return "UN-Victor R";
 }
@@ -722,12 +746,11 @@ function setVisualSelectOpen(picker, open, { focus = "selected", restoreFocus = 
 
 function renderVisualSelectOption(meta, selected = false) {
   return `
-    ${meta.imageUrl ? `<img src="${escapeHtml(meta.imageUrl)}" alt="">` : `<span class="visual-select__fallback" aria-hidden="true">${escapeHtml(String(meta.code).slice(0, 2))}</span>`}
+    ${meta.imageUrl ? `<img src="${escapeHtml(meta.imageUrl)}" alt="" width="44" height="40" loading="lazy" decoding="async">` : `<span class="visual-select__fallback" aria-hidden="true">${escapeHtml(String(meta.code).slice(0, 2))}</span>`}
     <span>
       <strong>${escapeHtml(meta.code || t("Не выбрано"))}</strong>
       <small>${escapeHtml(meta.description ? t(meta.description) : t("Без описания"))}</small>
     </span>
-    ${selected ? `<b aria-hidden="true">✓</b>` : ""}
   `;
 }
 
@@ -942,7 +965,7 @@ function renderSmecCarDesigns() {
     label.className = "smec-design-card";
     label.innerHTML = `
       <input type="radio" name="smecCarDesign" value="${escapeHtml(design.code)}">
-      ${design.imageUrl ? `<img src="${escapeHtml(design.imageUrl)}" alt="${escapeHtml(design.code)}">` : `<span class="smec-design-card__fallback">${escapeHtml(String(design.code).slice(0, 2))}</span>`}
+      ${design.imageUrl ? `<img src="${escapeHtml(design.imageUrl)}" alt="${escapeHtml(design.code)}" width="76" height="72" loading="lazy" decoding="async">` : `<span class="smec-design-card__fallback">${escapeHtml(String(design.code).slice(0, 2))}</span>`}
       <span>
         <strong>${escapeHtml(design.code)}</strong>
         <small>${escapeHtml(design.wallDescription || design.doorDescription || "Car design")}</small>
@@ -993,8 +1016,8 @@ function renderSmecControls() {
   updateSmecFloorPatterns("depth 25mm");
   fillVisualSelect(wallMaterialSelect, materialCodes, ["SUS-H", "SUS-M"], "SUS-H");
   fillVisualSelect(carDoorMaterialSelect, materialCodes, ["SUS-H", "SUS-M"], "SUS-H");
-  fillSelect(mirrorSelect, getSmecChoices("Mirror", ["None", "Half mirror", "Whole mirror"]), "None");
-  fillSelect(mirrorPositionSelect, getSmecChoices("Mirror Position", ["rear wall"]), "rear wall");
+  fillVisualSelect(mirrorSelect, getSmecChoices("Mirror", ["None", "Half mirror", "Whole mirror"]), [], "None");
+  fillVisualSelect(mirrorPositionSelect, getSmecChoices("Mirror Position", ["rear wall"]), [], "rear wall");
   fillVisualSelect(handrailSelect, getSmecChoices("Handrail", byCodePrefix("ZYH")), ["ZYH-RH06"]);
   fillVisualSelect(copSelect, getSmecChoices("COP", byCodePrefix("ZCB")), ["ZCB■-ND10"], "ZCB-ND10");
   fillVisualSelect(cop2Select, getSmecChoices("COP 2", byCodePrefix("ZCB")));
@@ -1077,6 +1100,14 @@ async function loadCatalog() {
   if (catalog === sessionRequests.stalePayload) return;
   state.catalog = catalog;
   renderCatalogControls();
+}
+
+async function loadTemplates() {
+  const response = await apiFetch("/api/templates");
+  if (!response.ok) return;
+  const templates = await sessionRequests.readJson(response);
+  if (templates === sessionRequests.stalePayload) return;
+  state.templatesById = new Map(templates.map(template => [template.id, template]));
 }
 
 async function loadProjects() {
@@ -1173,7 +1204,11 @@ function renderSavedPricing() {
         <strong>${escapeHtml(item.name)}</strong>
         <span>${escapeHtml(item.supplier)} · ${escapeHtml(item.series)} · ${money(item.totalCny, "CNY")}</span>
       </div>
-      <a class="secondary secondary--compact" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/tkp">ТКП Word</a>
+      <div class="saved-pricing-actions">
+        <a class="secondary secondary--compact" href="/pricing?specificationId=${encodeURIComponent(item.id)}">Редактировать</a>
+        <a class="secondary secondary--compact" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/tkp">ТКП Word</a>
+        <a class="secondary secondary--compact" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/request-xlsx">Запрос Excel</a>
+      </div>
     `;
     savedPricingList.append(row);
   }
@@ -1243,23 +1278,47 @@ function toggleSupplierFields(selector, visible) {
 function renderOptions() {
   const isXizi = supplierSelect.value === "XIZI";
   const source = isXizi ? state.catalog?.xiziOptions : getManualSmecFunctions();
+  const defaultSmecOptions = new Set(["ABP", "OLHL", "BA", "ITV", "MELD", "MBS", "AAN-S", "AECC", "ACB", "AHC", "FER", "FERC"]);
   optionsList.replaceChildren();
   for (const item of (source || []).filter(item =>
     !isXizi || !String(item.code).toLowerCase().startsWith("ac "))) {
-    const isForced = isXizi && item.code === "40HQ";
-    const isDisplayOption = isXizi && item.code.startsWith("ILED ");
+    const isForced = isXizi && (item.code === "40HQ" || item.code === "CONTAINER_40HQ");
+    const isDefault = !isXizi && defaultSmecOptions.has(String(item.code).trim().toUpperCase());
+    const isDisplayOption = isXizi && /^ILED(?:\s|_)/i.test(String(item.code));
+    const optionLabel = isDisplayOption && String(item.code).includes("_")
+      ? `ILED ${String(item.code).replace(/^ILED_/i, "").replaceAll("_", ".")}"`
+      : item.code;
     const label = document.createElement("label");
     label.className = `${item.description || item.imageUrl ? "pricing-option pricing-option--rich" : "pricing-option"}${isForced ? " is-locked" : ""}`;
     label.innerHTML = `
-      <input type="${isDisplayOption ? "radio" : "checkbox"}" ${isDisplayOption ? `name="xizi-iled"` : ""} value="${escapeHtml(item.code)}" ${isForced ? "checked disabled" : ""}>
-      ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.code)}">` : ""}
+      <input type="checkbox" ${isDisplayOption ? `data-exclusive-group="xizi-iled"` : ""} value="${escapeHtml(item.code)}" ${(isForced || isDefault) ? "checked" : ""} ${isForced ? "disabled" : ""}>
+      ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.code)}" width="34" height="34" loading="lazy" decoding="async">` : ""}
       <span>
-        <strong>${escapeHtml(item.code)}</strong>
+        <strong>${escapeHtml(optionLabel)}</strong>
         ${item.description ? `<small>${escapeHtml(item.description)}</small>` : ""}
       </span>
     `;
     optionsList.append(label);
   }
+}
+
+function getCwtSafetyGearInput() {
+  return [...optionsList.querySelectorAll("input")].find(input => {
+    const normalized = String(input.value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    return normalized === "cwtsafetygear" || normalized === "cwtsafety";
+  }) || null;
+}
+
+function isCwtSafetyGearEnabled() {
+  return Boolean(getCwtSafetyGearInput()?.checked);
+}
+
+function setCwtSafetyGearEnabled(value) {
+  const input = getCwtSafetyGearInput();
+  if (!input) return;
+  input.checked = value === true
+    || value === 1
+    || ["1", "true", "yes", "да"].includes(String(value ?? "").trim().toLowerCase());
 }
 
 function getManualSmecFunctions() {
@@ -1334,7 +1393,10 @@ function readJsonValue(value) {
 }
 
 function applyConfiguration(configuration) {
-  const parameters = configuration?.parameters || {};
+  const template = state.templatesById.get(configuration?.templateId);
+  const parameters = template
+    ? resolveDrawingConfigurationValues(configuration, template)
+    : (configuration?.parameters || {});
   const get = (...names) => {
     for (const name of names) {
       const direct = parameters[name];
@@ -1345,22 +1407,60 @@ function applyConfiguration(configuration) {
     return null;
   };
 
-  const capacity = get("DLOAD", "Q", "CAP", "Груз.");
-  const speed = get("SPEED", "V", "Скорость");
-  const stops = get("NBLD", "Stops", "Остановки");
-  const doors = get("Doors", "Двери");
+  const templateId = String(configuration?.templateId || "").trim();
+  const templateKey = templateId.toLowerCase().replaceAll("_", "-");
+  const isXiziTemplate = templateKey.includes("un-victor") || templateKey.includes("un-victior") || templateKey.includes("xizi");
+  supplierSelect.value = isXiziTemplate ? "XIZI" : "SMEC";
+  renderCatalogControls();
+
+  const capacity = get("cap", "DLOAD", "Q", "CAP", "Груз.");
+  const capacityCode = String(Math.round(Number(capacity) || 0)).padStart(4, "0");
+  const speed = get(`$speed_${capacityCode}`, "SPEED", "speed", "V", "Скорость");
+  const stops = get("stops", "NBLD", "Stops", "Остановки");
+  const entranceCount = Number(get("NE", "Entrances", "Входы")) || 1;
+  const doors = resolveDrawingDoorCount(configuration, template, parameters);
   const doorWidth = get("JJ");
   const travelHeight = get("TR");
-  const shaftWidth = get("AH");
-  const shaftDepth = get("BH");
+  const shaftWidth = get("AH", "AH_1");
+  const shaftDepth = get("BH", "BH_1");
+  const overhead = get("OH", "OH_1");
+  const pit = get("PD", "PD_1");
   const carWidth = get("AA");
   const carDepth = get("BB");
   const carHeight = get("HL");
   const doorHeight = get("HH");
+  const travelHeightMm = toTravelHeightMillimeters(travelHeight);
+  const rawDoorType = String(get("$door_type", "door_type", "Door type") || "");
+  const fireRating = get("$fire_rating", "$fire_rating_1", "fire_rating", "Fire rating");
+  const cwtSafetyGear = get("$cwt_sg", "cwt_sg", "CWT Safety Gear");
   const name = get("$Oboznach", "Oboznach");
 
-  if (capacity) capacitySelect.value = String(Number(capacity));
-  if (speed) speedSelect.value = String(Number(String(speed).replace(",", ".")));
+  const setSelectValue = (select, value, aliases = {}) => {
+    if (!select || value === null || value === undefined) return false;
+    const raw = String(value).trim();
+    const normalized = (aliases[raw.toLowerCase()] || raw).toLowerCase();
+    const option = [...select.options].find(item => item.value.toLowerCase() === normalized)
+      || [...select.options].find(item => item.textContent.trim().toLowerCase() === normalized);
+    if (!option) return false;
+    select.value = option.value;
+    syncVisualSelect(select);
+    return true;
+  };
+
+  if (isXiziTemplate) {
+    const xiziModel = templateKey.includes("mrl-t") ? "MRL-T" : "UN-Victior MRL";
+    setSelectValue(xiziModelSelect, xiziModel);
+    syncXiziPricingFields();
+  } else {
+    const model = templateKey.includes("lehy-l-pro") ? "LEHY-L-Pro"
+      : templateKey.includes("lehy-pro") ? "LEHY-Pro"
+        : templateKey.includes("k-ii") ? "LEHY-III"
+          : null;
+    if (model) updateSmecModels(model);
+  }
+
+  if (capacity) setSelectValue(capacitySelect, String(Number(capacity)));
+  if (speed) setSelectValue(speedSelect, String(Number(String(speed).replace(",", "."))));
   if (stops) stopsInput.value = String(Number(stops));
   if (stops && floorsInput) floorsInput.value = String(Number(stops));
   if (doors && smecDoorCountInput) smecDoorCountInput.value = String(Number(doors));
@@ -1370,18 +1470,172 @@ function applyConfiguration(configuration) {
   if (doorWidth && xiziShaftWidthInput && !xiziShaftWidthInput.value) xiziShaftWidthInput.value = "";
   if (shaftWidth && xiziShaftWidthInput) xiziShaftWidthInput.value = String(Number(shaftWidth));
   if (shaftDepth && xiziShaftDepthInput) xiziShaftDepthInput.value = String(Number(shaftDepth));
-  if (travelHeight && xiziTravelHeightInput) xiziTravelHeightInput.value = String(Number(travelHeight));
+  if (travelHeightMm !== null && xiziTravelHeightInput) xiziTravelHeightInput.value = String(travelHeightMm);
+  if (overhead && xiziOverheadInput) xiziOverheadInput.value = String(Number(overhead));
+  if (pit && xiziPitInput) xiziPitInput.value = String(Number(pit));
   if (carWidth && xiziCarWidthInput) xiziCarWidthInput.value = String(Number(carWidth));
   if (carDepth && xiziCarDepthInput) xiziCarDepthInput.value = String(Number(carDepth));
   if (doorHeight && xiziDoorHeightSelect) xiziDoorHeightSelect.value = String(Number(doorHeight));
+  if (fireRating) setSelectValue(xiziFireRatingSelect, fireRating, { ei30: "E30", ei60: "E60" });
+  if (rawDoorType) {
+    const sideOpening = /^(то|2s|telescopic|side)/i.test(rawDoorType.trim());
+    setSelectValue(xiziDoorOpeningSelect, sideOpening ? "Телескопическое" : "Центральное");
+    setSelectValue(doorTypeSelect, sideOpening ? "2S" : "CO");
+    setSelectValue(doorModeSelect, sideOpening ? "Side opening" : "Central opening");
+  }
   if (shaftWidth && shaftWidthInput) shaftWidthInput.value = String(Number(shaftWidth));
   if (shaftDepth && shaftDepthInput) shaftDepthInput.value = String(Number(shaftDepth));
+  if (travelHeightMm !== null && trInput) trInput.value = String(travelHeightMm);
+  if (overhead && ohInput) ohInput.value = String(Number(overhead));
+  if (pit && pdInput) pdInput.value = String(Number(pit));
   if (carWidth && carWidthInput) carWidthInput.value = String(Number(carWidth));
   if (carDepth && carDepthInput) carDepthInput.value = String(Number(carDepth));
   if (carHeight && carHeightInput) carHeightInput.value = String(Number(carHeight));
   if (doorHeight && doorHeightInput) doorHeightInput.value = String(Number(doorHeight));
+  setCwtSafetyGearEnabled(cwtSafetyGear);
+  setSelectValue(shaftDoorTypeInput, entranceCount > 1 ? "1D2G" : "1D1G");
   if (name) pricingNameInput.value = String(name);
   updateSmecPower();
+}
+
+function setStoredControlValue(control, value) {
+  if (!control || value === null || value === undefined) return;
+  const stored = String(value);
+  if (control instanceof HTMLSelectElement) {
+    const option = [...control.options].find(item => item.value === stored)
+      || [...control.options].find(item => codeMatches(item.value, stored))
+      || [...control.options].find(item => item.textContent.trim() === stored);
+    if (!option) return;
+    control.value = option.value;
+    syncVisualSelect(control);
+    return;
+  }
+  control.value = stored;
+}
+
+function applyStoredSpecificationFields(fields = {}) {
+  const xiziFields = new Map([
+    ["Project Name", xiziProjectNameInput], ["Address", xiziAddressInput],
+    ["Contract No", xiziContractInput], ["Unit No", xiziUnitInput],
+    ["Elevator Type", xiziElevatorTypeSelect], ["Model", xiziModelSelect],
+    ["Lift No", xiziLiftNumberInput], ["Quantity", xiziQuantityInput],
+    ["Control System", xiziControlSystemSelect], ["Decoration Weight", xiziDecorationWeightInput],
+    ["Main Floor", xiziMainFloorInput], ["Other Floors", xiziOtherFloorsInput],
+    ["Shaft Width", xiziShaftWidthInput], ["Shaft Depth", xiziShaftDepthInput],
+    ["Travel Height", xiziTravelHeightInput], ["Shaft Type", xiziShaftTypeSelect],
+    ["Overhead", xiziOverheadInput], ["Pit", xiziPitInput],
+    ["Car Width", xiziCarWidthInput], ["Car Depth", xiziCarDepthInput],
+    ["Car Height", xiziCarHeightSelect], ["Car Type", xiziCarTypeSelect],
+    ["Door Height", xiziDoorHeightSelect], ["Fire Rating", xiziFireRatingSelect],
+    ["Door Opening", xiziDoorOpeningSelect], ["Cabin Design", xiziCabinDesignSelect],
+    ["Car Wall Material", xiziCarWallMaterialSelect], ["Car Door Material", xiziCarDoorMaterialSelect],
+    ["Ceiling", xiziCeilingSelect], ["Floor", xiziFloorSelect],
+    ["Mirror Wall", xiziMirrorWallSelect], ["Mirror Height", xiziMirrorHeightSelect],
+    ["Handrail Position", xiziHandrailPositionSelect], ["Handrail", xiziHandrailSelect],
+    ["COP", xiziCopSelect], ["COP Button", xiziCopButtonSelect],
+    ["Main Shaft Door", xiziMainShaftDoorSelect], ["Other Shaft Door", xiziOtherShaftDoorSelect],
+    ["Main LOP", xiziMainLopSelect], ["Other LOP", xiziOtherLopSelect],
+    ["Main LIP", xiziMainLipSelect], ["Other LIP", xiziOtherLipSelect],
+    ["AC", xiziAirConditionerSelect], ["RCC", xiziRccSelect],
+    ["Decoration", decorationSelect]
+  ]);
+  const smecFields = new Map([
+    ["Ele Series", smecEleSeriesInput], ["Project Type", projectTypeSelect],
+    ["Manufacturing Standard", manufacturingStandardSelect], ["Quantity", smecQuantityInput],
+    ["Operation", operationSelect], ["Decoration Weight", smecDecorationWeightInput],
+    ["Floors", floorsInput], ["Main Floor", smecMainFloorInput],
+    ["Other Floors", smecOtherFloorsInput], ["Power Supply", smecPowerSupplyInput],
+    ["Lighting Supply", smecLightingSupplyInput], ["AH", shaftWidthInput],
+    ["BH", shaftDepthInput], ["Door type", shaftDoorTypeInput], ["TR", trInput],
+    ["OH", ohInput], ["PD", pdInput], ["JJ", smecDoorWidthInput],
+    ["Door mode", doorModeSelect], ["HH", doorHeightInput], ["AA", carWidthInput],
+    ["BB", carDepthInput], ["HL", carHeightInput], ["Ceiling", ceilingSelect],
+    ["Floor Type", floorTypeSelect], ["Floor Pattern", floorPatternSelect],
+    ["Wall", wallMaterialSelect], ["Car Door", carDoorMaterialSelect],
+    ["Mirror", mirrorSelect], ["Handrail Position", mirrorPositionSelect],
+    ["Handrail", handrailSelect], ["COP", copSelect], ["COP 2", cop2Select],
+    ["COP Button", copButtonSelect], ["Wheelchair COP", wheelchairCopSelect],
+    ["Wheelchair COP 2", wheelchairCop2Select], ["Wheelchair COP Button", wheelchairButtonSelect],
+    ["Main Jamb", mainJambSelect], ["Main Landing Material", mainLandingMaterialSelect],
+    ["Main Sill Bracket", mainSillBracketSelect], ["Main Landing Door", mainLandingDoorSelect],
+    ["Other Jamb", otherJambSelect], ["Other Landing Material", otherLandingMaterialSelect],
+    ["Other Sill Bracket", otherSillBracketSelect], ["Other Landing Door", otherLandingDoorSelect],
+    ["Main LOP", mainLopSelect], ["Other LOP", otherLopSelect],
+    ["LOP Button", lopButtonSelect], ["Other LOP Button", otherLopButtonSelect],
+    ["Main Auxiliary LOP", mainAuxiliaryLopSelect], ["Other Auxiliary LOP", otherAuxiliaryLopSelect],
+    ["Auxiliary LOP Button", auxiliaryLopButtonSelect],
+    ["Other Auxiliary LOP Button", otherAuxiliaryLopButtonSelect],
+    ["Hall Indicator", hallIndicatorSelect], ["Hall Lantern", hallLanternSelect],
+    ["Other Requirements", smecOtherRequirementsInput]
+  ]);
+  const mapping = supplierSelect.value === "XIZI" ? xiziFields : smecFields;
+  for (const [name, control] of mapping) setStoredControlValue(control, fields[name]);
+
+  if (supplierSelect.value === "SMEC") {
+    updateSmecFloorPatterns(fields["Floor Pattern"] || null);
+    const designInput = [...(carDesignPicker?.querySelectorAll("input") || [])]
+      .find(input => codeMatches(input.value, fields["Car Design"]));
+    if (designInput) designInput.checked = true;
+  }
+}
+
+async function applyPricingSpecification(specification) {
+  const request = specification?.request;
+  if (!request) return;
+
+  state.editingSpecificationId = specification.id;
+  pricingProjectSelect.value = specification.projectId;
+  renderProjectConfigurations();
+  renderSavedPricing();
+  pricingNameInput.value = specification.name || request.name || "";
+  supplierSelect.value = request.supplier;
+  renderCatalogControls();
+
+  const fields = request.specificationFields || {};
+  if (request.supplier === "SMEC") {
+    setStoredControlValue(smecEleSeriesInput, fields["Ele Series"]);
+    updateSmecModels(request.series);
+  } else {
+    setStoredControlValue(seriesSelect, request.series);
+  }
+  setStoredControlValue(capacitySelect, request.capacityKg);
+  setStoredControlValue(speedSelect, request.speed);
+  setStoredControlValue(stopsInput, request.stops);
+  setStoredControlValue(doorWidthSelect, request.doorWidthMm);
+  setStoredControlValue(smecDoorWidthInput, request.doorWidthMm);
+  setStoredControlValue(doorTypeSelect, request.doorType);
+  setStoredControlValue(doorManufacturerSelect, request.doorManufacturer);
+  setStoredControlValue(doorCountInput, request.doorCount);
+  setStoredControlValue(smecDoorCountInput, request.doorCount);
+  setStoredControlValue(targetCurrencySelect, request.targetCurrency);
+  setStoredControlValue(drawingConfigurationSelect, request.projectConfigurationId);
+  if (efsToggle) efsToggle.checked = Boolean(request.efs);
+  if (e312Toggle) e312Toggle.checked = Boolean(request.e312);
+
+  applyStoredSpecificationFields(fields);
+  const selectedOptions = new Set(request.options || []);
+  optionsList.querySelectorAll("input").forEach(input => {
+    input.checked = input.disabled || selectedOptions.has(input.value);
+  });
+  syncAllVisualSelects();
+  savePricingButton.textContent = localized("Сохранить изменения", "Save changes");
+  await calculate();
+}
+
+async function loadRequestedPricingSpecification() {
+  const specificationId = new URLSearchParams(window.location.search).get("specificationId");
+  if (!specificationId) return false;
+  const response = await apiFetch(`/api/pricing-specifications/${encodeURIComponent(specificationId)}`);
+  if (!response.ok) {
+    renderWarnings([localized(
+      "Сохраненная конфигурация цены не найдена.",
+      "The saved pricing configuration was not found.")], true);
+    return false;
+  }
+  const specification = await sessionRequests.readJson(response);
+  if (specification === sessionRequests.stalePayload) return false;
+  await applyPricingSpecification(specification);
+  return true;
 }
 
 function collectSpecificationFields() {
@@ -1534,12 +1788,160 @@ function collectRequest() {
   };
 }
 
+function getSelectedDrawingConfiguration() {
+  return (state.configurationsByProjectId.get(pricingProjectSelect.value) || [])
+    .find(item => item.id === drawingConfigurationSelect.value) || null;
+}
+
+function getActivePricingParameterControls() {
+  const isXizi = supplierSelect.value === "XIZI";
+  return new Map([
+    ["AH", isXizi ? xiziShaftWidthInput : shaftWidthInput],
+    ["BH", isXizi ? xiziShaftDepthInput : shaftDepthInput],
+    ["TR", isXizi ? xiziTravelHeightInput : trInput],
+    ["OH", isXizi ? xiziOverheadInput : ohInput],
+    ["PD", isXizi ? xiziPitInput : pdInput],
+    ["AA", isXizi ? xiziCarWidthInput : carWidthInput],
+    ["BB", isXizi ? xiziCarDepthInput : carDepthInput],
+    ["HL", isXizi ? xiziCarHeightSelect : carHeightInput],
+    ["JJ", isXizi ? doorWidthSelect : smecDoorWidthInput],
+    ["HH", isXizi ? xiziDoorHeightSelect : doorHeightInput],
+    ["stops", stopsInput],
+    ["speed", speedSelect]
+  ]);
+}
+
+function getPositiveControlNumber(control) {
+  if (!control || control.disabled || String(control.value).trim() === "") return null;
+  const value = Number(String(control.value).replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function collectPricingValidationIssues() {
+  const controls = getActivePricingParameterControls();
+  const labels = {
+    AH: "Ширина шахты (AH)", BH: "Глубина шахты (BH)", TR: "Высота подъема (TR)",
+    OH: "Высота оголовка (OH)", PD: "Глубина приямка (PD)", AA: "Ширина кабины (AA)",
+    BB: "Глубина кабины (BB)", HL: "Высота кабины (HL)", JJ: "Ширина дверей (JJ)",
+    HH: "Высота дверей (HH)"
+  };
+  const issues = [];
+  const addIssue = (name, message, fieldNames) => {
+    if (issues.some(issue => issue.message === message)) return;
+    issues.push({ name, message, fieldNames, severity: "error" });
+  };
+
+  for (const [name, label] of Object.entries(labels)) {
+    if (getPositiveControlNumber(controls.get(name)) === null) {
+      addIssue(`required_${name}`, `${label}: укажите значение больше нуля.`, [name]);
+    }
+  }
+
+  const values = Object.fromEntries([...controls].map(([name, control]) => [
+    name,
+    getPositiveControlNumber(control)
+  ]));
+  const configuration = getSelectedDrawingConfiguration();
+  const template = configuration ? state.templatesById.get(configuration.templateId) : null;
+  if (!configuration) {
+    if (values.AH !== null && values.AA !== null && values.AA > values.AH) {
+      addIssue("car_width", "Ширина кабины (AA) не может быть больше ширины шахты (AH).", ["AA", "AH"]);
+    }
+    if (values.BH !== null && values.BB !== null && values.BB > values.BH) {
+      addIssue("car_depth", "Глубина кабины (BB) не может быть больше глубины шахты (BH).", ["BB", "BH"]);
+    }
+    if (values.JJ !== null && values.AA !== null && values.JJ > values.AA) {
+      addIssue("door_width", "Ширина дверей (JJ) не может быть больше ширины кабины (AA).", ["JJ", "AA"]);
+    }
+    if (values.HH !== null && values.HL !== null && values.HL - values.HH < 100) {
+      addIssue("door_height", "Высота кабины (HL) должна быть минимум на 100 мм больше высоты дверей (HH).", ["HL", "HH"]);
+    }
+  }
+
+  if (configuration && template) {
+    const overrides = {};
+    for (const [name, value] of Object.entries(values)) {
+      if (value !== null) overrides[name] = name === "TR" ? value / 1000 : value;
+    }
+    overrides.NE = supplierSelect.value === "SMEC" && shaftDoorTypeInput?.value === "1D2G" ? 2 : 1;
+    overrides.$door_type = supplierSelect.value === "SMEC" && doorModeSelect?.value === "Side opening"
+      ? "ТО"
+      : "ЦО";
+    overrides.$cwt_sg = isCwtSafetyGearEnabled() ? "Да" : "Нет";
+    issues.push(...evaluateDrawingConfigurationValidation(
+      configuration,
+      template,
+      overrides,
+      TEMPLATE_PRICING_RULE_FIELDS));
+  }
+
+  return issues;
+}
+
+function clearPricingValidationHighlights() {
+  pricingForm.querySelectorAll("[data-pricing-validation-inline]").forEach(message => message.remove());
+  pricingForm.querySelectorAll("[data-pricing-invalid]").forEach(control => {
+    control.classList.remove("is-invalid");
+    control.removeAttribute("aria-invalid");
+    control.removeAttribute("data-pricing-invalid");
+    const describedBy = (control.getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter(id => !id.startsWith("pricing-validation-"));
+    if (describedBy.length) control.setAttribute("aria-describedby", describedBy.join(" "));
+    else control.removeAttribute("aria-describedby");
+  });
+  pricingForm.querySelectorAll(".field--invalid").forEach(field => field.classList.remove("field--invalid"));
+}
+
+function applyPricingValidationHighlights(issues) {
+  clearPricingValidationHighlights();
+  const controls = getActivePricingParameterControls();
+  for (const [fieldName, control] of controls) {
+    const issue = issues.find(candidate =>
+      candidate.severity !== "warning" && candidate.fieldNames.includes(fieldName));
+    if (!issue || !control || control.disabled) continue;
+    const errorId = `pricing-validation-${control.id}`;
+    control.classList.add("is-invalid");
+    control.dataset.pricingInvalid = "true";
+    control.setAttribute("aria-invalid", "true");
+    const describedBy = new Set((control.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
+    describedBy.add(errorId);
+    describedBy.add("pricingWarnings");
+    control.setAttribute("aria-describedby", [...describedBy].join(" "));
+    const field = control.closest(".field");
+    field?.classList.add("field--invalid");
+    const message = document.createElement("span");
+    message.id = errorId;
+    message.className = "field-error-message";
+    message.dataset.pricingValidationInline = "true";
+    message.textContent = issue.message;
+    field?.append(message);
+  }
+}
+
+function validatePricingParameters({ announceErrors = false } = {}) {
+  const issues = collectPricingValidationIssues();
+  applyPricingValidationHighlights(issues);
+  const errors = issues.filter(issue => issue.severity !== "warning");
+  renderWarnings(issues.map(issue => issue.message), errors.length > 0);
+  if (announceErrors && errors.length > 0) {
+    const firstInvalid = pricingForm.querySelector('[data-pricing-invalid="true"]');
+    requestAnimationFrame(() => {
+      (errors.length > 1 ? pricingWarnings : firstInvalid || pricingWarnings)?.focus?.({ preventScroll: true });
+      (errors.length > 1 ? pricingWarnings : firstInvalid || pricingWarnings)?.scrollIntoView?.({ block: "center" });
+    });
+  }
+  return errors.length === 0;
+}
+
 function markCalculationPending() {
   if (!state.currentUser || !state.catalog) return;
   pricingStatus.textContent = t("Считается...");
   pricingStatus.className = "pricing-status is-loading";
   savePricingButton.disabled = true;
   downloadTkpButton.disabled = true;
+  downloadRequestXlsxButton.disabled = true;
 }
 
 function scheduleLiveCalculation() {
@@ -1555,6 +1957,17 @@ async function calculate(event) {
   event?.preventDefault();
   if (!state.currentUser || !state.catalog) return;
   window.clearTimeout(liveCalculationTimer);
+  if (!validatePricingParameters({ announceErrors: Boolean(event) })) {
+    calculationRequestId += 1;
+    pricingStatus.textContent = t("Исправьте параметры");
+    pricingStatus.className = "pricing-status is-blocked";
+    state.lastCalculation = null;
+    state.lastRequest = null;
+    savePricingButton.disabled = true;
+    downloadTkpButton.disabled = true;
+    downloadRequestXlsxButton.disabled = true;
+    return;
+  }
   const requestId = ++calculationRequestId;
   const request = collectRequest();
   markCalculationPending();
@@ -1577,6 +1990,7 @@ async function calculate(event) {
       state.lastRequest = null;
       savePricingButton.disabled = true;
       downloadTkpButton.disabled = true;
+      downloadRequestXlsxButton.disabled = true;
       return;
     }
 
@@ -1597,6 +2011,7 @@ async function calculate(event) {
     state.lastRequest = null;
     savePricingButton.disabled = true;
     downloadTkpButton.disabled = true;
+    downloadRequestXlsxButton.disabled = true;
   }
 }
 
@@ -1638,6 +2053,7 @@ function renderCalculation() {
     || !pricingProjectSelect.value;
   savePricingButton.disabled = saveDisabled;
   downloadTkpButton.disabled = saveDisabled;
+  downloadRequestXlsxButton.disabled = saveDisabled;
 }
 
 function renderWarnings(messages, isError = false) {
@@ -1662,8 +2078,12 @@ function renderWarnings(messages, isError = false) {
 
 async function savePricing() {
   if (!canSavePricing() || !state.lastRequest || !pricingProjectSelect.value) return;
-  const response = await apiFetch(`/api/projects/${encodeURIComponent(pricingProjectSelect.value)}/pricing-specifications`, {
-    method: "POST",
+  const editingId = state.editingSpecificationId;
+  const endpoint = editingId
+    ? `/api/pricing-specifications/${encodeURIComponent(editingId)}`
+    : `/api/projects/${encodeURIComponent(pricingProjectSelect.value)}/pricing-specifications`;
+  const response = await apiFetch(endpoint, {
+    method: editingId ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: pricingNameInput.value.trim() || state.lastRequest.name,
@@ -1679,10 +2099,17 @@ async function savePricing() {
 
   const savedSpecification = await sessionRequests.readJson(response);
   if (savedSpecification === sessionRequests.stalePayload) return;
+  state.editingSpecificationId = savedSpecification.id;
+  savePricingButton.textContent = localized("Сохранить изменения", "Save changes");
+  window.history.replaceState(
+    null,
+    "",
+    `/pricing?specificationId=${encodeURIComponent(savedSpecification.id)}`);
   await loadProjects();
   if (!sessionRequests.isCurrent(response)) return;
   savePricingButton.disabled = true;
   downloadTkpButton.disabled = true;
+  downloadRequestXlsxButton.disabled = true;
   return savedSpecification;
 }
 
@@ -1693,6 +2120,12 @@ async function saveAndDownloadTkp() {
   }
 
   window.location.assign(`/api/pricing-specifications/${encodeURIComponent(savedSpecification.id)}/tkp`);
+}
+
+async function saveAndDownloadRequestXlsx() {
+  const savedSpecification = await savePricing();
+  if (!savedSpecification?.id) return;
+  window.location.assign(`/api/pricing-specifications/${encodeURIComponent(savedSpecification.id)}/request-xlsx`);
 }
 
 async function register(event) {
@@ -1747,7 +2180,7 @@ async function login(event) {
   clearPricingSessionState();
   loginPassword.setCustomValidity("");
   state.currentUser = currentUser;
-  await Promise.allSettled([loadCatalog(), loadProjects()]);
+  await Promise.allSettled([loadCatalog(), loadTemplates(), loadProjects()]);
   updateAuthView();
   if (isAuthenticated()) scheduleLiveCalculation();
 }
@@ -1776,6 +2209,14 @@ document.querySelectorAll("[data-visual-select]").forEach(select => {
   });
 });
 floorTypeSelect?.addEventListener("change", () => updateSmecFloorPatterns());
+optionsList?.addEventListener("change", event => {
+  const input = event.target.closest("input[data-exclusive-group]");
+  if (!input?.checked) return;
+  const group = input.dataset.exclusiveGroup;
+  optionsList.querySelectorAll("input[data-exclusive-group]").forEach(candidate => {
+    if (candidate !== input && candidate.dataset.exclusiveGroup === group) candidate.checked = false;
+  });
+});
 document.addEventListener("click", event => {
   if (!event.target.closest(".visual-select")) {
     closeVisualSelects();
@@ -1787,11 +2228,15 @@ document.addEventListener("focusin", event => {
   }
 });
 pricingProjectSelect.addEventListener("change", () => {
+  state.editingSpecificationId = null;
+  savePricingButton.textContent = localized("Сохранить в проект", "Save to project");
+  window.history.replaceState(null, "", "/pricing");
   renderProjectConfigurations();
   renderSavedPricing();
   state.lastCalculation = null;
   savePricingButton.disabled = true;
   downloadTkpButton.disabled = true;
+  downloadRequestXlsxButton.disabled = true;
 });
 drawingConfigurationSelect.addEventListener("change", () => {
   const configuration = (state.configurationsByProjectId.get(pricingProjectSelect.value) || [])
@@ -1806,6 +2251,7 @@ pricingForm.addEventListener("invalid", event => {
 pricingForm.addEventListener("submit", calculate);
 savePricingButton.addEventListener("click", savePricing);
 downloadTkpButton.addEventListener("click", saveAndDownloadTkp);
+downloadRequestXlsxButton.addEventListener("click", saveAndDownloadRequestXlsx);
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
 logoutButton?.addEventListener("click", logout);
@@ -1831,15 +2277,18 @@ window.addEventListener("tflex:languagechange", () => {
   });
   syncAllVisualSelects();
   if (state.lastCalculation) renderCalculation();
+  savePricingButton.textContent = state.editingSpecificationId
+    ? localized("Сохранить изменения", "Save changes")
+    : localized("Сохранить в проект", "Save to project");
   renderSavedPricing();
   syncMobilePricingSummary();
 });
 
 try {
   if (await loadCurrentUser()) {
-    await Promise.allSettled([loadCatalog(), loadProjects()]);
+    await Promise.allSettled([loadCatalog(), loadTemplates(), loadProjects()]);
     updateAuthView();
-    if (isAuthenticated()) scheduleLiveCalculation();
+    if (isAuthenticated() && !await loadRequestedPricingSpecification()) scheduleLiveCalculation();
   }
 } catch {
   state.currentUser = null;

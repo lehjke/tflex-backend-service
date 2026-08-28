@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#101A38">
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260825-panel-spacing-16-1">
+  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Инженерный центр МЛТ">
       <a class="brand" href="/" aria-label="Инженерный центр МЛТ">
-        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="МЛТ ЛИФТЫ">
-        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="MLT ELEVATORS">
+        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="114" alt="МЛТ ЛИФТЫ">
+        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="118" alt="MLT ELEVATORS">
       </a>
       <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
         <span aria-hidden="true"></span>
@@ -24,7 +25,7 @@
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
         <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a class="is-active" href="/account"><span>Личный кабинет</span><small>Account</small></a>
+        <a class="is-active" href="/account" aria-current="page"><span>Личный кабинет</span><small>Account</small></a>
         <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
       </nav>
 
@@ -39,7 +40,7 @@
     <div class="workspace">
       <header class="topbar">
         <div class="breadcrumbs" aria-label="Навигация">
-          <span>Главная</span>
+          <a href="/">Главная</a>
           <span aria-hidden="true">/</span>
           <span>Личный кабинет</span>
         </div>
@@ -72,6 +73,8 @@
           </div>
         </div>
       </header>
+
+      <div id="mainContent" class="main-content-anchor" tabindex="-1"></div>
 
       <section id="pageSkeleton" class="page-skeleton page-skeleton--account" aria-label="Загрузка страницы" aria-busy="true">
         <span class="sr-only">Загрузка страницы</span>
@@ -184,7 +187,7 @@
           </article>
           <article>
             <strong id="configurationsMetric">0</strong>
-            <span>Конфигурации</span>
+            <span>Чертежи и цены</span>
           </article>
           <article>
             <strong id="readyFilesMetric">0</strong>
@@ -211,12 +214,17 @@
                   aria-label="Поиск в списке проектов и конфигураций"
                   placeholder="Поиск по названию, адресу или номеру запроса">
               </label>
+              <button
+                id="toggleProjectCreateButton"
+                class="secondary secondary--compact"
+                type="button"
+                aria-controls="accountCreateForm"
+                aria-expanded="false">Создать проект</button>
             </div>
 
             <div id="accountStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
-            <div id="projectsList" class="project-list"></div>
 
-            <div class="form-grid form-grid--compact account-create">
+            <div id="accountCreateForm" class="form-grid form-grid--compact account-create" hidden>
               <label class="field">
                 <span class="field__label">Название проекта</span>
                 <input id="projectNameInput" placeholder="Название">
@@ -232,13 +240,15 @@
                 <input id="projectFactoryRequestNumberInput" placeholder="Номер запроса">
               </label>
 
-              <button id="createProjectButton" class="primary primary--compact" type="button">Новый проект</button>
+              <button id="createProjectButton" class="primary primary--compact" type="button">Создать проект</button>
             </div>
+
+            <div id="projectsList" class="project-list"></div>
           </section>
 
           <section class="panel saved-configurations-panel">
             <div class="panel__header">
-              <h2>Сохраненные конфигурации</h2>
+              <h2>Последние конфигурации</h2>
             </div>
             <div id="savedConfigurationsList" class="saved-configurations-list"></div>
           </section>
@@ -330,7 +340,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
-  <script type="module" src="/account.js?v=20260806-design-fixes-1"></script>
+  <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
+  <script type="module" src="/account.js?v=20260827-asset-grouping-1"></script>
 </body>
 </html>

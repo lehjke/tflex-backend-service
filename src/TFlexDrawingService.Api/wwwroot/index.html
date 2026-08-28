@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#101A38">
   <title>Инженерный центр — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260825-panel-spacing-16-1">
+  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Инженерный центр МЛТ">
       <a class="brand" href="/" aria-label="Инженерный центр МЛТ">
-        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="МЛТ ЛИФТЫ">
-        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="MLT ELEVATORS">
+        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="114" alt="МЛТ ЛИФТЫ">
+        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="118" alt="MLT ELEVATORS">
       </a>
       <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
         <span aria-hidden="true"></span>
@@ -39,7 +40,7 @@
     <div class="workspace">
       <header class="topbar">
         <div class="breadcrumbs" aria-label="Навигация">
-          <span>Главная</span>
+          <a href="/">Главная</a>
           <span aria-hidden="true">/</span>
           <span>Инженерный центр</span>
         </div>
@@ -69,6 +70,8 @@
           </div>
         </div>
       </header>
+
+      <div id="mainContent" class="main-content-anchor" tabindex="-1"></div>
 
       <section id="pageSkeleton" class="page-skeleton page-skeleton--home" aria-label="Загрузка страницы" aria-busy="true">
         <span class="sr-only">Загрузка страницы</span>
@@ -151,7 +154,7 @@
               <span class="home-template-card__description">Создание строительных заданий через САПР TFlex.</span>
             </span>
             <span class="home-template-card__footer">
-              <a class="home-template-card__button" href="/drawings" aria-label="Использовать создание чертежей">Использовать</a>
+              <a class="home-template-card__button" href="/drawings">Создать чертёж</a>
               <span class="home-template-card__meta">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M12 7.5v8M8.5 11l3.5-3.5 3.5 3.5"></path>
@@ -176,7 +179,7 @@
               <span class="home-template-card__description">Расчет базовой цены.</span>
             </span>
             <span class="home-template-card__footer">
-              <a class="home-template-card__button" href="/pricing" aria-label="Использовать расчет цен">Использовать</a>
+              <a class="home-template-card__button" href="/pricing">Рассчитать цену</a>
             </span>
           </article>
         </section>
@@ -185,7 +188,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
-  <script type="module" src="/home.js?v=20260824-home-card-motion-1"></script>
+  <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
+  <script type="module" src="/home.js?v=20260827-home-disclosure-1"></script>
 </body>
 </html>

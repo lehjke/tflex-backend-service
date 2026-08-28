@@ -114,6 +114,65 @@ public sealed class ProjectStoreForeignKeyTests
             calculation));
     }
 
+    [Fact]
+    public async Task PricingSpecification_CanBeUpdatedAndDeletedOnlyByProjectOwner()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var store = new ProjectStore(Options.Create(new DrawingStorageOptions
+        {
+            RootPath = Path.Combine(root, "storage"),
+            DatabasePath = Path.Combine(root, "storage", "drawings.db")
+        }));
+        await store.InitializeAsync();
+
+        var project = await store.CreateProjectAsync("operator", "Lift", null, null);
+        var configuration = await store.SaveConfigurationAsync(
+            "operator",
+            project.Id,
+            "Configuration",
+            "template-a",
+            "pdf",
+            JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("{}")!);
+        Assert.NotNull(configuration);
+        var request = CreatePricingRequest(configuration.Id);
+        var saved = await store.SavePricingSpecificationAsync(
+            "operator",
+            project.Id,
+            configuration.Id,
+            "Initial",
+            request,
+            CreatePricingResult());
+        Assert.NotNull(saved);
+
+        Assert.Null(await store.UpdatePricingSpecificationAsync(
+            saved.Id,
+            "another-user",
+            configuration.Id,
+            "Denied",
+            request,
+            CreatePricingResult()));
+
+        var updatedCalculation = CreatePricingResult() with
+        {
+            TotalCny = 250m,
+            TotalConverted = 3000m
+        };
+        var updated = await store.UpdatePricingSpecificationAsync(
+            saved.Id,
+            "operator",
+            configuration.Id,
+            "Updated",
+            request,
+            updatedCalculation);
+
+        Assert.NotNull(updated);
+        Assert.Equal("Updated", updated.Name);
+        Assert.Equal(250m, updated.TotalCny);
+        Assert.False(await store.DeletePricingSpecificationAsync(saved.Id, "another-user"));
+        Assert.True(await store.DeletePricingSpecificationAsync(saved.Id, "operator"));
+        Assert.Null(await store.GetPricingSpecificationAsync(saved.Id, "operator"));
+    }
+
     private static PricingCalculationRequest CreatePricingRequest(string? configurationId)
     {
         return new PricingCalculationRequest(

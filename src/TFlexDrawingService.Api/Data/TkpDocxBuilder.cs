@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Security;
 using System.Text;
+using System.Xml.Linq;
 
 namespace TFlexDrawingService.Api.Data;
 
@@ -10,65 +11,685 @@ internal static class TkpDocxBuilder
     private static readonly CultureInfo RuCulture = CultureInfo.GetCultureInfo("ru-RU");
 
     public static byte[] Build(
+        string templatePath,
+        string assetsRoot,
+        PricingCatalog catalog,
         PricingSpecification specification,
         UserProject? project,
         PricingCalculationRequest? request,
         PricingCalculationResult? calculation)
     {
-        var model = new TkpModel(specification, project, request, calculation);
-        var body = new StringBuilder();
-
-        body.Append(Paragraph($"Коммерческое предложение #{model.Number}", "Title"));
-        body.Append(Paragraph($"от {model.Date}", "Muted"));
-        body.Append(Paragraph(""));
-        body.Append(InfoTable(model));
-        body.Append(Paragraph(""));
-
-        body.Append(Paragraph($"Стоимость оборудования {model.Manufacturer}:", "Heading1"));
-        body.Append(EquipmentTable(model));
-        body.Append(Paragraph("Данная цена включает стоимость изготовления, доставки оборудования на площадку монтажа, страховку на период доставки, стоимость документации оборудования на русском языке в соответствии с нормами и правилами, действующими в Российской Федерации."));
-        body.Append(Paragraph("В цену включены таможенные платежи на импортное оборудование."));
-
-        body.Append(Paragraph($"Стоимость монтажа {model.Manufacturer}:", "Heading1"));
-        body.Append(InstallationTable(model));
-        body.Append(Paragraph("Стоимость монтажа приведена справочно и должна быть заполнена после ручной проверки условий объекта."));
-
-        body.Append(Paragraph("Состав заводской цены", "Heading1"));
-        body.Append(PriceLinesTable(model));
-
-        if (model.Container is not null)
+        var model = new TkpModel(specification, project, request, calculation, catalog);
+        var bytes = File.ReadAllBytes(templatePath);
+        using var buffer = new MemoryStream();
+        buffer.Write(bytes);
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Update, leaveOpen: true))
         {
-            body.Append(Paragraph($"Контейнер: {model.Container.Label}", "Callout"));
+            var images = new ImageRegistry(assetsRoot, model.Supplier);
+            var replacements = BuildTemplateReplacements(model);
+            foreach (var entry in archive.Entries.Where(item =>
+                         item.FullName.StartsWith("word/", StringComparison.Ordinal)
+                         && item.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToArray())
+            {
+                XDocument document;
+                using (var input = entry.Open())
+                {
+                    document = XDocument.Load(input, LoadOptions.PreserveWhitespace);
+                }
+
+                ReplaceParagraphText(document, replacements);
+                if (entry.FullName == "word/document.xml")
+                {
+                    PopulateProposalMetadata(document, model);
+                    PopulateCommercialTables(document, model);
+                    PopulateTechnicalSpecification(document, model, images);
+                }
+                else if (entry.FullName == "word/settings.xml")
+                {
+                    EnableFieldUpdates(document);
+                }
+
+                using var output = entry.Open();
+                output.SetLength(0);
+                document.Save(output, SaveOptions.DisableFormatting);
+            }
+
+            images.WriteTo(archive);
+            AddImageRelationships(archive, images);
+            EnsurePngContentType(archive, images.Count > 0);
         }
 
-        if (model.Warnings.Count > 0)
+        return buffer.ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildTemplateReplacements(TkpModel model)
+    {
+        var passengers = model.CapacityKg > 0 ? Math.Max(1, model.CapacityKg / 75) : 0;
+        var options = string.Join("; ", model.Options);
+        return new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            body.Append(Paragraph("Предупреждения и ручная проверка", "Heading1"));
-            foreach (var warning in model.Warnings)
+            ["{#optionRows} {col1}; {col2}; {col3}; {/optionRows}"] = options,
+            ["{managerName}"] = "",
+            ["{managerPosition}"] = "",
+            ["{managerPhone}"] = "",
+            ["{managerEmail}"] = "",
+            ["{kpNumber}"] = model.Number,
+            ["{kpDate}"] = model.Date,
+            ["{supplierName}"] = "МЛТ Лифты",
+            ["{supplierAddress}"] = "",
+            ["{supplierINN}"] = "",
+            ["{buyerName}"] = model.ProjectName,
+            ["{buyerAddress}"] = model.ProjectAddress,
+            ["{deliveryTime}"] = "",
+            ["{eqPay1}"] = "",
+            ["{eqPay2}"] = "",
+            ["{warranty}"] = "",
+            ["{mtPay1}"] = "",
+            ["{mtPay2}"] = "",
+            ["{mtPay3}"] = "",
+            ["{warrantyInstall}"] = "",
+            ["{#lifts}"] = "",
+            ["{/lifts}"] = "",
+            ["{liftNumber}"] = FirstText(model.Field("Lift No"), model.SpecificationName),
+            ["{capacity}"] = model.CapacityKg.ToString(CultureInfo.InvariantCulture),
+            ["{passengers}"] = passengers.ToString(CultureInfo.InvariantCulture),
+            ["{stops}"] = model.Stops.ToString(CultureInfo.InvariantCulture),
+            ["{liftType}"] = FirstText(model.Field("Model"), model.Series),
+            ["{speed}"] = model.Speed.ToString("0.##", CultureInfo.InvariantCulture),
+            ["{travelHeight}"] = model.Field("Travel Height", "TR"),
+            ["{doors}"] = model.Doors.ToString(CultureInfo.InvariantCulture),
+            ["{controlSystem}"] = model.Field("Control System", "Operation"),
+            ["{shaftWidth}"] = model.Field("Shaft Width", "AH"),
+            ["{shaftDepth}"] = model.Field("Shaft Depth", "BH"),
+            ["{pit}"] = model.Field("Pit", "PD"),
+            ["{topFloorHeight}"] = model.Field("Overhead", "OH"),
+            ["{cabinType}"] = model.Field("Car Type", "Car Design"),
+            ["{cabinDesign}"] = model.Field("Cabin Design", "Car Design"),
+            ["{cabinWidth}"] = model.Field("Car Width", "AA"),
+            ["{cabinDepth}"] = model.Field("Car Depth", "BB"),
+            ["{cabinHeight}"] = model.Field("Car Height", "HL"),
+            ["{finishWallFront}"] = model.Field("Car Wall Material", "Car Design Wall", "Wall"),
+            ["{finishWallSide}"] = model.Field("Car Wall Material", "Car Design Wall", "Wall"),
+            ["{finishWallRear}"] = model.Field("Car Wall Material", "Car Design Wall", "Wall"),
+            ["{finishCeiling}"] = model.Field("Ceiling"),
+            ["{finishFloor}"] = model.Field("Floor", "Floor Pattern"),
+            ["{mirrorType}"] = model.Field("Mirror Height", "Mirror"),
+            ["{handrailEnabled}"] = HasText(model.Field("Handrail Position", "Handrail")) ? "Да" : "Нет",
+            ["{finishHandrail}"] = model.Field("Handrail"),
+            ["{handrailSides}"] = model.Field("Handrail Position"),
+            ["{copType}"] = model.Field("COP"),
+            ["{copButtons}"] = model.Field("COP Button"),
+            ["{#optionRows}"] = "",
+            ["{col1}"] = options,
+            ["{col2}"] = "",
+            ["{col3}"] = "",
+            ["{/optionRows}"] = "",
+            ["{doorWidth}"] = model.Field("Door Width", "JJ"),
+            ["{doorHeight}"] = model.Field("Door Height", "HH"),
+            ["{doorType}"] = model.Field("Door Opening", "Door mode", "Door type"),
+            ["{cabinDoorMaterialRu}"] = model.Field("Car Door Material", "Car Door"),
+            ["{landingMainMatRu}"] = model.Field("Main Shaft Door", "Main Landing Material"),
+            ["{landingOtherMatRu}"] = model.Field("Other Shaft Door", "Other Landing Material"),
+            ["{fireResistance}"] = model.Field("Fire Rating"),
+            ["{lopMain}"] = model.Field("Main LOP"),
+            ["{lipMain}"] = model.Field("Main LIP"),
+            ["{lopOther}"] = model.Field("Other LOP"),
+            ["{lipOther}"] = model.Field("Other LIP")
+        };
+    }
+
+    private static void ReplaceParagraphText(XDocument document, IReadOnlyDictionary<string, string> replacements)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        foreach (var paragraph in document.Descendants(w + "p"))
+        {
+            var textNodes = paragraph.Descendants(w + "t").ToArray();
+            if (textNodes.Length == 0) continue;
+            var text = string.Concat(textNodes.Select(node => node.Value));
+            var replaced = text;
+            foreach (var (placeholder, value) in replacements)
             {
-                body.Append(Paragraph(warning, "Warning"));
+                replaced = replaced.Replace(placeholder, value, StringComparison.Ordinal);
+            }
+            if (replaced == text) continue;
+            textNodes[0].Value = replaced;
+            foreach (var node in textNodes.Skip(1)) node.Value = "";
+        }
+    }
+
+    private static void PopulateProposalMetadata(XDocument document, TkpModel model)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var proposalParagraph = document.Descendants(w + "p").FirstOrDefault(paragraph =>
+            ParagraphText(paragraph, w).StartsWith("Коммерческое предложение #", StringComparison.Ordinal));
+        if (proposalParagraph is not null)
+        {
+            SetParagraphText(proposalParagraph, $"Коммерческое предложение #{model.Number}", w);
+        }
+
+        var projectTable = document.Descendants(w + "tbl").FirstOrDefault(table =>
+            TableText(table, w).Contains("Проект:", StringComparison.Ordinal)
+            && TableText(table, w).Contains("Адрес:", StringComparison.Ordinal));
+        if (projectTable is null) return;
+        var cells = projectTable.Descendants(w + "tc").ToArray();
+        if (cells.Length >= 4)
+        {
+            SetCellText(cells[1], model.ProjectName, w);
+            SetCellText(cells[3], model.ProjectAddress, w);
+        }
+    }
+
+    private static void PopulateCommercialTables(XDocument document, TkpModel model)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var tables = document.Descendants(w + "tbl").ToArray();
+        var equipment = tables.FirstOrDefault(table =>
+            TableText(table, w).Contains("Стоимость одной единицы оборудования", StringComparison.Ordinal));
+        if (equipment is not null)
+        {
+            PopulateCommercialTable(equipment, model, model.TotalCny, model.TotalCny * model.Quantity, w);
+        }
+
+        var installation = tables.FirstOrDefault(table =>
+            TableText(table, w).Contains("Стоимость монтажа одной единицы", StringComparison.Ordinal));
+        if (installation is not null)
+        {
+            PopulateCommercialTable(installation, model, 0, 0, w, installation: true);
+        }
+    }
+
+    private static void PopulateCommercialTable(
+        XElement table,
+        TkpModel model,
+        decimal unitPrice,
+        decimal totalPrice,
+        XNamespace w,
+        bool installation = false)
+    {
+        var rows = table.Elements(w + "tr").ToArray();
+        if (rows.Length < 2) return;
+        var designation = FirstText(model.Field("Lift No"), model.SpecificationName);
+        var values = installation
+            ? new[]
+            {
+                "1",
+                designation,
+                model.EquipmentType,
+                model.Quantity.ToString(CultureInfo.InvariantCulture),
+                "По отдельному расчету",
+                "По отдельному расчету"
+            }
+            : new[]
+            {
+                "1",
+                designation,
+                model.EquipmentType,
+                model.Quantity.ToString(CultureInfo.InvariantCulture),
+                Money(unitPrice),
+                Money(totalPrice)
+            };
+        SetRowValues(rows[1], values, w);
+    }
+
+    private static void PopulateTechnicalSpecification(
+        XDocument document,
+        TkpModel model,
+        ImageRegistry images)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var appendixTitle = document.Descendants(w + "tbl").FirstOrDefault(table =>
+            TableText(table, w).Contains("ПРИЛОЖЕНИЕ 1.", StringComparison.Ordinal)
+            && TableText(table, w).Contains("Спецификация оборудования и материалов", StringComparison.Ordinal));
+        if (appendixTitle is null) return;
+
+        var specificationTable = BuildTechnicalSpecificationTable(model, images, w);
+        appendixTitle.AddAfterSelf(specificationTable, PageBreakParagraph(w));
+    }
+
+    private static XElement BuildTechnicalSpecificationTable(
+        TkpModel model,
+        ImageRegistry images,
+        XNamespace w)
+    {
+        var table = new XElement(w + "tbl",
+            new XElement(w + "tblPr",
+                new XElement(w + "tblW",
+                    new XAttribute(w + "w", "9350"),
+                    new XAttribute(w + "type", "dxa")),
+                new XElement(w + "tblLayout", new XAttribute(w + "type", "fixed")),
+                TableBorders(w),
+                new XElement(w + "tblCellMar",
+                    CellMargin(w, "top", 80),
+                    CellMargin(w, "left", 120),
+                    CellMargin(w, "bottom", 80),
+                    CellMargin(w, "right", 120))),
+            new XElement(w + "tblGrid",
+                new XElement(w + "gridCol", new XAttribute(w + "w", "4550")),
+                new XElement(w + "gridCol", new XAttribute(w + "w", "4800"))));
+
+        foreach (var row in model.TechnicalSpecificationRows)
+        {
+            table.Add(row.IsSection
+                ? BuildSectionRow(row.Value, w)
+                : BuildSpecificationRow(row, images, w));
+        }
+
+        return table;
+    }
+
+    private static XElement BuildSectionRow(string value, XNamespace w)
+    {
+        return new XElement(w + "tr",
+            new XElement(w + "trPr", new XElement(w + "cantSplit")),
+            new XElement(w + "tc",
+                new XElement(w + "tcPr",
+                    new XElement(w + "tcW",
+                        new XAttribute(w + "w", "9350"),
+                        new XAttribute(w + "type", "dxa")),
+                    new XElement(w + "gridSpan", new XAttribute(w + "val", "2")),
+                    new XElement(w + "shd",
+                        new XAttribute(w + "val", "clear"),
+                        new XAttribute(w + "color", "auto"),
+                        new XAttribute(w + "fill", "0B2E5B"))),
+                SpecificationParagraph(value, w, bold: true, color: "FFFFFF")));
+    }
+
+    private static XElement BuildSpecificationRow(TkpSpecificationRow row, ImageRegistry images, XNamespace w)
+    {
+        var rightCell = new XElement(w + "tc",
+            new XElement(w + "tcPr",
+                new XElement(w + "tcW",
+                    new XAttribute(w + "w", "4800"),
+                    new XAttribute(w + "type", "dxa")),
+                new XElement(w + "vAlign", new XAttribute(w + "val", "center"))),
+            SpecificationParagraph(row.Value, w, bold: row.BoldValue));
+
+        var image = images.Register(row.ImageCode);
+        if (image is not null)
+        {
+            rightCell.Add(CreateImageParagraph(image, w));
+        }
+
+        return new XElement(w + "tr",
+            new XElement(w + "trPr", new XElement(w + "cantSplit")),
+            new XElement(w + "tc",
+                new XElement(w + "tcPr",
+                    new XElement(w + "tcW",
+                        new XAttribute(w + "w", "4550"),
+                        new XAttribute(w + "type", "dxa")),
+                    new XElement(w + "vAlign", new XAttribute(w + "val", "center"))),
+                SpecificationParagraph(row.Label, w, bold: row.BoldLabel)),
+            rightCell);
+    }
+
+    private static XElement SpecificationParagraph(
+        string text,
+        XNamespace w,
+        bool bold = false,
+        string color = "000000")
+    {
+        var paragraphs = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var paragraph = new XElement(w + "p",
+            new XElement(w + "pPr",
+                new XElement(w + "spacing",
+                    new XAttribute(w + "before", "0"),
+                    new XAttribute(w + "after", "0"),
+                    new XAttribute(w + "line", "240"),
+                    new XAttribute(w + "lineRule", "auto"))));
+        for (var index = 0; index < paragraphs.Length; index++)
+        {
+            if (index > 0)
+            {
+                paragraph.Add(new XElement(w + "r", new XElement(w + "br")));
+            }
+            paragraph.Add(new XElement(w + "r",
+                new XElement(w + "rPr",
+                    new XElement(w + "rFonts",
+                        new XAttribute(w + "ascii", "Arial"),
+                        new XAttribute(w + "hAnsi", "Arial"),
+                        new XAttribute(w + "cs", "Arial")),
+                    new XElement(w + "sz", new XAttribute(w + "val", "20")),
+                    new XElement(w + "szCs", new XAttribute(w + "val", "20")),
+                    new XElement(w + "color", new XAttribute(w + "val", color)),
+                    bold ? new XElement(w + "b") : null),
+                new XElement(w + "t", new XAttribute(XNamespace.Xml + "space", "preserve"), paragraphs[index])));
+        }
+        return paragraph;
+    }
+
+    private static XElement CreateImageParagraph(EmbeddedImage image, XNamespace w)
+    {
+        XNamespace wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+        XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        XNamespace pic = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+        XNamespace r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        var (cx, cy) = image.GetExtent();
+        var picture = new XElement(pic + "pic",
+            new XElement(pic + "nvPicPr",
+                new XElement(pic + "cNvPr", new XAttribute("id", "0"), new XAttribute("name", image.Name)),
+                new XElement(pic + "cNvPicPr")),
+            new XElement(pic + "blipFill",
+                new XElement(a + "blip", new XAttribute(r + "embed", image.RelationshipId)),
+                new XElement(a + "stretch", new XElement(a + "fillRect"))),
+            new XElement(pic + "spPr",
+                new XElement(a + "xfrm",
+                    new XElement(a + "off", new XAttribute("x", "0"), new XAttribute("y", "0")),
+                    new XElement(a + "ext", new XAttribute("cx", cx), new XAttribute("cy", cy))),
+                new XElement(a + "prstGeom", new XAttribute("prst", "rect"), new XElement(a + "avLst"))));
+        var inline = new XElement(wp + "inline",
+            new XAttribute("distT", "0"), new XAttribute("distB", "0"),
+            new XAttribute("distL", "0"), new XAttribute("distR", "0"),
+            new XElement(wp + "extent", new XAttribute("cx", cx), new XAttribute("cy", cy)),
+            new XElement(wp + "effectExtent",
+                new XAttribute("l", "0"), new XAttribute("t", "0"),
+                new XAttribute("r", "0"), new XAttribute("b", "0")),
+            new XElement(wp + "docPr", new XAttribute("id", image.Id), new XAttribute("name", image.Name)),
+            new XElement(wp + "cNvGraphicFramePr",
+                new XElement(a + "graphicFrameLocks", new XAttribute("noChangeAspect", "1"))),
+            new XElement(a + "graphic",
+                new XElement(a + "graphicData",
+                    new XAttribute("uri", "http://schemas.openxmlformats.org/drawingml/2006/picture"),
+                    picture)));
+        return new XElement(w + "p",
+            new XElement(w + "pPr",
+                new XElement(w + "jc", new XAttribute(w + "val", "center")),
+                new XElement(w + "spacing", new XAttribute(w + "before", "80"), new XAttribute(w + "after", "0"))),
+            new XElement(w + "r", new XElement(w + "drawing", inline)));
+    }
+
+    private static XElement TableBorders(XNamespace w)
+    {
+        return new XElement(w + "tblBorders",
+            Border(w, "top"), Border(w, "left"), Border(w, "bottom"), Border(w, "right"),
+            Border(w, "insideH"), Border(w, "insideV"));
+    }
+
+    private static XElement Border(XNamespace w, string side)
+    {
+        return new XElement(w + side,
+            new XAttribute(w + "val", "single"),
+            new XAttribute(w + "sz", "4"),
+            new XAttribute(w + "space", "0"),
+            new XAttribute(w + "color", "404040"));
+    }
+
+    private static XElement CellMargin(XNamespace w, string side, int width)
+    {
+        return new XElement(w + side,
+            new XAttribute(w + "w", width.ToString(CultureInfo.InvariantCulture)),
+            new XAttribute(w + "type", "dxa"));
+    }
+
+    private static XElement PageBreakParagraph(XNamespace w)
+    {
+        return new XElement(w + "p", new XElement(w + "r", new XElement(w + "br", new XAttribute(w + "type", "page"))));
+    }
+
+    private static string ParagraphText(XElement paragraph, XNamespace w) =>
+        string.Concat(paragraph.Descendants(w + "t").Select(node => node.Value));
+
+    private static string TableText(XElement table, XNamespace w) =>
+        string.Concat(table.Descendants(w + "t").Select(node => node.Value));
+
+    private static void SetParagraphText(XElement paragraph, string value, XNamespace w)
+    {
+        var textNodes = paragraph.Descendants(w + "t").ToArray();
+        if (textNodes.Length == 0)
+        {
+            paragraph.Add(new XElement(w + "r", new XElement(w + "t", value)));
+            return;
+        }
+        textNodes[0].Value = value;
+        foreach (var node in textNodes.Skip(1)) node.Value = "";
+    }
+
+    private static void EnableFieldUpdates(XDocument settings)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var root = settings.Root;
+        if (root is null) return;
+        var updateFields = root.Element(w + "updateFields");
+        if (updateFields is null)
+        {
+            root.Add(new XElement(w + "updateFields", new XAttribute(w + "val", "true")));
+        }
+        else
+        {
+            updateFields.SetAttributeValue(w + "val", "true");
+        }
+    }
+
+    private static void AddImageRelationships(ZipArchive archive, ImageRegistry images)
+    {
+        if (images.Count == 0) return;
+        const string relationshipsPath = "word/_rels/document.xml.rels";
+        var entry = archive.GetEntry(relationshipsPath);
+        XNamespace packageRelationships = "http://schemas.openxmlformats.org/package/2006/relationships";
+        XDocument relationships;
+        if (entry is null)
+        {
+            relationships = new XDocument(new XElement(packageRelationships + "Relationships"));
+            entry = archive.CreateEntry(relationshipsPath);
+        }
+        else
+        {
+            using var input = entry.Open();
+            relationships = XDocument.Load(input, LoadOptions.PreserveWhitespace);
+        }
+
+        var root = relationships.Root ?? throw new InvalidDataException("DOCX relationships root is missing.");
+        foreach (var image in images.Items)
+        {
+            root.Add(new XElement(packageRelationships + "Relationship",
+                new XAttribute("Id", image.RelationshipId),
+                new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"),
+                new XAttribute("Target", $"media/{image.Name}")));
+        }
+
+        using var output = entry.Open();
+        output.SetLength(0);
+        relationships.Save(output, SaveOptions.DisableFormatting);
+    }
+
+    private static void EnsurePngContentType(ZipArchive archive, bool required)
+    {
+        if (!required) return;
+        var entry = archive.GetEntry("[Content_Types].xml")
+            ?? throw new InvalidDataException("DOCX content types are missing.");
+        XDocument contentTypes;
+        using (var input = entry.Open())
+        {
+            contentTypes = XDocument.Load(input, LoadOptions.PreserveWhitespace);
+        }
+
+        XNamespace types = "http://schemas.openxmlformats.org/package/2006/content-types";
+        var root = contentTypes.Root ?? throw new InvalidDataException("DOCX content types root is missing.");
+        if (!root.Elements(types + "Default").Any(item =>
+                string.Equals(item.Attribute("Extension")?.Value, "png", StringComparison.OrdinalIgnoreCase)))
+        {
+            root.Add(new XElement(types + "Default",
+                new XAttribute("Extension", "png"),
+                new XAttribute("ContentType", "image/png")));
+        }
+
+        using var output = entry.Open();
+        output.SetLength(0);
+        contentTypes.Save(output, SaveOptions.DisableFormatting);
+    }
+
+    private sealed class ImageRegistry(string assetsRoot, string supplier)
+    {
+        private readonly Dictionary<string, EmbeddedImage?> _byCode = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<EmbeddedImage> _items = [];
+
+        public int Count => _items.Count;
+        public IReadOnlyList<EmbeddedImage> Items => _items;
+
+        public EmbeddedImage? Register(string? rawCode)
+        {
+            var code = ExtractImageCode(rawCode);
+            if (string.IsNullOrWhiteSpace(code)) return null;
+            if (_byCode.TryGetValue(code, out var cached)) return cached;
+
+            var path = ResolveImagePath(code);
+            if (path is null)
+            {
+                _byCode[code] = null;
+                return null;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            if (!TryReadPngSize(bytes, out var width, out var height))
+            {
+                _byCode[code] = null;
+                return null;
+            }
+
+            var index = _items.Count + 1;
+            var image = new EmbeddedImage(
+                index,
+                $"rIdTkpSpecImage{index}",
+                $"tkp-spec-{index}.png",
+                bytes,
+                width,
+                height);
+            _items.Add(image);
+            _byCode[code] = image;
+            return image;
+        }
+
+        public void WriteTo(ZipArchive archive)
+        {
+            foreach (var image in _items)
+            {
+                var entry = archive.CreateEntry($"word/media/{image.Name}", CompressionLevel.Optimal);
+                using var output = entry.Open();
+                output.Write(image.Bytes);
             }
         }
 
-        body.Append(PageBreak());
-        body.Append(Paragraph("ПРИЛОЖЕНИЕ 1. Спецификация оборудования и материалов", "Heading1"));
-        body.Append(SpecificationTable(model));
-
-        body.Append(Paragraph("ПРИЛОЖЕНИЕ 2. Условия предложения", "Heading1"));
-        foreach (var paragraph in Boilerplate(model.Supplier))
+        private string? ResolveImagePath(string code)
         {
-            body.Append(Paragraph(paragraph));
+            var folder = string.Equals(supplier, "XIZI", StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(assetsRoot, "xizi-docx")
+                : Path.Combine(assetsRoot, "smec");
+            if (!Directory.Exists(folder)) return null;
+
+            var normalized = NormalizeImageCode(code);
+            var candidates = Directory.EnumerateFiles(folder, "*.png", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => Path.GetFileNameWithoutExtension(path).Contains(' ') ? 1 : 0)
+                .ToArray();
+            return candidates.FirstOrDefault(path =>
+            {
+                var fileName = Path.GetFileNameWithoutExtension(path);
+                if (fileName.StartsWith("Pic_", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName = fileName[4..];
+                }
+                return string.Equals(NormalizeImageCode(fileName), normalized, StringComparison.OrdinalIgnoreCase);
+            });
         }
 
-        body.Append("""
-            <w:sectPr>
-              <w:pgSz w:w="11906" w:h="16838"/>
-              <w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="850" w:header="708" w:footer="708" w:gutter="0"/>
-            </w:sectPr>
-            """);
+        private static string? ExtractImageCode(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            return value.Split([';', ',', '\n', '\r', '·'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+        }
 
-        return CreateDocx(body.ToString());
+        private static string NormalizeImageCode(string value)
+        {
+            return new string(value
+                .Replace("■", "", StringComparison.Ordinal)
+                .Replace("_", "-", StringComparison.Ordinal)
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToUpperInvariant)
+                .ToArray());
+        }
+
+        private static bool TryReadPngSize(byte[] bytes, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            if (bytes.Length < 24
+                || bytes[0] != 0x89 || bytes[1] != 0x50 || bytes[2] != 0x4E || bytes[3] != 0x47)
+            {
+                return false;
+            }
+            width = ReadBigEndianInt32(bytes, 16);
+            height = ReadBigEndianInt32(bytes, 20);
+            return width > 0 && height > 0;
+        }
+
+        private static int ReadBigEndianInt32(byte[] bytes, int offset)
+        {
+            return (bytes[offset] << 24)
+                   | (bytes[offset + 1] << 16)
+                   | (bytes[offset + 2] << 8)
+                   | bytes[offset + 3];
+        }
     }
+
+    private sealed record EmbeddedImage(
+        int Id,
+        string RelationshipId,
+        string Name,
+        byte[] Bytes,
+        int PixelWidth,
+        int PixelHeight)
+    {
+        public (long Cx, long Cy) GetExtent()
+        {
+            const long maxWidth = 2_150_000;
+            const long maxHeight = 1_900_000;
+            var width = maxWidth;
+            var height = (long)Math.Round(width * (double)PixelHeight / PixelWidth);
+            if (height > maxHeight)
+            {
+                height = maxHeight;
+                width = (long)Math.Round(height * (double)PixelWidth / PixelHeight);
+            }
+            return (width, height);
+        }
+    }
+
+    private static void SetRowValues(XElement row, IReadOnlyList<string> values, XNamespace w)
+    {
+        var cells = row.Elements(w + "tc").ToArray();
+        for (var index = 0; index < Math.Min(cells.Length, values.Count); index++)
+        {
+            SetCellText(cells[index], values[index], w);
+        }
+    }
+
+    private static void SetCellText(XElement cell, string value, XNamespace w)
+    {
+        var textNodes = cell.Descendants(w + "t").ToArray();
+        if (textNodes.Length == 0)
+        {
+            var paragraph = cell.Elements(w + "p").FirstOrDefault();
+            if (paragraph is null)
+            {
+                paragraph = new XElement(w + "p");
+                cell.Add(paragraph);
+            }
+            var run = paragraph.Elements(w + "r").FirstOrDefault();
+            if (run is null)
+            {
+                run = new XElement(w + "r");
+                paragraph.Add(run);
+            }
+            run.Add(new XElement(w + "t", value));
+            return;
+        }
+        textNodes[0].Value = value;
+        foreach (var node in textNodes.Skip(1)) node.Value = "";
+    }
+
+    private static string FirstText(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "";
+
+    private static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value);
 
     private static string InfoTable(TkpModel model)
     {
@@ -374,17 +995,28 @@ internal static class TkpDocxBuilder
 
     private sealed record SpecificationRow(string Group, string Label, string Value);
 
+    private sealed record TkpSpecificationRow(
+        string Label,
+        string Value,
+        bool IsSection = false,
+        string? ImageCode = null,
+        bool BoldLabel = false,
+        bool BoldValue = false);
+
     private sealed class TkpModel
     {
         private readonly PricingCalculationRequest? _request;
+        private readonly PricingCatalog _catalog;
 
         public TkpModel(
             PricingSpecification specification,
             UserProject? project,
             PricingCalculationRequest? request,
-            PricingCalculationResult? calculation)
+            PricingCalculationResult? calculation,
+            PricingCatalog catalog)
         {
             _request = request;
+            _catalog = catalog;
             SpecificationName = specification.Name;
             ProjectName = FirstText(project?.Name, Field("Project Name"), "Проект");
             ProjectAddress = FirstText(project?.Address, Field("Address"), "__________");
@@ -413,6 +1045,7 @@ internal static class TkpDocxBuilder
                 : "Shanghai Mitsubishi Elevator Co., Ltd.";
             EquipmentType = BuildEquipmentType();
             SpecificationRows = BuildSpecificationRows();
+            TechnicalSpecificationRows = BuildTechnicalSpecificationRows();
         }
 
         public string SpecificationName { get; }
@@ -441,6 +1074,146 @@ internal static class TkpDocxBuilder
         public string Manufacturer { get; }
         public string EquipmentType { get; }
         public IReadOnlyList<SpecificationRow> SpecificationRows { get; }
+        public IReadOnlyList<TkpSpecificationRow> TechnicalSpecificationRows { get; }
+
+        private IReadOnlyList<TkpSpecificationRow> BuildTechnicalSpecificationRows()
+        {
+            return Supplier.Equals("XIZI", StringComparison.OrdinalIgnoreCase)
+                ? BuildXiziTechnicalRows()
+                : BuildSmecTechnicalRows();
+        }
+
+        private IReadOnlyList<TkpSpecificationRow> BuildSmecTechnicalRows()
+        {
+            var carDesign = Field("Car Design");
+            var design = _catalog.Smec.CarDesigns.FirstOrDefault(item => CodeMatches(item.Code, carDesign));
+            var wallDescription = FirstText(Field("Car Design Wall"), design?.WallDescription, Field("Wall"));
+            var doorDescription = FirstText(Field("Car Design Door"), design?.DoorDescription, Field("Car Door"));
+            var floor = FormatFloor(Field("Floor Type"), Field("Floor Pattern"));
+            var doorType = Field("Door type");
+            var options = BuildOptionRows(_catalog.Smec.Functions);
+            var power = _catalog.Smec.Power.FirstOrDefault(item =>
+                SeriesMatches(item.Series, Series)
+                && item.Capacity == CapacityKg
+                && SameNumber(item.Speed, Speed))?.Power;
+
+            var rows = new List<TkpSpecificationRow>
+            {
+                Section($"Лифт {FirstText(Field("Lift No"), SpecificationName)}"),
+                Value("Тип лифта", "Пассажирский\nБез машинного помещения"),
+                Value("Модель", Series),
+                Value("Тип привода", "Безредукторная лебедка с электродвигателем на постоянных магнитах"),
+                Value("Тип башмаков", Options.Any(option => option.Contains("Roller guide shoe", StringComparison.OrdinalIgnoreCase)) ? "Роликовые" : "Скольжения"),
+                Value("Регламент", "ТР ТС 011/2011\nГОСТ 33984.1-2016 (EN 81-20:2014)"),
+                Value("Количество единиц, шт.", Quantity.ToString(CultureInfo.InvariantCulture)),
+                Value("Система управления", Field("Operation")),
+                Value("Грузоподъемность, кг", CapacityKg.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Скорость, м/с", Speed.ToString("0.##", RuCulture), boldValue: true),
+                Value("Количество остановок, шт.", Stops.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Количество дверей шахты, шт.", Doors.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Главный посадочный этаж", Field("Main Floor")),
+                Value("Нумерация остальных этажей", Field("Other Floors")),
+                Value("Высота подъема, м", MillimetersToMeters(Field("TR")), boldValue: true),
+                Value("Размеры кабины (Ш x Г x В), мм", JoinDimensions(Field("AA"), Field("BB"), Field("HL")), boldValue: true),
+                Value("Тип кабины", DoorCabinType(doorType)),
+                Value("Размеры дверей (Ш x В), мм", JoinDimensions(Field("JJ"), Field("HH")), boldValue: true),
+                Value("Тип дверей", TranslateDoorOpening(Field("Door mode"))),
+                Value("Огнестойкость дверей шахты", ResolveFireRating()),
+                Section("Отделка кабины"),
+                Value("Дизайн по каталогу", string.Equals(carDesign, "Customized", StringComparison.OrdinalIgnoreCase) ? "Нет" : carDesign, carDesign),
+                Value("Потолок", Field("Ceiling"), Field("Ceiling")),
+                Value("Пол", floor, Field("Floor Pattern")),
+                Value("Стены кабины", wallDescription, carDesign),
+                Value("Двери кабины", doorDescription, Field("Car Door")),
+                Value("Зеркало", TranslateCommonValue(JoinValues(Field("Mirror"), Field("Mirror Position")))),
+                Value("Поручень", FormatHandrail(Field("Handrail"), Field("Handrail Position")), Field("Handrail")),
+                Value("Основная панель приказов (COP)", Field("COP"), Field("COP")),
+                Value("Вспомогательная панель приказов (COP 2)", Field("COP 2"), Field("COP 2")),
+                Value("Кнопки панели приказов", Field("COP Button"), Field("COP Button")),
+                Section("Главный посадочный этаж"),
+                Value("Двери шахты", JoinValues(Field("Main Jamb"), Field("Main Landing Door")), Field("Main Landing Door")),
+                Value("Панель вызовов (LOP)", Field("Main LOP"), Field("Main LOP")),
+                Value("Кнопки панели вызовов", Field("LOP Button"), Field("LOP Button")),
+                Value("Вспомогательная панель вызовов", Field("Main Auxiliary LOP"), Field("Main Auxiliary LOP")),
+                Section("Остальные посадочные этажи"),
+                Value("Двери шахты", JoinValues(Field("Other Jamb"), Field("Other Landing Door")), Field("Other Landing Door")),
+                Value("Панель вызовов (LOP)", Field("Other LOP"), Field("Other LOP")),
+                Value("Кнопки панели вызовов", Field("Other LOP Button"), Field("Other LOP Button")),
+                Value("Вспомогательная панель вызовов", Field("Other Auxiliary LOP"), Field("Other Auxiliary LOP"))
+            };
+            if (options.Count > 0)
+            {
+                rows.Add(Section("Стандартные опции"));
+                rows.AddRange(options.Select(option => Value("", option)));
+            }
+            rows.AddRange([
+                Value("Источник питания", FirstText(Field("Power Supply"), "380±7% В, 50±2% Гц"), boldLabel: true),
+                Value("Мощность, кВт", power?.ToString("0.##", RuCulture) ?? "—", boldLabel: true),
+                Value("Размеры шахты (Ш x Г), мм", JoinDimensions(Field("AH"), Field("BH")), boldLabel: true, boldValue: true),
+                Value("Высота оголовка, мм", Field("OH"), boldLabel: true, boldValue: true),
+                Value("Глубина приямка, мм", Field("PD"), boldLabel: true, boldValue: true),
+                Value("Помещение под приямком/ловители противовеса", HasOption("CWT Safety Gear") ? "Ловители противовеса предусмотрены" : "Нет / Без ловителей", boldLabel: true),
+                Value("Условия эксплуатации", "(+5...+40) °C", boldLabel: true)
+            ]);
+            return RemoveEmptyRows(rows);
+        }
+
+        private IReadOnlyList<TkpSpecificationRow> BuildXiziTechnicalRows()
+        {
+            var designCode = Field("Cabin Design");
+            var designVisual = FindVisual(_catalog.Xizi.VisualItems, designCode);
+            var options = BuildOptionRows(_catalog.Xizi.Options);
+            var rows = new List<TkpSpecificationRow>
+            {
+                Section($"Лифт {FirstText(Field("Lift No"), SpecificationName)}"),
+                Value("Тип лифта", FirstText(Field("Elevator Type"), "Пассажирский\nБез машинного помещения")),
+                Value("Модель", FirstText(Field("Model"), Series)),
+                Value("Регламент", "ТР ТС 011/2011\nГОСТ 33984.1-2016 (EN 81-20:2014)"),
+                Value("Количество единиц, шт.", Quantity.ToString(CultureInfo.InvariantCulture)),
+                Value("Система управления", Field("Control System")),
+                Value("Грузоподъемность, кг", CapacityKg.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Скорость, м/с", Speed.ToString("0.##", RuCulture), boldValue: true),
+                Value("Количество остановок, шт.", Stops.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Количество дверей шахты, шт.", Doors.ToString(CultureInfo.InvariantCulture), boldValue: true),
+                Value("Главный посадочный этаж", Field("Main Floor")),
+                Value("Нумерация остальных этажей", Field("Other Floors")),
+                Value("Высота подъема, м", MillimetersToMeters(Field("Travel Height")), boldValue: true),
+                Value("Высота оголовка, мм", Field("Overhead"), boldValue: true),
+                Value("Глубина приямка, мм", Field("Pit"), boldValue: true),
+                Value("Размеры шахты (Ш x Г), мм", JoinDimensions(Field("Shaft Width"), Field("Shaft Depth")), boldValue: true),
+                Value("Размеры кабины (Ш x Г x В), мм", JoinDimensions(Field("Car Width"), Field("Car Depth"), Field("Car Height")), boldValue: true),
+                Value("Тип кабины", Field("Car Type")),
+                Value("Размеры дверей (Ш x В), мм", JoinDimensions(Field("Door Width"), Field("Door Height")), boldValue: true),
+                Value("Тип дверей", Field("Door Opening")),
+                Value("Огнестойкость дверей шахты", Field("Fire Rating")),
+                Value("Помещение под приямком/ловители противовеса", HasOption("CWTSAFETY") ? "Ловители противовеса предусмотрены" : "Нет / Без ловителей"),
+                Value("Условия эксплуатации", "(+5...+40) °C"),
+                Section("Отделка кабины"),
+                Value("Дизайн по каталогу", designCode, designCode),
+                Value("Потолок", VisualValue(Field("Ceiling")), Field("Ceiling")),
+                Value("Пол", VisualValue(Field("Floor")), Field("Floor")),
+                Value("Стены кабины", FirstText(Field("Car Wall Material"), designVisual?.Description), designCode),
+                Value("Двери кабины", Field("Car Door Material")),
+                Value("Зеркало", JoinValues(Field("Mirror Wall"), Field("Mirror Height"))),
+                Value("Поручень", VisualValue(JoinValues(Field("Handrail"), Field("Handrail Position"))), Field("Handrail")),
+                Value("Основная панель приказов (COP)", VisualValue(Field("COP")), Field("COP")),
+                Value("Кнопки панели приказов", Field("COP Button"), Field("COP Button")),
+                Section("Главный посадочный этаж"),
+                Value("Двери шахты", Field("Main Shaft Door"), Field("Main Shaft Door")),
+                Value("Панель вызовов (LOP)", VisualValue(Field("Main LOP")), Field("Main LOP")),
+                Value("Этажный указатель (LIP)", VisualValue(Field("Main LIP")), Field("Main LIP")),
+                Section("Остальные посадочные этажи"),
+                Value("Двери шахты", Field("Other Shaft Door"), Field("Other Shaft Door")),
+                Value("Панель вызовов (LOP)", VisualValue(Field("Other LOP")), Field("Other LOP")),
+                Value("Этажный указатель (LIP)", VisualValue(Field("Other LIP")), Field("Other LIP"))
+            };
+            if (options.Count > 0)
+            {
+                rows.Add(Section("Опции"));
+                rows.AddRange(options.Select(option => Value("", option)));
+            }
+            return RemoveEmptyRows(rows);
+        }
 
         private string BuildEquipmentType()
         {
@@ -539,6 +1312,159 @@ internal static class TkpDocxBuilder
             ];
         }
 
+        private List<string> BuildOptionRows(IReadOnlyList<PriceEntry> catalogEntries)
+        {
+            var rows = new List<string>();
+            foreach (var option in Options.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (option.StartsWith("CONTAINER_", StringComparison.OrdinalIgnoreCase)) continue;
+                var entry = catalogEntries.FirstOrDefault(item => CodeMatches(item.Code, option));
+                rows.Add(FirstText(entry?.Description, option));
+            }
+            return rows;
+        }
+
+        private string VisualValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "";
+            var item = FindVisual(_catalog.Xizi.VisualItems, value);
+            return FirstText(item?.Description is null ? null : $"{value}\n{item.Description}", value);
+        }
+
+        private static SmecVisualEntry? FindVisual(IReadOnlyList<SmecVisualEntry> items, string? code)
+        {
+            return items.FirstOrDefault(item => CodeMatches(item.Code, code));
+        }
+
+        private static IReadOnlyList<TkpSpecificationRow> RemoveEmptyRows(IEnumerable<TkpSpecificationRow> rows)
+        {
+            return rows.Where(row => row.IsSection || !string.IsNullOrWhiteSpace(row.Value)).ToArray();
+        }
+
+        private static TkpSpecificationRow Section(string title) => new("", title, IsSection: true);
+
+        private static TkpSpecificationRow Value(
+            string label,
+            string value,
+            string? imageCode = null,
+            bool boldLabel = false,
+            bool boldValue = false) =>
+            new(label, NormalizeDisplayValue(value), ImageCode: imageCode, BoldLabel: boldLabel, BoldValue: boldValue);
+
+        private static string NormalizeDisplayValue(string value)
+        {
+            return value
+                .Replace("■-", "-", StringComparison.Ordinal)
+                .Replace("■", "", StringComparison.Ordinal)
+                .Trim();
+        }
+
+        private static string TranslateCommonValue(string value)
+        {
+            if (string.Equals(value.Trim(), "None", StringComparison.OrdinalIgnoreCase)) return "Нет";
+            if (string.Equals(value.Trim(), "rear wall", StringComparison.OrdinalIgnoreCase)) return "По задней стене";
+            if (string.Equals(value.Trim(), "front wall", StringComparison.OrdinalIgnoreCase)) return "По передней стене";
+            if (string.Equals(value.Trim(), "side wall", StringComparison.OrdinalIgnoreCase)) return "По боковой стене";
+            return value;
+        }
+
+        private static string FormatHandrail(string handrail, string position)
+        {
+            if (string.IsNullOrWhiteSpace(handrail)) return "Нет";
+            return JoinValues(handrail, TranslateCommonValue(position));
+        }
+
+        private static string FormatFloor(string floorType, string floorPattern)
+        {
+            if (floorType.Contains("concave-down", StringComparison.OrdinalIgnoreCase))
+            {
+                var depth = floorPattern
+                    .Replace("depth", "Глубина", StringComparison.OrdinalIgnoreCase)
+                    .Replace("mm", "мм", StringComparison.OrdinalIgnoreCase);
+                return JoinValues("Ниша под материал Заказчика", depth);
+            }
+            return JoinValues(floorPattern, floorType);
+        }
+
+        private static string JoinDimensions(params string[] values)
+        {
+            var parts = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+            return parts.Length == values.Length ? string.Join(" x ", parts) : "";
+        }
+
+        private static string JoinValues(params string[] values)
+        {
+            return string.Join("\n", values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static string MillimetersToMeters(string value)
+        {
+            if (!decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var millimeters))
+            {
+                return value;
+            }
+            return (millimeters / 1000m).ToString("0.###", RuCulture);
+        }
+
+        private bool HasOption(string code)
+        {
+            return Options.Any(option => CodeMatches(option, code));
+        }
+
+        private string ResolveFireRating()
+        {
+            var value = Field("Fire Rating");
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+            var requirements = Field("Other Requirements");
+            foreach (var candidate in new[] { "EI120", "EI60", "EI30", "E120", "E60", "E30" })
+            {
+                if (requirements.Contains(candidate, StringComparison.OrdinalIgnoreCase)) return candidate;
+            }
+            return "—";
+        }
+
+        private static string DoorCabinType(string doorType)
+        {
+            return doorType.Contains("2G", StringComparison.OrdinalIgnoreCase)
+                ? $"Проходная ({doorType})"
+                : string.IsNullOrWhiteSpace(doorType) ? "" : $"Непроходная ({doorType})";
+        }
+
+        private static string TranslateDoorOpening(string value)
+        {
+            if (value.Contains("central", StringComparison.OrdinalIgnoreCase)) return "Центрального открывания";
+            if (value.Contains("side", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("telesc", StringComparison.OrdinalIgnoreCase)) return "Телескопического открывания";
+            return value;
+        }
+
+        private static bool CodeMatches(string? left, string? right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right)) return false;
+            return string.Equals(NormalizeCode(left), NormalizeCode(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeCode(string value)
+        {
+            return new string(value.Replace("■", "", StringComparison.Ordinal)
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToUpperInvariant)
+                .ToArray());
+        }
+
+        private static bool SeriesMatches(string value, string expected)
+        {
+            return string.Equals(value, expected, StringComparison.OrdinalIgnoreCase)
+                || value.Contains(expected, StringComparison.OrdinalIgnoreCase)
+                || expected.Contains(value, StringComparison.OrdinalIgnoreCase)
+                || (expected.StartsWith("ELE-", StringComparison.OrdinalIgnoreCase)
+                    && value.Contains("ELENESSA", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool SameNumber(decimal left, decimal right) => Math.Abs(left - right) < 0.001m;
+
         private SpecificationRow Spec(string group, string label, params string[] fieldNames)
         {
             return new SpecificationRow(
@@ -547,7 +1473,7 @@ internal static class TkpDocxBuilder
                 string.Join(" / ", fieldNames.Select(name => Field(name)).Where(value => !string.IsNullOrWhiteSpace(value))));
         }
 
-        private string Field(params string[] names)
+        public string Field(params string[] names)
         {
             if (_request?.SpecificationFields is null)
             {

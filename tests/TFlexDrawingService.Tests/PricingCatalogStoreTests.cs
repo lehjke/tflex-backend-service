@@ -34,13 +34,13 @@ public sealed class PricingCatalogStoreTests
                   }
                 ],
                 "doors": [
-                  { "manufacturer": "FERMATOR", "part": "Car door", "doorType": "CO", "fireRating": "None", "finish": "AISI443", "capacity": 1000, "floor": "-", "width": 900, "price": 1000 },
-                  { "manufacturer": "FERMATOR", "part": "2nd door", "doorType": "CO", "fireRating": "None", "finish": "AISI443", "capacity": 1000, "floor": "-", "width": 900, "price": 2000 },
+                  { "manufacturer": "FERMATOR", "part": "Car door", "doorType": "CO", "fireRating": "E30", "finish": "AISI443", "capacity": 1000, "floor": "-", "width": 900, "price": 1000 },
+                  { "manufacturer": "FERMATOR", "part": "2nd door", "doorType": "CO", "fireRating": "E30", "finish": "AISI443", "capacity": 1000, "floor": "-", "width": 900, "price": 2000 },
                   { "manufacturer": "FERMATOR", "part": "Shaft door", "doorType": "CO", "fireRating": "E30", "finish": "Painted steel", "capacity": 1000, "floor": "First", "width": 900, "price": 300 },
                   { "manufacturer": "FERMATOR", "part": "Shaft door", "doorType": "CO", "fireRating": "E30", "finish": "AISI443", "capacity": 1000, "floor": "Other", "width": 900, "price": 200 }
                 ],
                 "decorations": [
-                  { "category": "Car walls", "code": "AISI443", "height": 2400, "price": 500, "overprice": 200 },
+                  { "category": "Car walls", "code": "aisi-443", "height": 2400, "price": 500, "overprice": 200 },
                   { "category": "Ceiling", "code": "U-CL029", "price": 100, "overprice": 0 },
                   { "category": "Floor", "code": "U-FL033", "price": 200, "overprice": 0 },
                   { "category": "Mirror", "code": "Половина высоты", "price": 300, "overprice": 0 },
@@ -105,7 +105,7 @@ public sealed class PricingCatalogStoreTests
                         ["Car Door Material"] = "Нерж. сталь AISI443",
                         ["Main Shaft Door"] = "Окрашенная сталь RAL9006",
                         ["Other Shaft Door"] = "Нерж. сталь AISI443",
-                        ["Cabin Design"] = "U-CR126",
+                        ["Cabin Design"] = "U-CR126-BASE",
                         ["Car Wall Material"] = "Нерж. сталь AISI443",
                         ["Ceiling"] = "U-CL029",
                         ["Floor"] = "U-FL033",
@@ -125,11 +125,11 @@ public sealed class PricingCatalogStoreTests
                     null));
 
             Assert.Equal("warning", result.Status);
-            Assert.Equal(118124.34m, result.TotalCny);
+            Assert.Equal(118260.34m, result.TotalCny);
             Assert.Contains(result.Lines, line => line.Label == "Вторая дверь проходной кабины" && line.AmountCny == 2000m);
             Assert.Contains(result.Lines, line => line.Label == "Превышение расчетной высоты, 1 м" && line.AmountCny == 500m);
             Assert.Contains(result.Lines, line => line.Label == "Кнопки COP: iBR34M(BL)" && line.AmountCny == 140m);
-            Assert.Contains(result.Lines, line => line.Label == "Опция CCTV" && line.AmountCny == 340m);
+            Assert.Contains(result.Lines, line => line.Label == "Опция CCTV" && line.AmountCny == 476m);
         }
         finally
         {
@@ -669,6 +669,37 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
+    public void EmbeddedSmecCatalog_ContainsSupplierWorkbookPricesAndValidSpeeds()
+    {
+        var catalogPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "../../../../../src/TFlexDrawingService.Api/Data/pricing-catalog.json"));
+        using var document = JsonDocument.Parse(File.ReadAllText(catalogPath));
+        var smec = document.RootElement.GetProperty("smec");
+        var basePrices = smec.GetProperty("basePrices").EnumerateArray().ToArray();
+
+        Assert.DoesNotContain(basePrices, item => item.GetProperty("speed").GetDecimal() == 0m);
+        Assert.Contains(basePrices, item =>
+            item.GetProperty("series").GetString() == "ELENESSA (GQXL3M3)"
+            && item.GetProperty("capacity").GetInt32() == 1050
+            && item.GetProperty("speed").GetDecimal() == 1.75m
+            && item.GetProperty("basicPrice").GetDecimal() == 190790m);
+        Assert.Contains(basePrices, item =>
+            item.GetProperty("series").GetString() == "LEHY-Pro"
+            && item.GetProperty("capacity").GetInt32() == 1050
+            && item.GetProperty("speed").GetDecimal() == 1.75m
+            && item.GetProperty("basicPrice").GetDecimal() == 170011.8m);
+
+        var functions = smec.GetProperty("functions").EnumerateArray().ToArray();
+        Assert.Contains(functions, item =>
+            item.GetProperty("code").GetString() == "FCC-A"
+            && item.GetProperty("price").GetDecimal() == 1720m);
+        Assert.Contains(functions, item =>
+            item.GetProperty("code").GetString() == "FERC"
+            && item.GetProperty("price").GetDecimal() == 280m);
+    }
+
+    [Fact]
     public void BuildTkpDocx_CreatesWordPackageWithProposalContent()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
@@ -676,6 +707,25 @@ public sealed class PricingCatalogStoreTests
 
         try
         {
+            var templateDirectory = Path.Combine(root, "Data", "Templates");
+            Directory.CreateDirectory(templateDirectory);
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/Data/Templates/TKP-SMEC.docx")),
+                Path.Combine(templateDirectory, "TKP-SMEC.docx"));
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/Data/pricing-catalog.json")),
+                Path.Combine(root, "Data", "pricing-catalog.json"));
+            var assetDirectory = Path.Combine(root, "wwwroot", "assets", "smec");
+            Directory.CreateDirectory(assetDirectory);
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/wwwroot/assets/smec/Pic_ZCD-020X.png")),
+                Path.Combine(assetDirectory, "Pic_ZCD-020X.png"));
             var store = new PricingCatalogStore(
                 new TestWebHostEnvironment(root),
                 new TestHttpClientFactory());
@@ -766,11 +816,153 @@ public sealed class PricingCatalogStoreTests
             using var reader = new StreamReader(documentEntry!.Open());
             var documentXml = reader.ReadToEnd();
             _ = XDocument.Parse(documentXml);
-            Assert.Contains("Коммерческое предложение #P240174", documentXml);
+            Assert.Contains("P240174", documentXml);
             Assert.Contains("ЖК Северный корпус 3", documentXml);
-            Assert.Contains("Shanghai Mitsubishi Elevator Co., Ltd.", documentXml);
-            Assert.Contains("Базовая цена LEHY-L-Pro", documentXml);
-            Assert.Contains("ПРИЛОЖЕНИЕ 1", documentXml);
+            Assert.Contains("LEHY-L-Pro", documentXml);
+            Assert.Contains("Спецификация оборудования и материалов", documentXml);
+            Assert.Contains("Размеры шахты (Ш x Г), мм", documentXml);
+            Assert.Contains("1700 x 2500", documentXml);
+            Assert.Contains("Стандартные опции", documentXml);
+            Assert.Contains("Ниша под материал Заказчика", documentXml);
+            Assert.DoesNotContain("concave-down", documentXml);
+            Assert.DoesNotContain("■", documentXml);
+            Assert.NotNull(archive.GetEntry("word/media/tkp-spec-1.png"));
+            Assert.DoesNotContain("{kpNumber}", documentXml);
+            Assert.DoesNotContain("{capacity}", documentXml);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void BuildTkpDocx_UsesXiziTemplateAndCatalogImage()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var sourceRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
+            var templateDirectory = Path.Combine(root, "Data", "Templates");
+            Directory.CreateDirectory(templateDirectory);
+            File.Copy(Path.Combine(sourceRoot, "Data", "Templates", "TKP-XIZI.docx"), Path.Combine(templateDirectory, "TKP-XIZI.docx"));
+            File.Copy(Path.Combine(sourceRoot, "Data", "pricing-catalog.json"), Path.Combine(root, "Data", "pricing-catalog.json"));
+            var assetDirectory = Path.Combine(root, "wwwroot", "assets", "xizi-docx");
+            Directory.CreateDirectory(assetDirectory);
+            File.Copy(Path.Combine(sourceRoot, "wwwroot", "assets", "xizi-docx", "u-cr126.png"), Path.Combine(assetDirectory, "u-cr126.png"));
+
+            var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory());
+            var request = new PricingCalculationRequest(
+                "XIZI", "UN-Victor MRL", 1000, 1.75m, 10, 900, "CO", "OPTIMAX", 10,
+                0, null, ["CCTV"], false, false, "RUB", "project-xizi", null,
+                new Dictionary<string, string>
+                {
+                    ["Shaft Width"] = "2100",
+                    ["Shaft Depth"] = "2400",
+                    ["Travel Height"] = "27900",
+                    ["Cabin Design"] = "U-CR126",
+                    ["Car Width"] = "1600",
+                    ["Car Depth"] = "1500",
+                    ["Car Height"] = "2400",
+                    ["Door Width"] = "900",
+                    ["Door Height"] = "2100"
+                },
+                "X1");
+            var calculation = new PricingCalculationResult(
+                "ready", "XIZI", "UN-Victor MRL", "CNY", "RUB", 12m, "manual", 100000m, 1200000m,
+                [new PricingLine("base", "Базовая цена", 1, 100000m, 100000m, "ready")],
+                [], [], new ContainerInfo("40HQ", "40HQ"), DateTimeOffset.UtcNow);
+            var specification = new PricingSpecification(
+                "specification-xizi", "project-xizi", null, "X1", "XIZI", "UN-Victor MRL", "ready",
+                calculation.TotalCny, calculation.TargetCurrency, calculation.TotalConverted,
+                JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            var project = new UserProject(
+                "project-xizi", "admin", "Бизнес-центр Восток", "г. Москва", "P-XIZI", "",
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+            var docx = store.BuildTkpDocx(specification, project);
+
+            using var archive = new ZipArchive(new MemoryStream(docx), ZipArchiveMode.Read);
+            using var reader = new StreamReader(archive.GetEntry("word/document.xml")!.Open());
+            var documentXml = reader.ReadToEnd();
+            _ = XDocument.Parse(documentXml);
+            Assert.Contains("UN-Victor MRL", documentXml);
+            Assert.Contains("2100 x 2400", documentXml);
+            Assert.Contains("U-CR126", documentXml);
+            Assert.NotNull(archive.GetEntry("word/media/tkp-spec-1.png"));
+            Assert.DoesNotContain("{kpNumber}", documentXml);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void BuildPricingRequestXlsx_PreservesTemplateAndReplacesPlaceholders()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var templateDirectory = Path.Combine(root, "Data", "Templates");
+        Directory.CreateDirectory(templateDirectory);
+
+        try
+        {
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/Data/Templates/shablon_zaprosa.xlsx")),
+                Path.Combine(templateDirectory, "shablon_zaprosa.xlsx"));
+            var request = new PricingCalculationRequest(
+                "XIZI", "UN-Victor MRL", 1000, 1.75m, 10, 900, "CO", "OPTIMAX", 10,
+                0, null, ["CONTAINER_40HQ", "EFS2"], false, false, "RUB", "project-1", null,
+                new Dictionary<string, string>
+                {
+                    ["Model"] = "UN-Victior MRL",
+                    ["Travel Height"] = "27900",
+                    ["Shaft Width"] = "1800",
+                    ["Shaft Depth"] = "2700",
+                    ["Overhead"] = "5300",
+                    ["Pit"] = "1900",
+                    ["Car Width"] = "1100",
+                    ["Car Depth"] = "2100",
+                    ["Car Height"] = "2400"
+                },
+                "L1");
+            var specification = new PricingSpecification(
+                "specification-1", "project-1", null, "L1", "XIZI", "UN-Victor MRL", "ready",
+                100000m, "RUB", 1250000m,
+                JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                "{}", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            var project = new UserProject(
+                "project-1", "admin", "ЖК Северный", "Москва", "P240174", "",
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory());
+
+            var xlsx = store.BuildPricingRequestXlsx(specification, project);
+
+            using var archive = new ZipArchive(new MemoryStream(xlsx), ZipArchiveMode.Read);
+            Assert.NotNull(archive.GetEntry("xl/styles.xml"));
+            var sharedStrings = archive.GetEntry("xl/sharedStrings.xml");
+            Assert.NotNull(sharedStrings);
+            using var reader = new StreamReader(sharedStrings!.Open());
+            var xml = reader.ReadToEnd();
+            _ = XDocument.Parse(xml);
+            Assert.Contains("ЖК Северный", xml);
+            Assert.Contains("27900", xml);
+            Assert.DoesNotContain("{{projectName}}", xml);
+            Assert.DoesNotContain("{{demand1_1}}", xml);
+
+            var worksheetEntry = archive.GetEntry("xl/worksheets/sheet1.xml");
+            Assert.NotNull(worksheetEntry);
+            using var worksheetReader = new StreamReader(worksheetEntry!.Open());
+            var worksheet = XDocument.Parse(worksheetReader.ReadToEnd());
+            var unusedDemandCell = worksheet.Descendants().Single(element =>
+                element.Name.LocalName == "c" && element.Attribute("r")?.Value == "D55");
+            Assert.Null(unusedDemandCell.Elements().FirstOrDefault(element => element.Name.LocalName == "v"));
         }
         finally
         {

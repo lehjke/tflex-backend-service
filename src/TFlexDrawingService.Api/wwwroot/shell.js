@@ -1,11 +1,11 @@
-import { mountLanguageSwitch, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { mountLanguageSwitch, t } from "./i18n.js?v=20260826-design-fixes-1";
 
 const menuButton = document.querySelector(".sidebar__menu-toggle");
 const sidebarMenu = document.querySelector("#sidebarMenu");
 const sidebarHelp = document.querySelector(".sidebar__help");
 const menuBackdrop = document.querySelector(".mobile-menu-backdrop");
 const mobileMenuQuery = window.matchMedia("(max-width: 900px)");
-const mobileSearchQuery = window.matchMedia("(max-width: 620px)");
+const mobileSearchQuery = window.matchMedia("(max-width: 900px)");
 const sourceUserPanel = document.querySelector("#userPanel");
 const sourceUserName = document.querySelector("#currentUserName");
 const sourceLogoutButton = document.querySelector("#logoutButton");

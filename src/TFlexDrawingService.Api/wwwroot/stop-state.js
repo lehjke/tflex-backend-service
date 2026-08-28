@@ -36,17 +36,17 @@ export function isSignedIntegerDraft(value) {
 }
 
 export function getMainSelectionMode(mainValue) {
-  const automatic = toFlag(mainValue);
+  const manual = toFlag(mainValue);
   return {
-    automatic,
-    manual: !automatic,
-    radiosReadOnly: automatic
+    automatic: !manual,
+    manual,
+    radiosReadOnly: !manual
   };
 }
 
 export function resolveMainFloor({ mainValue, selectedMainFloor, lobbyStopIndex, stops }) {
   const mode = getMainSelectionMode(mainValue);
-  const candidate = mode.automatic ? lobbyStopIndex : selectedMainFloor;
+  const candidate = mode.automatic ? 1 : selectedMainFloor;
   const normalized = Math.trunc(toFiniteNumber(candidate)) || 1;
   return Math.min(clampStopCount(stops), Math.max(1, normalized));
 }

@@ -92,6 +92,9 @@ test("editor and account session clears remove private state and draft controls"
 });
 
 test("job submission always restores its submit control", () => {
-  const submitBody = functionBody(readWebSource("app.js"), "submitJob");
-  assert.match(submitBody, /finally\s*\{\s*submitButton\.disabled = false;/u);
+  const source = readWebSource("app.js");
+  const submitBody = functionBody(source, "submitJob");
+  assert.match(submitBody, /finally\s*\{\s*setJobSubmitDisabled\(false\);/u);
+  assert.match(source, /function setJobSubmitDisabled\(disabled\) \{\s*if \(submitButton\) submitButton\.disabled = disabled;\s*\}/u);
+  assert.doesNotMatch(source, /createTopButton/u);
 });

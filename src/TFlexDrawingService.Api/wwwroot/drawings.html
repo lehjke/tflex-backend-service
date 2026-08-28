@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#101A38">
   <title>Создание чертежей — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260825-panel-spacing-16-1">
+  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Инженерный центр МЛТ">
       <a class="brand" href="/" aria-label="Инженерный центр МЛТ">
-        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="МЛТ ЛИФТЫ">
-        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="MLT ELEVATORS">
+        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="114" alt="МЛТ ЛИФТЫ">
+        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="118" alt="MLT ELEVATORS">
       </a>
       <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
         <span aria-hidden="true"></span>
@@ -23,7 +24,7 @@
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
+        <a class="is-active" href="/drawings" aria-current="page"><span>Создание чертежей</span><small>Drawings</small></a>
         <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
         <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
       </nav>
@@ -39,9 +40,9 @@
     <div class="workspace">
       <header class="topbar">
         <div class="breadcrumbs" aria-label="Навигация">
-          <span>Главная</span>
+          <a href="/">Главная</a>
           <span aria-hidden="true">/</span>
-          <span>Инженерный центр</span>
+          <span>Создание чертежей</span>
         </div>
 
         <label class="global-search">
@@ -67,10 +68,10 @@
             </a>
             <button id="logoutButton" class="secondary secondary--compact" type="button">Выйти</button>
           </div>
-
-          <button id="createTopButton" class="topbar__button" type="submit" form="jobForm">Создать чертеж</button>
         </div>
       </header>
+
+      <div id="mainContent" class="main-content-anchor" tabindex="-1"></div>
 
       <section id="pageSkeleton" class="page-skeleton page-skeleton--editor" aria-label="Загрузка страницы" aria-busy="true">
         <span class="sr-only">Загрузка страницы</span>
@@ -115,6 +116,12 @@
           </section>
         </div>
         <div class="skeleton-preview-stack" aria-hidden="true">
+          <section class="skeleton-panel skeleton-editor-status">
+            <span class="skeleton skeleton--heading"></span>
+            <span class="skeleton skeleton--status-box"></span>
+            <span class="skeleton skeleton--button skeleton--button-full"></span>
+            <span class="skeleton skeleton--button skeleton--button-full"></span>
+          </section>
           <section class="skeleton-panel skeleton-editor-preview">
             <span class="skeleton skeleton--heading"></span>
             <span class="skeleton skeleton--copy skeleton--copy-medium"></span>
@@ -124,12 +131,6 @@
               <span class="skeleton skeleton--copy"></span>
               <span class="skeleton skeleton--copy skeleton--copy-short"></span>
             </div>
-          </section>
-          <section class="skeleton-panel skeleton-editor-status">
-            <span class="skeleton skeleton--heading"></span>
-            <span class="skeleton skeleton--status-box"></span>
-            <span class="skeleton skeleton--button skeleton--button-full"></span>
-            <span class="skeleton skeleton--button skeleton--button-full"></span>
           </section>
         </div>
         <section class="skeleton-panel skeleton-editor-jobs" aria-hidden="true">
@@ -211,7 +212,7 @@
             <section class="panel panel--config">
               <div class="panel__header">
                 <h2>Проект и шаблон</h2>
-                <button class="secondary secondary--compact" type="reset" form="jobForm">Начать заново</button>
+                <button class="secondary secondary--compact secondary--danger reset-job-button" type="reset" form="jobForm">Сбросить параметры</button>
               </div>
 
               <div class="form-grid form-grid--editor">
@@ -230,12 +231,6 @@
                   <input id="configurationNamePreview" type="text" value="-" autocomplete="off">
                 </label>
 
-                <label class="field field--format">
-                  <span class="field__label">Формат</span>
-                  <select id="formatSelect" name="outputFormat"></select>
-                </label>
-
-                <button id="saveConfigurationButton" class="secondary field-action-button" type="button">Сохранить</button>
               </div>
             </section>
 
@@ -249,7 +244,11 @@
                   <span>Показать все параметры</span>
                 </label>
               </div>
-              <div id="parameterTabs" class="parameter-tabs" aria-label="Категории параметров"></div>
+              <div class="parameter-tabs-shell">
+                <button id="parameterTabsPrevious" class="parameter-tabs__scroll parameter-tabs__scroll--previous" type="button" aria-label="Предыдущие категории" disabled><span aria-hidden="true">‹</span></button>
+                <div id="parameterTabs" class="parameter-tabs" aria-label="Категории параметров"></div>
+                <button id="parameterTabsNext" class="parameter-tabs__scroll parameter-tabs__scroll--next" type="button" aria-label="Следующие категории" disabled><span aria-hidden="true">›</span></button>
+              </div>
               <div id="parametersForm" class="parameters"></div>
               <div id="parameterReadyBanner" class="ready-banner" role="status" aria-live="polite" aria-atomic="true" hidden>Конфигурация готова к генерации PDF/DWG/DXF.</div>
             </section>
@@ -259,6 +258,25 @@
         </section>
 
         <aside class="preview-stack">
+          <section class="panel panel--status">
+            <div class="panel__header">
+              <h2>Генерация</h2>
+            </div>
+            <div id="statusPanel" class="empty" role="status" aria-live="polite" aria-atomic="true">Нет активного задания</div>
+            <div class="generation-settings">
+              <label class="field field--format">
+                <span class="field__label">Формат</span>
+                <select id="formatSelect" name="outputFormat" form="jobForm"></select>
+              </label>
+              <button id="saveConfigurationButton" class="secondary" type="button">Сохранить конфигурацию</button>
+            </div>
+            <div class="generation-actions">
+              <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
+              <button id="previewResultButton" class="secondary" type="button" disabled>Предпросмотр PDF</button>
+              <button id="downloadResultButton" class="secondary" type="button" disabled>Скачать PDF</button>
+            </div>
+          </section>
+
           <section class="panel panel--preview">
             <div class="panel__header">
               <div>
@@ -273,18 +291,6 @@
               <div id="shaftPreviewCanvas" class="shaft-preview__canvas"></div>
               <div id="shaftCollisionStatus" class="preview-collision-status" role="alert" aria-live="assertive" hidden></div>
               <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
-            </div>
-          </section>
-
-          <section class="panel panel--status">
-            <div class="panel__header">
-              <h2>Генерация</h2>
-            </div>
-            <div id="statusPanel" class="empty" role="status" aria-live="polite" aria-atomic="true">Нет активного задания</div>
-            <div class="generation-actions">
-              <button id="submitButton" class="primary" type="submit" form="jobForm">Создать чертеж</button>
-              <button id="previewResultButton" class="secondary" type="button" disabled>Предпросмотр PDF</button>
-              <button id="downloadResultButton" class="secondary" type="button" disabled>Скачать PDF</button>
             </div>
           </section>
         </aside>
@@ -314,7 +320,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
-  <script type="module" src="/app.js?v=20260807-show-all-1"></script>
+  <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
+  <script type="module" src="/app.js?v=20260827-lobby-units-1"></script>
 </body>
 </html>

@@ -1,11 +1,13 @@
-import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
+import { groupProjectAssets } from "./project-assets.js?v=20260827-asset-grouping-1";
 
 const state = {
   currentUser: null,
   projects: [],
   configurationsByProjectId: new Map(),
+  pricingByProjectId: new Map(),
   templates: [],
   jobs: [],
   adminUsers: [],
@@ -50,6 +52,7 @@ const projectNameInput = document.querySelector("#projectNameInput");
 const projectAddressInput = document.querySelector("#projectAddressInput");
 const projectFactoryRequestNumberInput = document.querySelector("#projectFactoryRequestNumberInput");
 const createProjectButton = document.querySelector("#createProjectButton");
+const toggleProjectCreateButton = document.querySelector("#toggleProjectCreateButton");
 const projectsList = document.querySelector("#projectsList");
 const accountStatus = document.querySelector("#accountStatus");
 const projectSearchInput = document.querySelector("#projectSearchInput");
@@ -161,6 +164,7 @@ function clearAccountSessionState() {
   sessionRequests.invalidate();
   state.projects = [];
   state.configurationsByProjectId = new Map();
+  state.pricingByProjectId = new Map();
   state.templates = [];
   state.jobs = [];
   state.adminUsers = [];
@@ -186,6 +190,8 @@ function clearAccountSessionState() {
   projectNameInput.value = "";
   projectAddressInput.value = "";
   projectFactoryRequestNumberInput.value = "";
+  if (accountCreateSection) accountCreateSection.hidden = true;
+  if (toggleProjectCreateButton) toggleProjectCreateButton.setAttribute("aria-expanded", "false");
   if (projectSearchInput) projectSearchInput.value = "";
   if (globalSearchInput) globalSearchInput.value = "";
 
@@ -302,11 +308,35 @@ function syncGenerationControls() {
   }
 }
 
-function getAllConfigurations() {
-  return state.projects.flatMap(project => {
-    const configurations = state.configurationsByProjectId.get(project.id) || [];
-    return configurations.map(configuration => ({ project, configuration }));
-  });
+function getProjectAssetGroups(project) {
+  return groupProjectAssets(
+    state.configurationsByProjectId.get(project.id) || [],
+    state.pricingByProjectId.get(project.id) || [],
+    getConfigurationName);
+}
+
+function getAllProjectAssetGroups() {
+  return state.projects.flatMap(project => getProjectAssetGroups(project)
+    .map(group => ({ project, group })));
+}
+
+function formatMoney(value, currency = "CNY") {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "—";
+  return new Intl.NumberFormat(getLanguage() === "en" ? "en-GB" : "ru-RU", {
+    style: "currency",
+    currency: currency || "CNY",
+    currencyDisplay: "code",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+}
+
+function getPricingAmountLabel(specification) {
+  const primary = formatMoney(specification.totalCny, "CNY");
+  const targetCurrency = String(specification.targetCurrency || "CNY").toUpperCase();
+  if (targetCurrency === "CNY") return primary;
+  return `${primary} · ${formatMoney(specification.totalConverted, targetCurrency)}`;
 }
 
 function getProjectOwnerName(project) {
@@ -357,7 +387,7 @@ function syncSearchInputs(value, source) {
   }
 }
 
-function matchesProjectSearch(project, configurations, query) {
+function matchesProjectSearch(project, configurations, pricingSpecifications, query) {
   if (!query) return true;
   const values = [
     project.name,
@@ -371,7 +401,33 @@ function matchesProjectSearch(project, configurations, query) {
       configuration.ownerUserName,
       configuration.outputFormat,
       Object.values(configuration.parameters || {}).join(" ")
+    ]),
+    ...pricingSpecifications.flatMap(specification => [
+      specification.name,
+      specification.supplier,
+      specification.series,
+      specification.status,
+      getPricingAmountLabel(specification),
+      formatDate(specification.updatedAt)
     ])
+  ];
+  return values.some(value => normalizeSearch(value).includes(query));
+}
+
+function matchesPricingSearch(project, specification, query) {
+  if (!query) return true;
+  const values = [
+    project.name,
+    getProjectAddress(project),
+    getProjectFactoryRequestNumber(project),
+    project.description,
+    getProjectOwnerName(project),
+    specification.name,
+    specification.supplier,
+    specification.series,
+    specification.status,
+    getPricingAmountLabel(specification),
+    formatDate(specification.updatedAt)
   ];
   return values.some(value => normalizeSearch(value).includes(query));
 }
@@ -396,6 +452,12 @@ function matchesConfigurationSearch(project, configuration, query) {
   return values.some(value => normalizeSearch(value).includes(query));
 }
 
+function matchesProjectAssetGroupSearch(project, group, query) {
+  if (!query) return true;
+  return group.configurations.some(configuration => matchesConfigurationSearch(project, configuration, query))
+    || group.pricingSpecifications.some(specification => matchesPricingSearch(project, specification, query));
+}
+
 function applyAccountSearch(source = null) {
   const value = source?.value || "";
   syncSearchInputs(value, source);
@@ -405,7 +467,7 @@ function applyAccountSearch(source = null) {
 }
 
 function updateMetrics() {
-  const allConfigurations = getAllConfigurations();
+  const allAssetGroups = getAllProjectAssetGroups();
   const completedJobs = state.jobs.filter(job => String(job.status).toLowerCase() === "completed");
   const pendingJobs = state.jobs.filter(job => {
     const status = String(job.status).toLowerCase();
@@ -414,7 +476,9 @@ function updateMetrics() {
   const resultFilesCount = completedJobs.reduce((total, job) => total + (job.resultFiles || []).length, 0);
 
   if (projectsMetric) projectsMetric.textContent = String(state.projects.length);
-  if (configurationsMetric) configurationsMetric.textContent = String(allConfigurations.length);
+  if (configurationsMetric) {
+    configurationsMetric.textContent = String(allAssetGroups.length);
+  }
   if (readyFilesMetric) readyFilesMetric.textContent = String(resultFilesCount);
   if (pendingMetric) pendingMetric.textContent = String(pendingJobs.length);
 }
@@ -499,7 +563,11 @@ function updateAuthView() {
     link.hidden = !isAdmin;
   });
   if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
-  if (accountCreateSection) accountCreateSection.hidden = !canCreateJobs();
+  if (toggleProjectCreateButton) toggleProjectCreateButton.hidden = !canCreateJobs();
+  if (!canCreateJobs() && accountCreateSection) {
+    accountCreateSection.hidden = true;
+    toggleProjectCreateButton?.setAttribute("aria-expanded", "false");
+  }
 
   if (showAdminPanel) {
     requestAnimationFrame(() => {
@@ -647,20 +715,32 @@ async function loadProjects() {
     await sessionRequests.readJson(response),
     "projects");
 
-  const configurationEntries = await Promise.all(projects.map(async project => {
-    const configurationsResponse = await apiFetch(`/api/projects/${project.id}/configurations`);
+  const projectEntries = await Promise.all(projects.map(async project => {
+    const [configurationsResponse, pricingResponse] = await Promise.all([
+      apiFetch(`/api/projects/${project.id}/configurations`),
+      apiFetch(`/api/projects/${project.id}/pricing-specifications`)
+    ]);
     requireSuccessfulLoadResponse(
       configurationsResponse,
       `configurations for project ${project.id}`);
+    requireSuccessfulLoadResponse(
+      pricingResponse,
+      `pricing specifications for project ${project.id}`);
     const configurations = requireCurrentLoadPayload(
       await sessionRequests.readJson(configurationsResponse),
       `configurations for project ${project.id}`);
-    return [project.id, configurations];
+    const pricingSpecifications = requireCurrentLoadPayload(
+      await sessionRequests.readJson(pricingResponse),
+      `pricing specifications for project ${project.id}`);
+    return [project.id, configurations, pricingSpecifications];
   }));
   requireSuccessfulLoadResponse(response, "projects");
 
   state.projects = projects;
-  state.configurationsByProjectId = new Map(configurationEntries);
+  state.configurationsByProjectId = new Map(
+    projectEntries.map(([projectId, configurations]) => [projectId, configurations]));
+  state.pricingByProjectId = new Map(
+    projectEntries.map(([projectId, , pricingSpecifications]) => [projectId, pricingSpecifications]));
   renderAccountData();
 }
 
@@ -693,8 +773,11 @@ function renderProjects() {
   }
 
   const query = getAccountSearchQuery();
-  const filteredProjects = state.projects.filter(project =>
-    matchesProjectSearch(project, state.configurationsByProjectId.get(project.id) || [], query));
+  const filteredProjects = state.projects.filter(project => matchesProjectSearch(
+    project,
+    state.configurationsByProjectId.get(project.id) || [],
+    state.pricingByProjectId.get(project.id) || [],
+    query));
 
   if (filteredProjects.length === 0) {
     const empty = document.createElement("div");
@@ -706,15 +789,17 @@ function renderProjects() {
 
   for (const project of filteredProjects) {
     const configurations = state.configurationsByProjectId.get(project.id) || [];
+    const pricingSpecifications = state.pricingByProjectId.get(project.id) || [];
+    const assetGroups = groupProjectAssets(configurations, pricingSpecifications, getConfigurationName);
     const details = document.createElement("details");
     details.className = "project-item";
-    details.open = configurations.length > 0;
-
     const summary = document.createElement("summary");
     summary.className = "project-summary";
     summary.innerHTML = `
       <span class="project-summary__name"><span class="project-summary__title">${escapeHtml(project.name)}</span>${renderProjectOwnerBadge(project)}</span>
-      <span class="muted">${configurations.length} конф.</span>
+      <span class="project-summary__counts">
+        <span>${assetGroups.length} конф.</span>
+      </span>
     `;
     details.append(summary);
 
@@ -722,13 +807,13 @@ function renderProjects() {
     body.className = "project-item__body";
     body.append(createProjectEditForm(project));
 
-    if (configurations.length === 0) {
+    if (configurations.length === 0 && pricingSpecifications.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent = "В проекте пока нет сохраненных конфигураций.";
       body.append(empty);
     } else {
-      body.append(createConfigurationsTable(project, configurations));
+      body.append(createConfigurationsTable(project, assetGroups));
     }
 
     details.append(body);
@@ -768,9 +853,9 @@ function renderSavedConfigurations() {
 
   savedConfigurationsList.replaceChildren();
   const query = getAccountSearchQuery();
-  const entries = getAllConfigurations()
-    .filter(({ project, configuration }) => matchesConfigurationSearch(project, configuration, query))
-    .sort((left, right) => new Date(right.configuration.updatedAt || 0) - new Date(left.configuration.updatedAt || 0));
+  const entries = getAllProjectAssetGroups()
+    .filter(({ project, group }) => matchesProjectAssetGroupSearch(project, group, query))
+    .sort((left, right) => new Date(right.group.updatedAt || 0) - new Date(left.group.updatedAt || 0));
 
   if (entries.length === 0) {
     const empty = document.createElement("div");
@@ -782,43 +867,109 @@ function renderSavedConfigurations() {
     return;
   }
 
-  for (const { project, configuration } of entries) {
-    const formats = getTemplateFormats(configuration);
-    const formatOptions = formats
-      .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
-      .join("");
+  for (const entry of entries) {
+    const { project, group } = entry;
     const item = document.createElement("article");
-    item.className = "saved-configuration-item";
+    const isCombined = group.configurations.length > 0 && group.pricingSpecifications.length > 0;
+    item.className = `saved-configuration-item${isCombined ? " saved-configuration-item--combined" : ""}`;
     item.innerHTML = `
-      <div>
-        <strong>${escapeHtml(getConfigurationName(configuration))}</strong>
-        <span>${escapeHtml(getTemplateLabel(configuration.templateId))}</span>
-        <small>${escapeHtml(getProjectMetaLabel(project))} · ${formatDate(configuration.updatedAt)}</small>
+      <div class="saved-configuration-item__info">
+        ${renderProjectAssetKinds(group)}
+        <strong>${escapeHtml(group.name)}</strong>
+        <span>${renderProjectAssetModelLabels(group)}</span>
+        <small>${escapeHtml(getProjectMetaLabel(project))} · ${formatDate(group.updatedAt)}</small>
       </div>
-      <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
-        ${formatOptions}
-      </select>
+      <div class="saved-configuration-item__assets">
+        ${renderProjectAssetFormats(group)}
+        ${renderProjectAssetPrices(group)}
+      </div>
       <div class="inline-actions">
-        <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Edit</a>
-        ${formats.includes("pdf") && canCreateJobs() ? `<button class="secondary" type="button" data-action="preview" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Просмотреть</button>` : ""}
-        ${canCreateJobs() ? `<button class="primary primary--compact" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>` : ""}
+        ${renderProjectAssetActions(project, group)}
       </div>
     `;
     savedConfigurationsList.append(item);
   }
 }
 
-function createConfigurationsTable(project, configurations) {
+function renderProjectAssetKinds(group) {
+  const kinds = [];
+  if (group.configurations.length > 0) {
+    kinds.push('<span class="configuration-kind">Чертёж</span>');
+  }
+  if (group.pricingSpecifications.length > 0) {
+    kinds.push('<span class="configuration-kind configuration-kind--pricing">Цена</span>');
+  }
+  return `<span class="configuration-kind-stack">${kinds.join("")}</span>`;
+}
+
+function renderProjectAssetModelLabels(group) {
+  const labels = [
+    ...group.configurations.map(configuration => getTemplateLabel(configuration.templateId)),
+    ...group.pricingSpecifications.map(specification => `${specification.supplier} · ${specification.series}`)
+  ].filter(Boolean);
+  return [...new Set(labels)].map(escapeHtml).join("<br>") || '<span class="muted">—</span>';
+}
+
+function renderProjectAssetFormats(group) {
+  const controls = group.configurations.map(configuration => {
+    const formats = getTemplateFormats(configuration);
+    const options = formats
+      .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
+      .join("");
+    return `
+      <select class="format-select" data-format-for="${escapeHtml(configuration.id)}" aria-label="Формат чертежа ${escapeHtml(group.name)}">
+        ${options}
+      </select>`;
+  });
+  if (group.pricingSpecifications.length > 0) {
+    controls.push('<span class="configuration-format-label">ТКП</span>');
+  }
+  return `<span class="configuration-format-stack">${controls.join("")}</span>`;
+}
+
+function renderProjectAssetPrices(group) {
+  if (group.pricingSpecifications.length === 0) return '<span class="muted">—</span>';
+  return `<span class="configuration-price-stack">${group.pricingSpecifications
+    .map(specification => `<strong class="configuration-price">${escapeHtml(getPricingAmountLabel(specification))}</strong>`)
+    .join("")}</span>`;
+}
+
+function renderProjectAssetActions(project, group) {
+  const actions = [];
+  for (const configuration of group.configurations) {
+    const formats = getTemplateFormats(configuration);
+    actions.push(`<a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Редактировать чертёж</a>`);
+    if (formats.includes("pdf") && canCreateJobs()) {
+      actions.push(`<button class="secondary" type="button" data-action="preview" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Просмотреть</button>`);
+    }
+    if (canCreateJobs()) {
+      actions.push(`<button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать чертёж</button>`);
+      actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить чертёж</button>`);
+    }
+  }
+  for (const specification of group.pricingSpecifications) {
+    actions.push(`<a class="secondary button-link" href="/pricing?specificationId=${encodeURIComponent(specification.id)}">Редактировать цену</a>`);
+    actions.push(`<a class="primary primary--compact button-link" href="/api/pricing-specifications/${encodeURIComponent(specification.id)}/tkp">Скачать ТКП</a>`);
+    if (canCreateJobs()) {
+      actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete-pricing" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(specification.id)}">Удалить цену</button>`);
+    }
+  }
+  return actions.join("");
+}
+
+function createConfigurationsTable(project, assetGroups) {
   const wrap = document.createElement("div");
-  wrap.className = "table-wrap table-wrap--compact";
+  wrap.className = "table-wrap table-wrap--compact project-assets-table";
 
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
       <tr>
+        <th>Тип</th>
         <th>Конфигурация</th>
-        <th>Шаблон</th>
+        <th>Шаблон / модель</th>
         <th>Формат</th>
+        <th>Цена</th>
         <th>Обновлено</th>
         <th>Действия</th>
       </tr>
@@ -827,27 +978,21 @@ function createConfigurationsTable(project, configurations) {
   `;
 
   const tbody = table.querySelector("tbody");
-  for (const configuration of configurations) {
+  for (const group of assetGroups) {
     const row = document.createElement("tr");
-    const formats = getTemplateFormats(configuration);
-    const formatOptions = formats
-      .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
-      .join("");
+    const isCombined = group.configurations.length > 0 && group.pricingSpecifications.length > 0;
+    const isPricingOnly = group.configurations.length === 0 && group.pricingSpecifications.length > 0;
+    row.className = `configuration-row${isCombined ? " configuration-row--combined" : ""}${isPricingOnly ? " configuration-row--pricing" : ""}`;
     row.innerHTML = `
-      <td>${escapeHtml(getConfigurationName(configuration))}</td>
-      <td>${escapeHtml(getTemplateLabel(configuration.templateId))}</td>
-      <td>
-        <select class="format-select" data-format-for="${escapeHtml(configuration.id)}">
-          ${formatOptions}
-        </select>
-      </td>
-      <td>${formatDate(configuration.updatedAt)}</td>
+      <td>${renderProjectAssetKinds(group)}</td>
+      <td><strong>${escapeHtml(group.name)}</strong></td>
+      <td>${renderProjectAssetModelLabels(group)}</td>
+      <td>${renderProjectAssetFormats(group)}</td>
+      <td>${renderProjectAssetPrices(group)}</td>
+      <td>${formatDate(group.updatedAt)}</td>
       <td>
         <div class="inline-actions">
-          ${formats.includes("pdf") && canCreateJobs() ? `<button class="secondary" type="button" data-action="preview" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Просмотреть</button>` : ""}
-          ${canCreateJobs() ? `<button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать</button>` : ""}
-          <a class="secondary button-link" href="/drawings?configurationId=${encodeURIComponent(configuration.id)}">Редактировать</a>
-          ${canCreateJobs() ? `<button class="secondary" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить</button>` : ""}
+          ${renderProjectAssetActions(project, group)}
         </div>
       </td>
     `;
@@ -897,6 +1042,8 @@ async function createProject() {
   projectNameInput.value = "";
   if (projectAddressInput) projectAddressInput.value = "";
   if (projectFactoryRequestNumberInput) projectFactoryRequestNumberInput.value = "";
+  if (accountCreateSection) accountCreateSection.hidden = true;
+  toggleProjectCreateButton?.setAttribute("aria-expanded", "false");
   await reloadProjectsAfterMutation(localized("Проект создан.", "Project created."));
 }
 
@@ -984,6 +1131,30 @@ async function deleteConfiguration(projectId, configurationId) {
   }
 
   await reloadProjectsAfterMutation(localized("Конфигурация удалена.", "Configuration deleted."));
+}
+
+async function deletePricingSpecification(projectId, specificationId) {
+  const project = state.projects.find(item => item.id === projectId);
+  const specification = (state.pricingByProjectId.get(projectId) || [])
+    .find(item => item.id === specificationId);
+  const specificationLabel = specification ? ` "${specification.name}"` : "";
+  const projectLabel = project?.name ? ` из проекта "${project.name}"` : "";
+  const confirmation = localized(
+    `Удалить конфигурацию цены${specificationLabel}${projectLabel}? Это действие нельзя отменить.`,
+    `Delete pricing configuration${specificationLabel}${project?.name ? ` from project "${project.name}"` : ""}? This action cannot be undone.`);
+  if (!confirm(confirmation)) return;
+
+  const response = await apiFetch(`/api/pricing-specifications/${encodeURIComponent(specificationId)}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    showAccountStatus((await readProblem(response, "Не удалось удалить конфигурацию цены")).join(" "), "error");
+    return;
+  }
+
+  await reloadProjectsAfterMutation(localized(
+    "Конфигурация цены удалена.",
+    "Pricing configuration deleted."));
 }
 
 async function downloadConfiguration(projectId, configurationId, format, options = {}) {
@@ -1507,6 +1678,12 @@ retryBootButton?.addEventListener("click", () => {
   void boot({ context });
 });
 createProjectButton.addEventListener("click", createProject);
+toggleProjectCreateButton?.addEventListener("click", () => {
+  const willOpen = accountCreateSection.hidden;
+  accountCreateSection.hidden = !willOpen;
+  toggleProjectCreateButton.setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) requestAnimationFrame(() => projectNameInput?.focus({ preventScroll: true }));
+});
 globalSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
 projectSearchInput?.addEventListener("input", event => applyAccountSearch(event.currentTarget));
 for (const searchInput of [globalSearchInput, projectSearchInput]) {
@@ -1521,7 +1698,9 @@ projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
-  if (button.dataset.action === "delete") {
+  if (button.dataset.action === "delete-pricing") {
+    deletePricingSpecification(button.dataset.projectId, button.dataset.id);
+  } else if (button.dataset.action === "delete") {
     deleteConfiguration(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
@@ -1543,7 +1722,9 @@ savedConfigurationsList?.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
-  if (button.dataset.action === "download") {
+  if (button.dataset.action === "delete-pricing") {
+    deletePricingSpecification(button.dataset.projectId, button.dataset.id);
+  } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));
     downloadConfiguration(button.dataset.projectId, button.dataset.id, select?.value || "pdf", {
       trigger: button

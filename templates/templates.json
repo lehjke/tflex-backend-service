@@ -177,7 +177,8 @@
               "value": 2100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? AA_1 : 0"
+          "expression": "$car_type == \"PXX\" ? AA_1 : 0",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -187,7 +188,8 @@
           "type": "integer",
           "defaultValue": 1200,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
-          "expression": "1200"
+          "expression": "1200",
+          "unit": "мм"
         },
         {
           "name": "$PPP",
@@ -274,7 +276,8 @@
               "value": 1100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? BB_1 : 0"
+          "expression": "$car_type == \"PXX\" ? BB_1 : 0",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -284,7 +287,8 @@
           "type": "integer",
           "defaultValue": 1900,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
-          "expression": "1900"
+          "expression": "1900",
+          "unit": "мм"
         },
         {
           "name": "HL",
@@ -356,7 +360,8 @@
             "1300"
           ],
           "defaultValue": 1100,
-          "expression": "1100"
+          "expression": "1100",
+          "unit": "мм"
         },
         {
           "name": "$fire_rating_1",
@@ -419,7 +424,8 @@
             "2400"
           ],
           "defaultValue": 2100,
-          "expression": "2100"
+          "expression": "2100",
+          "unit": "мм"
         },
         {
           "name": "$cwt_sg",
@@ -540,7 +546,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "max(min_AH_1, min_AH_2)"
+          "expression": "max(min_AH_1, min_AH_2)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -550,7 +557,8 @@
           "type": "integer",
           "defaultValue": 2715,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "2715"
+          "expression": "2715",
+          "unit": "мм"
         },
         {
           "name": "min_BH",
@@ -561,7 +569,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "max(min_BH_1, min_BH_2, min_BH_3)"
+          "expression": "max(min_BH_1, min_BH_2, min_BH_3)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -571,7 +580,8 @@
           "type": "integer",
           "defaultValue": 1650,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "1650"
+          "expression": "1650",
+          "unit": "мм"
         },
         {
           "name": "min_A3",
@@ -714,7 +724,8 @@
           "type": "number",
           "isRequired": true,
           "defaultValue": 30,
-          "expression": "30"
+          "expression": "30",
+          "unit": "м"
         },
         {
           "name": "stops",
@@ -733,7 +744,7 @@
           "isRequired": false,
           "defaultValue": false,
           "submitDefault": false,
-          "expression": "1"
+          "expression": "0"
         },
         {
           "name": "name",
@@ -927,7 +938,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)"
+          "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -937,7 +949,8 @@
           "type": "integer",
           "defaultValue": 3750,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "3750"
+          "expression": "3750",
+          "unit": "мм"
         },
         {
           "name": "min_PD",
@@ -948,7 +961,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "HD+floor+DTM"
+          "expression": "HD+floor+DTM",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -958,7 +972,8 @@
           "type": "integer",
           "defaultValue": 1300,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "1300"
+          "expression": "1300",
+          "unit": "мм"
         },
         {
           "name": "TM_mount",
@@ -974,7 +989,8 @@
             "500"
           ],
           "defaultValue": 0,
-          "expression": "0"
+          "expression": "0",
+          "unit": "мм"
         },
         {
           "name": "ceil_thick",
@@ -8991,7 +9007,8 @@
               "value": 2100
             }
           ],
-          "expression": "$car_type == \"PXX\" ? AA_1 : 0"
+          "expression": "$car_type == \"PXX\" ? AA_1 : 0",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9001,7 +9018,8 @@
           "type": "integer",
           "defaultValue": 1500,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
-          "expression": "1500"
+          "expression": "1500",
+          "unit": "мм"
         },
         {
           "name": "$PPP",
@@ -9144,7 +9162,8 @@
               "value": 2300
             }
           ],
-          "expression": "$car_type == \"PXX\" ? BB_1 : 0"
+          "expression": "$car_type == \"PXX\" ? BB_1 : 0",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9154,7 +9173,8 @@
           "type": "integer",
           "defaultValue": 1900,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
-          "expression": "1900"
+          "expression": "1900",
+          "unit": "мм"
         },
         {
           "name": "HL",
@@ -9225,7 +9245,8 @@
             "1300"
           ],
           "defaultValue": 1000,
-          "expression": "1000"
+          "expression": "1000",
+          "unit": "мм"
         },
         {
           "name": "$fire_rating_1",
@@ -9288,7 +9309,8 @@
             "2400"
           ],
           "defaultValue": 2100,
-          "expression": "2100"
+          "expression": "2100",
+          "unit": "мм"
         },
         {
           "name": "$cwt_sg",
@@ -9463,7 +9485,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "max(min_AH_1, min_AH_2)"
+          "expression": "max(min_AH_1, min_AH_2)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9473,7 +9496,8 @@
           "type": "integer",
           "defaultValue": 2715,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "2715"
+          "expression": "2715",
+          "unit": "мм"
         },
         {
           "name": "min_BH",
@@ -9484,7 +9508,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "max(min_BH_1, min_BH_2, min_BH_3)"
+          "expression": "max(min_BH_1, min_BH_2, min_BH_3)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9494,7 +9519,8 @@
           "type": "integer",
           "defaultValue": 1650,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "1650"
+          "expression": "1650",
+          "unit": "мм"
         },
         {
           "name": "min_A3",
@@ -9673,7 +9699,8 @@
           "type": "number",
           "isRequired": true,
           "defaultValue": 30,
-          "expression": "30"
+          "expression": "30",
+          "unit": "м"
         },
         {
           "name": "stops",
@@ -9692,7 +9719,7 @@
           "isRequired": false,
           "defaultValue": false,
           "submitDefault": false,
-          "expression": "1"
+          "expression": "0"
         },
         {
           "name": "name",
@@ -9886,7 +9913,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)"
+          "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9896,7 +9924,8 @@
           "type": "integer",
           "defaultValue": 3750,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "3750"
+          "expression": "3750",
+          "unit": "мм"
         },
         {
           "name": "min_PD",
@@ -9907,7 +9936,8 @@
           "submitDefault": false,
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
-          "expression": "HD+floor+DTM"
+          "expression": "HD+floor+DTM",
+          "unit": "мм"
         },
         {
           "isRequired": false,
@@ -9917,7 +9947,8 @@
           "type": "integer",
           "defaultValue": 1300,
           "levelExpression": "dim==1 ? 1 : -2",
-          "expression": "1300"
+          "expression": "1300",
+          "unit": "мм"
         },
         {
           "name": "TM_mount",
@@ -9933,7 +9964,8 @@
             "500"
           ],
           "defaultValue": 0,
-          "expression": "0"
+          "expression": "0",
+          "unit": "мм"
         },
         {
           "name": "ceil_thick",
@@ -24444,7 +24476,8 @@
               "$car_type": "P33W",
               "value": 2300
             }
-          ]
+          ],
+          "unit": "мм"
         },
         {
           "name": "BB",
@@ -24542,7 +24575,8 @@
               "$car_type": "P33W",
               "value": 2100
             }
-          ]
+          ],
+          "unit": "мм"
         },
         {
           "name": "HL",
@@ -24572,7 +24606,8 @@
           "defaultValue": 1100,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1100",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "BB_1",
@@ -24582,7 +24617,8 @@
           "defaultValue": 2000,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "2000",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "$door_type",
@@ -24833,7 +24869,8 @@
             "1200",
             "1300"
           ],
-          "expression": "900"
+          "expression": "900",
+          "unit": "мм"
         },
         {
           "name": "HH",
@@ -24847,7 +24884,8 @@
             "2300",
             "2400"
           ],
-          "expression": "2100"
+          "expression": "2100",
+          "unit": "мм"
         },
         {
           "name": "CJ",
@@ -24887,7 +24925,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_AH_1, min_AH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_BH",
@@ -24898,7 +24937,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_BH_1, min_BH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_CB",
@@ -24919,7 +24959,8 @@
           "defaultValue": 2100,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2100",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "BH_1",
@@ -24929,7 +24970,8 @@
           "defaultValue": 2000,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2000",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "CB_1",
@@ -25142,7 +25184,8 @@
           "type": "number",
           "isRequired": true,
           "defaultValue": 20,
-          "expression": "20"
+          "expression": "20",
+          "unit": "м"
         },
         {
           "name": "stops",
@@ -25324,7 +25367,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_OH_1, min_OH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_PD",
@@ -25335,7 +25379,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "select(\r\n(cap<=825)&&(BB<1300), min_PD_1,\r\n(cap<=825)&&(BB>=1300), min_PD_2,\r\n(cap>=1050), min_PD_1\r\n)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "OH_1",
@@ -25345,7 +25390,8 @@
           "defaultValue": 4500,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "4500",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "PD_1",
@@ -25355,7 +25401,8 @@
           "defaultValue": 1200,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1200",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "ceil_thick",
@@ -27814,8 +27861,8 @@
           "displayName": "Остановки / main",
           "type": "boolean",
           "isRequired": false,
-          "defaultValue": true,
-          "expression": "1",
+          "defaultValue": false,
+          "expression": "0",
           "submitDefault": false
         },
         {
@@ -46626,7 +46673,8 @@
               "$car_type": "P33W",
               "value": 2300
             }
-          ]
+          ],
+          "unit": "мм"
         },
         {
           "name": "BB",
@@ -46699,7 +46747,8 @@
               "$car_type": "P33W",
               "value": 2100
             }
-          ]
+          ],
+          "unit": "мм"
         },
         {
           "name": "HL",
@@ -46729,7 +46778,8 @@
           "defaultValue": 1100,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1100",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "BB_1",
@@ -46739,7 +46789,8 @@
           "defaultValue": 1350,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1350",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "$door_type",
@@ -46971,7 +47022,8 @@
             "1200",
             "1300"
           ],
-          "expression": "900"
+          "expression": "900",
+          "unit": "мм"
         },
         {
           "name": "HH",
@@ -46985,7 +47037,8 @@
             "2300",
             "2400"
           ],
-          "expression": "2100"
+          "expression": "2100",
+          "unit": "мм"
         },
         {
           "name": "CJ",
@@ -47025,7 +47078,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_AH_1, min_AH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_BH",
@@ -47036,7 +47090,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_BH_1, min_BH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_CB",
@@ -47057,7 +47112,8 @@
           "defaultValue": 2200,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2200",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "BH_1",
@@ -47067,7 +47123,8 @@
           "defaultValue": 2200,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2200",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "CB_1",
@@ -47280,7 +47337,8 @@
           "type": "number",
           "isRequired": true,
           "defaultValue": 20,
-          "expression": "20"
+          "expression": "20",
+          "unit": "м"
         },
         {
           "name": "stops",
@@ -47462,7 +47520,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_OH_1, min_OH_2)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "min_PD",
@@ -47473,7 +47532,8 @@
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "select(\r\n(cap<=825)&&(BB<1300), min_PD_1,\r\n(cap<=825)&&(BB>=1300), min_PD_2,\r\n(cap>=1050), min_PD_1\r\n)",
           "submitDefault": false,
-          "isReadOnly": true
+          "isReadOnly": true,
+          "unit": "мм"
         },
         {
           "name": "OH_1",
@@ -47483,7 +47543,8 @@
           "defaultValue": 4000,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "4000",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "PD_1",
@@ -47493,7 +47554,8 @@
           "defaultValue": 1300,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1300",
-          "submitDefault": false
+          "submitDefault": false,
+          "unit": "мм"
         },
         {
           "name": "ceil_thick",
@@ -49952,8 +50014,8 @@
           "displayName": "Остановки / main",
           "type": "boolean",
           "isRequired": false,
-          "defaultValue": true,
-          "expression": "1",
+          "defaultValue": false,
+          "expression": "0",
           "submitDefault": false
         },
         {

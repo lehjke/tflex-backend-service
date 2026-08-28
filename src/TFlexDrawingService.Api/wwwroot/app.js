@@ -1,4 +1,4 @@
-import { getLanguage, t } from "./i18n.js?v=20260806-design-fixes-1";
+import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260721-validation-parity-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
@@ -14,7 +14,7 @@ import {
   isSignedIntegerDraft,
   isSignedStopIntegerParameterName,
   resolveMainFloor
-} from "./stop-state.js?v=20260722-signed-floor-1";
+} from "./stop-state.js?v=20260827-lobby-units-1";
 import {
   isBlockingValidationIssue,
   isValidationPassed,
@@ -74,7 +74,6 @@ const currentUserRoleLabel = document.querySelector("#currentUserRoleLabel");
 const roleAccessNote = document.querySelector("#roleAccessNote");
 const adminNavLinks = document.querySelectorAll(".admin-only-nav");
 const logoutButton = document.querySelector("#logoutButton");
-const createTopButton = document.querySelector("#createTopButton");
 const templateSelect = document.querySelector("#templateSelect");
 const formatSelect = document.querySelector("#formatSelect");
 const globalSearchInput = document.querySelector(".global-search input");
@@ -86,6 +85,8 @@ const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
 const validationPanel = document.querySelector("#validationPanel");
 const parameterTabs = document.querySelector("#parameterTabs");
+const parameterTabsPrevious = document.querySelector("#parameterTabsPrevious");
+const parameterTabsNext = document.querySelector("#parameterTabsNext");
 const showAllParametersToggle = document.querySelector("#showAllParametersToggle");
 const parameterReadyBanner = document.querySelector("#parameterReadyBanner");
 const previewPanelTitle = document.querySelector("#previewPanelTitle");
@@ -417,7 +418,6 @@ function updateAuthView() {
   loginForm.hidden = true;
   userPanel.hidden = !authenticated;
   appMain.hidden = !authenticated;
-  createTopButton.hidden = !authenticated || !canCreateJobs();
   submitButton.hidden = authenticated && !canCreateJobs();
   saveConfigurationButton.hidden = !authenticated || !canCreateJobs();
   adminNavLinks.forEach(link => {
@@ -2179,6 +2179,18 @@ function collectValidationFieldNames(errors = []) {
   return new Set(errors.flatMap(error => error.fieldNames || []));
 }
 
+function getValidationInput(fieldNames = []) {
+  return [...parametersForm.querySelectorAll("input, select, textarea")]
+    .find(input => fieldNames.includes(input.dataset.parameterName || input.name));
+}
+
+function ensureValidationInputId(input, fieldName = "parameter") {
+  if (input.id) return input.id;
+  const safeName = String(fieldName).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "parameter";
+  input.id = `parameter-${safeName}`;
+  return input.id;
+}
+
 function getShaftPreviewGeometryErrors(context) {
   if (!isLehyProTemplate() || getPreviewLayoutType() !== "rear") return [];
 
@@ -2217,6 +2229,10 @@ function getShaftPreviewGeometryErrors(context) {
 function applyValidationHighlights(errors = []) {
   state.validationFieldNames = collectValidationFieldNames(errors);
 
+  for (const message of parametersForm.querySelectorAll("[data-validation-inline]")) {
+    message.remove();
+  }
+
   for (const field of parametersForm.querySelectorAll(".field--invalid")) {
     field.classList.remove("field--invalid");
   }
@@ -2227,7 +2243,7 @@ function applyValidationHighlights(errors = []) {
     const describedBy = (input.getAttribute("aria-describedby") || "")
       .split(/\s+/)
       .filter(Boolean)
-      .filter(id => id !== "validationPanel");
+      .filter(id => id !== "validationPanel" && !id.startsWith("validation-error-"));
     if (describedBy.length) {
       input.setAttribute("aria-describedby", describedBy.join(" "));
     } else {
@@ -2237,10 +2253,22 @@ function applyValidationHighlights(errors = []) {
     const name = input.dataset.parameterName || input.name;
     if (!state.validationFieldNames.has(name)) continue;
 
+    const issue = errors.find(error => (error.fieldNames || []).includes(name));
+    const inputId = ensureValidationInputId(input, name);
+    const errorId = `validation-error-${inputId}`;
+
     input.classList.add("is-invalid");
     input.setAttribute("aria-invalid", "true");
-    input.setAttribute("aria-describedby", [...describedBy, "validationPanel"].join(" "));
-    input.closest(".field")?.classList.add("field--invalid");
+    input.setAttribute("aria-describedby", [...describedBy, errorId, "validationPanel"].join(" "));
+    const field = input.closest(".field");
+    field?.classList.add("field--invalid");
+
+    const message = document.createElement("span");
+    message.id = errorId;
+    message.className = "field-error-message";
+    message.dataset.validationInline = "true";
+    message.textContent = issue?.message || t("Проверьте значение параметра.");
+    (field || input.closest("td") || input.parentElement)?.append(message);
   }
 }
 
@@ -2289,7 +2317,17 @@ function appendValidationIssueGroup(titleText, issues, severity) {
 
   for (const issue of issues) {
     const item = document.createElement("li");
-    item.textContent = issue.message;
+    const input = getValidationInput(issue.fieldNames || []);
+    if (input) {
+      const inputId = ensureValidationInputId(input, issue.fieldNames?.[0]);
+      const link = document.createElement("a");
+      link.href = `#${inputId}`;
+      link.textContent = issue.message;
+      link.addEventListener("click", () => requestAnimationFrame(() => input.focus()));
+      item.append(link);
+    } else {
+      item.textContent = issue.message;
+    }
     list.append(item);
   }
 
@@ -2875,6 +2913,22 @@ function renderParameterTabs() {
   }
 
   applyParameterTabVisibility();
+  requestAnimationFrame(updateParameterTabScrollControls);
+}
+
+function updateParameterTabScrollControls() {
+  if (!parameterTabs) return;
+  const maxScrollLeft = Math.max(0, parameterTabs.scrollWidth - parameterTabs.clientWidth);
+  if (parameterTabsPrevious) parameterTabsPrevious.disabled = parameterTabs.scrollLeft <= 1;
+  if (parameterTabsNext) parameterTabsNext.disabled = parameterTabs.scrollLeft >= maxScrollLeft - 1;
+}
+
+function scrollParameterTabs(direction) {
+  if (!parameterTabs) return;
+  parameterTabs.scrollBy({
+    left: direction * Math.max(160, parameterTabs.clientWidth * 0.75),
+    behavior: prefersReducedMotion() ? "auto" : "smooth"
+  });
 }
 
 function getCurrentParameterInputValue(parameter, context) {
@@ -3444,8 +3498,8 @@ async function submitJob(event) {
   rememberCurrentValues();
   const validationIssues = getCurrentValidationIssues();
   const validationErrors = validationIssues.filter(isBlockingValidationIssue);
-  updateValidationPanel(validationIssues, { announceErrors: true });
   applyValidationHighlights(validationErrors);
+  updateValidationPanel(validationIssues, { announceErrors: true });
   if (validationErrors.length > 0) {
     renderStatusError([t("Исправьте параметры перед созданием задания.")]);
     const firstInvalidInput = parametersForm.querySelector('[aria-invalid="true"]');
@@ -3455,14 +3509,14 @@ async function submitJob(event) {
       applyParameterTabVisibility();
     }
     requestAnimationFrame(() => {
-      const focusTarget = firstInvalidInput || validationPanel;
+      const focusTarget = validationErrors.length > 1 ? validationPanel : firstInvalidInput || validationPanel;
       focusTarget.focus({ preventScroll: true });
       focusTarget.scrollIntoView({ behavior: "auto", block: "center" });
     });
     return;
   }
 
-  submitButton.disabled = true;
+  setJobSubmitDisabled(true);
   state.latestJob = null;
   state.lastRenderedJobFingerprint = "";
   updateDownloadResultButton(null);
@@ -3503,12 +3557,17 @@ async function submitJob(event) {
   } catch {
     renderStatusError([t("Не удалось создать задание. Проверьте соединение с API.")]);
   } finally {
-    submitButton.disabled = false;
+    setJobSubmitDisabled(false);
   }
+}
+
+function setJobSubmitDisabled(disabled) {
+  if (submitButton) submitButton.disabled = disabled;
 }
 
 function resetJobForm(event) {
   event.preventDefault();
+  if (!window.confirm(t("Сбросить все параметры и вернуть значения по умолчанию?"))) return;
   state.editingConfigurationId = null;
   initializeParameterValues();
   renderParameters();
@@ -3832,6 +3891,14 @@ globalSearchInput?.addEventListener("keydown", event => {
 });
 document.querySelector("#jobForm").addEventListener("submit", submitJob);
 document.querySelector("#jobForm").addEventListener("reset", resetJobForm);
+parameterTabsPrevious?.addEventListener("click", () => scrollParameterTabs(-1));
+parameterTabsNext?.addEventListener("click", () => scrollParameterTabs(1));
+parameterTabs?.addEventListener("scroll", updateParameterTabScrollControls, { passive: true });
+window.addEventListener("resize", updateParameterTabScrollControls, { passive: true });
+const parameterTabsResizeObserver = typeof ResizeObserver === "function" && parameterTabs
+  ? new ResizeObserver(updateParameterTabScrollControls)
+  : null;
+parameterTabsResizeObserver?.observe(parameterTabs);
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 guestLoginForm?.addEventListener("submit", login);

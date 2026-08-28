@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#101A38">
   <title>Базовая цена — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260825-panel-spacing-16-1">
+  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Инженерный центр МЛТ">
       <a class="brand" href="/" aria-label="Инженерный центр МЛТ">
-        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="МЛТ ЛИФТЫ">
-        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" alt="MLT ELEVATORS">
+        <img class="brand__logo--ru" src="/assets/mlt-logo-ru-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="114" alt="МЛТ ЛИФТЫ">
+        <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="118" alt="MLT ELEVATORS">
       </a>
       <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
         <span aria-hidden="true"></span>
@@ -25,7 +26,7 @@
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
         <a href="/drawings"><span>Создание чертежей</span><small>Drawings</small></a>
         <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
-        <a class="is-active" href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
+        <a class="is-active" href="/pricing" aria-current="page"><span>Базовая цена</span><small>Pricing</small></a>
       </nav>
 
       <div class="sidebar__help">
@@ -39,7 +40,7 @@
     <div class="workspace">
       <header class="topbar">
         <div class="breadcrumbs" aria-label="Навигация">
-          <span>Главная</span>
+          <a href="/">Главная</a>
           <span aria-hidden="true">/</span>
           <span>Базовая цена</span>
         </div>
@@ -69,6 +70,8 @@
           </div>
         </div>
       </header>
+
+      <div id="mainContent" class="main-content-anchor" tabindex="-1"></div>
 
       <section id="pageSkeleton" class="page-skeleton page-skeleton--pricing" aria-label="Загрузка страницы" aria-busy="true">
         <span class="sr-only">Загрузка страницы</span>
@@ -161,8 +164,8 @@
         <section class="panel panel--wide pricing-workspace">
           <div class="pricing-grid">
             <form id="pricingForm" class="pricing-form">
-              <details class="pricing-section" open>
-                <summary class="panel__header"><h2>Проект и спецификация</h2></summary>
+              <section class="pricing-section">
+                <div class="panel__header"><h2>Проект и спецификация</h2></div>
                 <div class="pricing-fields pricing-fields--two">
                   <label class="field">
                     <span class="field__label">Проект</span>
@@ -186,10 +189,10 @@
                     </select>
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" open>
-                <summary class="panel__header"><h2>Основные параметры</h2></summary>
+              <section class="pricing-section">
+                <div class="panel__header"><h2>Основные параметры</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Поставщик</span>
@@ -280,10 +283,10 @@
                     <input id="smecLightingSupplyInput" value="220V, 50 Hz" readonly>
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section smec-excel-section" data-smec-only open>
-                <summary class="panel__header"><h2>Шахта и основные размеры</h2></summary>
+              <section class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header"><h2>Шахта и основные размеры</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина шахты (AH), мм</span>
@@ -334,10 +337,10 @@
                     <input id="doorHeightInput" type="number" min="0" step="1" value="2100">
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Идентификация и этажи</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Идентификация и этажи</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Наименование</span>
@@ -372,10 +375,10 @@
                     <input id="xiziOtherFloorsInput" placeholder="2-27">
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Шахта</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Шахта</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина шахты, мм</span>
@@ -402,10 +405,10 @@
                     <input id="xiziPitInput" type="number" min="0" step="1">
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Характеристики кабины</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Характеристики кабины</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Ширина кабины, мм</span>
@@ -428,10 +431,10 @@
                     <input id="xiziDecorationWeightInput" type="number" min="0" step="1" value="0">
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Двери</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Двери</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Высота дверей, мм</span>
@@ -463,10 +466,10 @@
                   </label>
                 </div>
                 <div id="decorationPreview" class="finish-preview" hidden></div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Отделка кабины XIZI</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Отделка кабины XIZI</h2></div>
                 <div class="pricing-fields pricing-fields--three">
                   <label class="field">
                     <span class="field__label">Дизайн по каталогу</span>
@@ -513,10 +516,10 @@
                     <select id="xiziCopButtonSelect" data-visual-select data-description="Кнопки COP"></select>
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" data-xizi-only open>
-                <summary class="panel__header"><h2>Отделка на этажной площадке</h2></summary>
+              <section class="pricing-section" data-xizi-only>
+                <div class="panel__header"><h2>Отделка на этажной площадке</h2></div>
                 <div class="xizi-floor-group">
                   <h3>Основной посадочный этаж</h3>
                   <div class="pricing-fields pricing-fields--three">
@@ -551,10 +554,10 @@
                   </label>
                   </div>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section smec-excel-section" data-smec-only open>
-                <summary class="panel__header"><h2>Кабина</h2></summary>
+              <section class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header"><h2>Кабина</h2></div>
                 <div class="smec-card-picker" id="carDesignPicker"></div>
                 <div class="pricing-fields pricing-fields--three visual-field-grid">
                   <label class="field">
@@ -583,7 +586,7 @@
                   </label>
                   <label class="field">
                     <span class="field__label">Положение поручня</span>
-                    <select id="mirrorPositionSelect"></select>
+                    <select id="mirrorPositionSelect" data-visual-select></select>
                   </label>
                   <label class="field">
                     <span class="field__label">Поручень</span>
@@ -614,10 +617,10 @@
                     <select id="wheelchairButtonSelect" data-visual-select></select>
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section smec-excel-section" data-smec-only open>
-                <summary class="panel__header"><h2>Этажные площадки</h2></summary>
+              <section class="pricing-section smec-excel-section" data-smec-only>
+                <div class="panel__header"><h2>Этажные площадки</h2></div>
                 <div class="smec-landing-grid">
                   <div class="smec-landing-grid__head"></div>
                   <div class="smec-landing-grid__head">Основной этаж</div>
@@ -714,10 +717,10 @@
                     <select id="hallLanternSelect" data-visual-select></select>
                   </label>
                 </div>
-              </details>
+              </section>
 
-              <details class="pricing-section" open>
-                <summary class="panel__header"><h2>Опции и комплектация</h2></summary>
+              <section class="pricing-section">
+                <div class="panel__header"><h2>Опции и комплектация</h2></div>
                 <div class="pricing-fields pricing-fields--two" data-xizi-only>
                   <label class="field">
                     <span class="field__label">AC</span>
@@ -733,12 +736,14 @@
                   <span class="field__label">Прочие требования</span>
                   <textarea id="smecOtherRequirementsInput" rows="4" placeholder="1 EI60&#10;2 Kickplate ZDT-001&#10;3 Handrail ZDT-501"></textarea>
                 </label>
-              </details>
+              </section>
 
               <div class="pricing-actions">
-                <button class="primary" type="submit">Рассчитать</button>
+                <p class="pricing-live-note">Расчёт обновляется автоматически при изменении параметров.</p>
+                <button class="secondary pricing-recalculate" type="submit">Обновить расчёт</button>
                 <button id="savePricingButton" class="secondary" type="button" disabled>Сохранить в проект</button>
                 <button id="downloadTkpButton" class="secondary" type="button" disabled>Сохранить и вывести ТКП</button>
+                <button id="downloadRequestXlsxButton" class="secondary" type="button" disabled>Сохранить и вывести Excel</button>
               </div>
             </form>
 
@@ -757,7 +762,7 @@
                 </div>
               </div>
 
-              <div id="pricingWarnings" class="pricing-warnings" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+              <div id="pricingWarnings" class="pricing-warnings" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></div>
 
               <div class="pricing-result__block">
                 <h2>Сохраненные спецификации</h2>
@@ -772,7 +777,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260806-design-fixes-1"></script>
-  <script type="module" src="/pricing.js?v=20260821-loading-shell-1"></script>
+  <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
+  <script type="module" src="/pricing.js?v=20260827-door-count-1"></script>
 </body>
 </html>

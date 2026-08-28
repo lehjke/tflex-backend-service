@@ -22,6 +22,7 @@
   <ItemGroup>
     <!-- Development settings disable authentication and must never be deployed. -->
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+    <Content Include="Data/Templates/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
