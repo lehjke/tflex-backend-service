@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
+  <link rel="stylesheet" href="/styles.css?v=20260829-saved-pricing-cards-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -39,11 +39,13 @@
 
     <div class="workspace">
       <header class="topbar">
-        <div class="breadcrumbs" aria-label="Навигация">
-          <a href="/">Главная</a>
+        <nav class="breadcrumbs" aria-label="Навигация">
+          <a href="https://mlt.pro/">Главная</a>
           <span aria-hidden="true">/</span>
-          <span>Личный кабинет</span>
-        </div>
+          <a href="/">Инженерный центр</a>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">Личный кабинет</span>
+        </nav>
 
         <label class="global-search" hidden>
           <span class="sr-only">Поиск проектов и конфигураций в личном кабинете</span>
@@ -291,30 +293,76 @@
           <section class="panel panel--wide template-import">
             <div class="panel__header">
               <div>
-                <h2>Импорт шаблона</h2>
-                <p class="panel__subtitle">Добавление новых шаблонов доступно только администраторам.</p>
+                <h2>Автопарсер T-FLEX</h2>
+                <p class="panel__subtitle">Загрузите основной GRB и ZIP с компонентами. Windows Worker прочитает внешние и вычисляемые переменные, ограничения и зависимости.</p>
               </div>
-              <a
-                class="secondary-link template-import__example"
-                href="/assets/template-manifest.example.json"
-                download="template-manifest.example.json">Скачать пример JSON</a>
+              <span class="template-import__badge">Без JSON</span>
             </div>
             <form id="templateImportForm" class="template-import__form">
               <label class="field">
-                <span class="field__label">Манифест JSON</span>
-                <input id="templateManifestFile" name="manifest" type="file" accept=".json,application/json" required>
-              </label>
-              <label class="field">
-                <span class="field__label">Файл шаблона GRB</span>
+                <span class="field__label">Основной файл GRB</span>
                 <input id="templateGrbFile" name="template" type="file" accept=".grb,application/octet-stream" required>
               </label>
               <label class="field">
-                <span class="field__label">Фрагменты ZIP (необязательно)</span>
-                <input id="templateFragmentsFile" name="fragments" type="file" accept=".zip,application/zip">
+                <span class="field__label">Компоненты ZIP (необязательно)</span>
+                <input id="templateFragmentsFile" name="components" type="file" accept=".zip,application/zip">
               </label>
-              <button id="templateImportButton" class="primary" type="submit">Импортировать</button>
+              <button id="templateImportButton" class="primary" type="submit">Проанализировать</button>
             </form>
             <div id="templateImportStatus" class="template-import__status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+            <div id="templateAnalysesList" class="template-analysis-list" aria-label="Задания анализа"></div>
+
+            <section id="templateAnalysisEditor" class="template-analysis-editor" aria-labelledby="templateAnalysisEditorTitle" hidden>
+              <div class="template-analysis-editor__header">
+                <div>
+                  <span class="eyebrow">Черновик формы</span>
+                  <h3 id="templateAnalysisEditorTitle">Проверка перед публикацией</h3>
+                </div>
+                <button id="closeTemplateAnalysisEditor" class="secondary secondary--compact" type="button">Закрыть</button>
+              </div>
+
+              <div id="templateAnalysisWarnings" class="template-analysis-warnings" hidden></div>
+              <div class="form-grid template-analysis-meta">
+                <label class="field">
+                  <span class="field__label">Название</span>
+                  <input id="analysisTemplateName" required>
+                </label>
+                <label class="field">
+                  <span class="field__label">Код</span>
+                  <input id="analysisTemplateCode" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}">
+                </label>
+                <label class="field">
+                  <span class="field__label">ID</span>
+                  <input id="analysisTemplateId" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,79}">
+                </label>
+                <label class="field field--wide">
+                  <span class="field__label">Описание</span>
+                  <textarea id="analysisTemplateDescription" rows="2"></textarea>
+                </label>
+              </div>
+
+              <div class="template-analysis-summary" aria-live="polite"></div>
+              <div class="table-wrap template-analysis-table-wrap">
+                <table class="template-analysis-table">
+                  <thead>
+                    <tr>
+                      <th>Поле формы</th>
+                      <th>Переменная</th>
+                      <th>Тип</th>
+                      <th>Ед.</th>
+                      <th>Min</th>
+                      <th>Max</th>
+                      <th>Обяз.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="templateAnalysisParameters"></tbody>
+                </table>
+              </div>
+              <div class="template-analysis-editor__actions">
+                <button id="saveTemplateAnalysisDraft" class="secondary" type="button">Сохранить черновик</button>
+                <button id="publishTemplateAnalysis" class="primary" type="button">Опубликовать шаблон</button>
+              </div>
+            </section>
           </section>
 
           <section class="panel panel--wide admin-users-section">
@@ -341,6 +389,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
-  <script type="module" src="/account.js?v=20260827-asset-grouping-1"></script>
+  <script type="module" src="/account.js?v=20260830-tflex-autoparser-1"></script>
 </body>
 </html>

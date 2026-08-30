@@ -5,7 +5,7 @@ import {
   resolveDrawingDoorCount,
   resolveDrawingConfigurationValues,
   toTravelHeightMillimeters
-} from "./drawing-configuration-values.js?v=20260827-door-count-1";
+} from "./drawing-configuration-values.js?v=20260828-speed-dependent-oh-pd-1";
 
 const state = {
   currentUser: null,
@@ -1199,15 +1199,19 @@ function renderSavedPricing() {
   for (const item of items) {
     const row = document.createElement("div");
     row.className = "saved-pricing-item";
+    const itemName = escapeHtml(item.name);
     row.innerHTML = `
-      <div>
-        <strong>${escapeHtml(item.name)}</strong>
-        <span>${escapeHtml(item.supplier)} · ${escapeHtml(item.series)} · ${money(item.totalCny, "CNY")}</span>
+      <div class="saved-pricing-item__summary">
+        <strong class="saved-pricing-item__name">${itemName}</strong>
+        <div class="saved-pricing-item__meta">
+          <span>${escapeHtml(item.supplier)} · ${escapeHtml(item.series)}</span>
+          <strong class="saved-pricing-item__price">${money(item.totalCny, "CNY")}</strong>
+        </div>
       </div>
-      <div class="saved-pricing-actions">
-        <a class="secondary secondary--compact" href="/pricing?specificationId=${encodeURIComponent(item.id)}">Редактировать</a>
-        <a class="secondary secondary--compact" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/tkp">ТКП Word</a>
-        <a class="secondary secondary--compact" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/request-xlsx">Запрос Excel</a>
+      <div class="saved-pricing-actions" role="group" aria-label="Действия для спецификации ${itemName}">
+        <a class="secondary secondary--compact" aria-label="Редактировать спецификацию ${itemName}" href="/pricing?specificationId=${encodeURIComponent(item.id)}">Редактировать</a>
+        <a class="secondary secondary--compact" aria-label="Скачать ТКП Word для спецификации ${itemName}" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/tkp">ТКП Word</a>
+        <a class="secondary secondary--compact" aria-label="Скачать запрос Excel для спецификации ${itemName}" href="/api/pricing-specifications/${encodeURIComponent(item.id)}/request-xlsx">Запрос Excel</a>
       </div>
     `;
     savedPricingList.append(row);
@@ -1279,9 +1283,10 @@ function renderOptions() {
   const isXizi = supplierSelect.value === "XIZI";
   const source = isXizi ? state.catalog?.xiziOptions : getManualSmecFunctions();
   const defaultSmecOptions = new Set(["ABP", "OLHL", "BA", "ITV", "MELD", "MBS", "AAN-S", "AECC", "ACB", "AHC", "FER", "FERC"]);
-  optionsList.replaceChildren();
-  for (const item of (source || []).filter(item =>
-    !isXizi || !String(item.code).toLowerCase().startsWith("ac "))) {
+  const items = (source || []).filter(item =>
+    !isXizi || !String(item.code).toLowerCase().startsWith("ac "));
+
+  const createOption = item => {
     const isForced = isXizi && (item.code === "40HQ" || item.code === "CONTAINER_40HQ");
     const isDefault = !isXizi && defaultSmecOptions.has(String(item.code).trim().toUpperCase());
     const isDisplayOption = isXizi && /^ILED(?:\s|_)/i.test(String(item.code));
@@ -1289,17 +1294,50 @@ function renderOptions() {
       ? `ILED ${String(item.code).replace(/^ILED_/i, "").replaceAll("_", ".")}"`
       : item.code;
     const label = document.createElement("label");
-    label.className = `${item.description || item.imageUrl ? "pricing-option pricing-option--rich" : "pricing-option"}${isForced ? " is-locked" : ""}`;
+    label.className = [
+      "pricing-option",
+      item.description || item.imageUrl ? "pricing-option--rich" : "",
+      isDisplayOption ? "pricing-option--exclusive" : "",
+      isForced ? "is-locked" : ""
+    ].filter(Boolean).join(" ");
     label.innerHTML = `
-      <input type="checkbox" ${isDisplayOption ? `data-exclusive-group="xizi-iled"` : ""} value="${escapeHtml(item.code)}" ${(isForced || isDefault) ? "checked" : ""} ${isForced ? "disabled" : ""}>
+      <input type="checkbox" ${isDisplayOption ? `data-exclusive-group="xizi-iled" aria-describedby="xiziIledHint"` : ""} value="${escapeHtml(item.code)}" ${(isForced || isDefault) ? "checked" : ""} ${isForced ? "disabled" : ""}>
       ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.code)}" width="34" height="34" loading="lazy" decoding="async">` : ""}
       <span>
         <strong>${escapeHtml(optionLabel)}</strong>
         ${item.description ? `<small>${escapeHtml(item.description)}</small>` : ""}
       </span>
     `;
-    optionsList.append(label);
+    return label;
+  };
+
+  optionsList.replaceChildren();
+
+  const displayItems = items
+    .filter(item => isXizi && /^ILED(?:\s|_)/i.test(String(item.code)))
+    .sort((left, right) => {
+      const getSize = item => Number.parseFloat(String(item.code).replace(/^ILED(?:\s|_)/i, "").replaceAll("_", "."));
+      return getSize(left) - getSize(right);
+    });
+  if (displayItems.length > 0) {
+    const group = document.createElement("fieldset");
+    group.className = "pricing-option-group pricing-option-group--iled";
+    group.innerHTML = `
+      <legend class="pricing-option-group__legend">${escapeHtml(localized("Дисплей ILED", "ILED display"))}</legend>
+      <p id="xiziIledHint" class="pricing-option-group__hint">${escapeHtml(localized(
+        "Можно выбрать один вариант. Повторное нажатие снимает выбор.",
+        "Choose up to one option. Select it again to clear the choice."
+      ))}</p>
+      <div class="pricing-option-group__grid"></div>
+    `;
+    const grid = group.querySelector(".pricing-option-group__grid");
+    displayItems.forEach(item => grid.append(createOption(item)));
+    optionsList.append(group);
   }
+
+  items
+    .filter(item => !displayItems.includes(item))
+    .forEach(item => optionsList.append(createOption(item)));
 }
 
 function getCwtSafetyGearInput() {

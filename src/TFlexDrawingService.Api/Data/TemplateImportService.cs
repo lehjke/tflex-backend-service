@@ -662,7 +662,7 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
         await stream.FlushAsync(cancellationToken);
     }
 
-    private static async Task SaveFormFileAsync(
+    internal static async Task SaveFormFileAsync(
         IFormFile file,
         string destinationPath,
         CancellationToken cancellationToken)
@@ -679,7 +679,7 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
         await destination.FlushAsync(cancellationToken);
     }
 
-    private static async Task ExtractFragmentsAsync(
+    internal static async Task ExtractFragmentsAsync(
         IFormFile archiveFile,
         string destinationRoot,
         CancellationToken cancellationToken)
@@ -865,7 +865,7 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
         }
     }
 
-    private static string SafeLeafFileName(string fileName)
+    internal static string SafeLeafFileName(string fileName)
     {
         var leaf = Path.GetFileName(fileName.Replace('\\', '/'));
         if (string.IsNullOrWhiteSpace(leaf)
@@ -919,7 +919,7 @@ public sealed partial class TemplateImportService(IOptions<TemplateCatalogOption
         }
     }
 
-    private static void TryDeleteDirectory(string path)
+    internal static void TryDeleteDirectory(string path)
     {
         try
         {

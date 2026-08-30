@@ -566,14 +566,14 @@ function readOwnCaseInsensitive(source, name) {
 }
 
 function readVariable(environment, name) {
-  const direct = readOwnCaseInsensitive(environment.rowValues, name);
-  if (direct.known || direct.ambiguous) return direct;
-
   const value = readOwnCaseInsensitive(environment.context, name);
   if (value.known || value.ambiguous) return value;
 
   const alias = name.startsWith("$") ? name.slice(1) : `$${name}`;
-  return readOwnCaseInsensitive(environment.context, alias);
+  const aliasedValue = readOwnCaseInsensitive(environment.context, alias);
+  if (aliasedValue.known || aliasedValue.ambiguous) return aliasedValue;
+
+  return readOwnCaseInsensitive(environment.rowValues, name);
 }
 
 function readIdentifier(environment, path) {

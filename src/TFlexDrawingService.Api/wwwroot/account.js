@@ -12,6 +12,8 @@ const state = {
   jobs: [],
   adminUsers: [],
   adminTemplates: [],
+  templateAnalyses: [],
+  activeTemplateAnalysis: null,
   activeGenerationActions: new Map(),
   activeAdminUserActions: new Set()
 };
@@ -68,11 +70,22 @@ const adminUsersTableBody = document.querySelector("#adminUsersTableBody");
 const adminTemplatesTableBody = document.querySelector("#adminTemplatesTableBody");
 const accountCreateSection = document.querySelector(".account-create");
 const templateImportForm = document.querySelector("#templateImportForm");
-const templateManifestFile = document.querySelector("#templateManifestFile");
 const templateGrbFile = document.querySelector("#templateGrbFile");
 const templateFragmentsFile = document.querySelector("#templateFragmentsFile");
 const templateImportButton = document.querySelector("#templateImportButton");
 const templateImportStatus = document.querySelector("#templateImportStatus");
+const templateAnalysesList = document.querySelector("#templateAnalysesList");
+const templateAnalysisEditor = document.querySelector("#templateAnalysisEditor");
+const closeTemplateAnalysisEditor = document.querySelector("#closeTemplateAnalysisEditor");
+const templateAnalysisWarnings = document.querySelector("#templateAnalysisWarnings");
+const analysisTemplateName = document.querySelector("#analysisTemplateName");
+const analysisTemplateCode = document.querySelector("#analysisTemplateCode");
+const analysisTemplateId = document.querySelector("#analysisTemplateId");
+const analysisTemplateDescription = document.querySelector("#analysisTemplateDescription");
+const templateAnalysisSummary = document.querySelector(".template-analysis-summary");
+const templateAnalysisParameters = document.querySelector("#templateAnalysisParameters");
+const saveTemplateAnalysisDraft = document.querySelector("#saveTemplateAnalysisDraft");
+const publishTemplateAnalysis = document.querySelector("#publishTemplateAnalysis");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
 
@@ -169,6 +182,8 @@ function clearAccountSessionState() {
   state.jobs = [];
   state.adminUsers = [];
   state.adminTemplates = [];
+  state.templateAnalyses = [];
+  state.activeTemplateAnalysis = null;
   state.activeGenerationActions = new Map();
   state.activeAdminUserActions = new Set();
 
@@ -1252,7 +1267,7 @@ async function waitForDownload(jobId, format, options = {}) {
 
 async function loadAdminData() {
   if (!canAdmin()) return;
-  await Promise.all([loadAdminUsers(), loadAdminTemplates()]);
+  await Promise.all([loadAdminUsers(), loadAdminTemplates(), loadTemplateAnalyses()]);
 }
 
 async function loadAdminUsers() {
@@ -1489,49 +1504,248 @@ function showTemplateImportStatus(message, kind = "empty") {
 
 async function importTemplate(event) {
   event.preventDefault();
-  const manifest = templateManifestFile?.files?.[0];
   const template = templateGrbFile?.files?.[0];
-  const fragments = templateFragmentsFile?.files?.[0];
+  const components = templateFragmentsFile?.files?.[0];
 
-  if (!manifest || !template) {
-    showTemplateImportStatus(t("Выберите манифест и файл шаблона."), "error");
+  if (!template) {
+    showTemplateImportStatus(localized("Выберите основной файл GRB.", "Select the main GRB file."), "error");
     return;
   }
 
   const formData = new FormData();
-  formData.append("manifest", manifest);
   formData.append("template", template);
-  if (fragments) formData.append("fragments", fragments);
+  if (components) formData.append("components", components);
 
   templateImportButton.disabled = true;
   templateImportButton.setAttribute("aria-busy", "true");
   templateImportForm.setAttribute("aria-busy", "true");
-  showTemplateImportStatus(t("Импорт выполняется..."));
+  showTemplateImportStatus(localized(
+    "Файлы загружаются. Анализ выполнит Windows Worker…",
+    "Uploading files. The Windows Worker will run the analysis…"));
   try {
-    const response = await apiFetch("/api/admin/templates/import", {
+    const response = await apiFetch("/api/admin/template-analyses", {
       method: "POST",
       body: formData
     });
 
     if (!response.ok) {
-      const messages = await readProblem(response, t("Не удалось импортировать шаблон"));
+      const messages = await readProblem(response, localized(
+        "Не удалось запустить анализ",
+        "Could not start template analysis"));
       showTemplateImportStatus(messages.join(" "), "error");
       return;
     }
 
-    const importedTemplate = await sessionRequests.readJson(response);
-    if (importedTemplate === sessionRequests.stalePayload) return;
+    const analysis = await sessionRequests.readJson(response);
+    if (analysis === sessionRequests.stalePayload) return;
     templateImportForm.reset();
     showTemplateImportStatus(
-      `${t("Шаблон импортирован.")} ${importedTemplate.name || importedTemplate.code || importedTemplate.id || ""}`.trim(),
+      localized(
+        "Задание создано. После анализа проверьте черновик формы.",
+        "Analysis queued. Review the generated form draft when it completes."),
       "success");
-    await Promise.all([loadTemplates(), loadAdminTemplates()]);
+    await loadTemplateAnalyses();
   } catch {
-    showTemplateImportStatus(t("Не удалось импортировать шаблон"), "error");
+    showTemplateImportStatus(localized(
+      "Не удалось запустить анализ",
+      "Could not start template analysis"), "error");
   } finally {
     templateImportButton.disabled = false;
     templateImportButton.removeAttribute("aria-busy");
     templateImportForm.removeAttribute("aria-busy");
+  }
+}
+
+async function loadTemplateAnalyses() {
+  const response = await apiFetch("/api/admin/template-analyses");
+  requireSuccessfulLoadResponse(response, "template analyses");
+  const analyses = requireCurrentLoadPayload(
+    await sessionRequests.readJson(response),
+    "template analyses");
+  state.templateAnalyses = analyses;
+  renderTemplateAnalyses();
+  scheduleTemplateAnalysisRefresh();
+}
+
+function scheduleTemplateAnalysisRefresh() {
+  window.clearTimeout(scheduleTemplateAnalysisRefresh.timer);
+  if (!state.templateAnalyses.some(item => item.status === "pending" || item.status === "processing")) return;
+  scheduleTemplateAnalysisRefresh.timer = window.setTimeout(async () => {
+    if (!canAdmin()) return;
+    try {
+      await loadTemplateAnalyses();
+    } catch {
+      scheduleTemplateAnalysisRefresh();
+    }
+  }, 2500);
+}
+
+function getTemplateAnalysisStatusLabel(status) {
+  return ({
+    pending: localized("В очереди", "Queued"),
+    processing: localized("Анализ T-FLEX", "T-FLEX analysis"),
+    completed: localized("Готов к проверке", "Ready for review"),
+    failed: localized("Ошибка", "Failed"),
+    published: localized("Опубликован", "Published")
+  })[status] || status;
+}
+
+function renderTemplateAnalyses() {
+  if (!templateAnalysesList) return;
+  templateAnalysesList.replaceChildren();
+  for (const analysis of state.templateAnalyses) {
+    const card = document.createElement("article");
+    card.className = `template-analysis-card template-analysis-card--${analysis.status}`;
+    const warningCount = analysis.warningCount ?? analysis.warnings?.length ?? 0;
+    const parameterCount = analysis.parameterCount ?? analysis.draft?.parameters?.length ?? 0;
+    const action = analysis.status === "completed"
+      ? `<button class="secondary secondary--compact" type="button" data-analysis-action="review" data-analysis-id="${escapeHtml(analysis.id)}">Проверить форму</button>`
+      : "";
+    card.innerHTML = `
+      <div class="template-analysis-card__body">
+        <div>
+          <strong>${escapeHtml(analysis.originalTemplateFileName)}</strong>
+          <span class="status ${escapeHtml(analysis.status)}">${escapeHtml(getTemplateAnalysisStatusLabel(analysis.status))}</span>
+        </div>
+        <p>${analysis.status === "failed"
+          ? escapeHtml(analysis.errorMessage || localized("Анализ завершился ошибкой.", "Analysis failed."))
+          : escapeHtml(localized(
+              `${parameterCount} полей для пользователя · ${warningCount} предупреждений`,
+              `${parameterCount} user fields · ${warningCount} warnings`))}</p>
+      </div>
+      ${action}
+    `;
+    templateAnalysesList.append(card);
+  }
+}
+
+async function openTemplateAnalysisEditor(analysisId) {
+  const summary = state.templateAnalyses.find(item => item.id === analysisId);
+  if (summary?.status !== "completed") return;
+  try {
+    const response = await apiFetch(`/api/admin/template-analyses/${encodeURIComponent(analysisId)}`);
+    if (!response.ok) {
+      showTemplateImportStatus(localized("Не удалось загрузить черновик.", "Could not load the draft."), "error");
+      return;
+    }
+    const analysis = await sessionRequests.readJson(response);
+    if (analysis === sessionRequests.stalePayload || !analysis?.draft) return;
+    state.activeTemplateAnalysis = structuredClone(analysis);
+    renderTemplateAnalysisEditor(state.activeTemplateAnalysis);
+    templateAnalysisEditor.hidden = false;
+    templateAnalysisEditor.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch {
+    showTemplateImportStatus(localized("Не удалось загрузить черновик.", "Could not load the draft."), "error");
+  }
+}
+
+function renderTemplateAnalysisEditor(analysis) {
+  const draft = analysis.draft;
+  analysisTemplateName.value = draft.name || "";
+  analysisTemplateCode.value = draft.code || "";
+  analysisTemplateId.value = draft.id || "";
+  analysisTemplateDescription.value = draft.description || "";
+  const warnings = analysis.warnings || [];
+  templateAnalysisWarnings.hidden = warnings.length === 0;
+  templateAnalysisWarnings.innerHTML = warnings.length === 0
+    ? ""
+    : `<strong>${escapeHtml(localized("Публикация разрешена, но проверьте:", "Publishing is allowed, but review:"))}</strong>
+       <ul>${warnings.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+
+  const parameters = draft.parameters || [];
+  const calculated = draft.calculatedVariables || [];
+  templateAnalysisSummary.textContent = localized(
+    `Внешние: ${parameters.length} · вычисляемые: ${calculated.length} · правила: ${(draft.validationRules || []).length}`,
+    `External: ${parameters.length} · calculated: ${calculated.length} · rules: ${(draft.validationRules || []).length}`);
+  templateAnalysisParameters.replaceChildren();
+  for (const [kind, definitions] of [["parameters", parameters], ["calculatedVariables", calculated]]) {
+    definitions.forEach((definition, index) => {
+      const row = document.createElement("tr");
+      row.dataset.definitionKind = kind;
+      row.dataset.definitionIndex = String(index);
+      row.classList.toggle("is-calculated", kind === "calculatedVariables");
+      row.innerHTML = `
+        <td><input data-definition-field="displayName" value="${escapeHtml(definition.displayName || definition.name)}" aria-label="Название поля"></td>
+        <td><code>${escapeHtml(definition.name)}</code>${kind === "calculatedVariables" ? "<small>авто</small>" : ""}</td>
+        <td><select data-definition-field="type" aria-label="Тип поля">${["integer", "number", "string", "enum", "bool"].map(type => `<option value="${type}"${definition.type === type ? " selected" : ""}>${type}</option>`).join("")}</select></td>
+        <td><input data-definition-field="unit" value="${escapeHtml(definition.unit || "")}" aria-label="Единица измерения"></td>
+        <td><input data-definition-field="minValue" type="number" step="any" value="${escapeHtml(definition.minValue ?? "")}" aria-label="Минимум"></td>
+        <td><input data-definition-field="maxValue" type="number" step="any" value="${escapeHtml(definition.maxValue ?? "")}" aria-label="Максимум"></td>
+        <td><input data-definition-field="isRequired" type="checkbox" ${definition.isRequired ? "checked" : ""} ${kind === "calculatedVariables" ? "disabled" : ""} aria-label="Обязательное поле"></td>
+      `;
+      templateAnalysisParameters.append(row);
+    });
+  }
+}
+
+function collectTemplateAnalysisDraft() {
+  const analysis = state.activeTemplateAnalysis;
+  if (!analysis?.draft) return null;
+  const draft = structuredClone(analysis.draft);
+  draft.name = analysisTemplateName.value.trim();
+  draft.code = analysisTemplateCode.value.trim();
+  draft.id = analysisTemplateId.value.trim();
+  draft.description = analysisTemplateDescription.value.trim();
+  for (const row of templateAnalysisParameters.querySelectorAll("tr[data-definition-kind]")) {
+    const definition = draft[row.dataset.definitionKind]?.[Number(row.dataset.definitionIndex)];
+    if (!definition) continue;
+    for (const input of row.querySelectorAll("[data-definition-field]")) {
+      const field = input.dataset.definitionField;
+      if (field === "isRequired") definition[field] = input.checked;
+      else if (field === "minValue" || field === "maxValue") definition[field] = input.value === "" ? null : Number(input.value);
+      else definition[field] = input.value.trim();
+    }
+  }
+  return draft;
+}
+
+async function saveActiveTemplateAnalysisDraft({ quiet = false } = {}) {
+  const analysis = state.activeTemplateAnalysis;
+  const draft = collectTemplateAnalysisDraft();
+  if (!analysis || !draft) return false;
+  if (!analysisTemplateName.reportValidity() || !analysisTemplateCode.reportValidity() || !analysisTemplateId.reportValidity()) return false;
+  saveTemplateAnalysisDraft.disabled = true;
+  publishTemplateAnalysis.disabled = true;
+  try {
+    const response = await apiFetch(`/api/admin/template-analyses/${encodeURIComponent(analysis.id)}/draft`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft)
+    });
+    if (!response.ok) {
+      showTemplateImportStatus((await readProblem(response, localized("Не удалось сохранить черновик", "Could not save draft"))).join(" "), "error");
+      return false;
+    }
+    const updated = await sessionRequests.readJson(response);
+    if (updated === sessionRequests.stalePayload) return false;
+    state.activeTemplateAnalysis = updated;
+    const index = state.templateAnalyses.findIndex(item => item.id === updated.id);
+    if (index >= 0) state.templateAnalyses[index] = updated;
+    if (!quiet) showTemplateImportStatus(localized("Черновик сохранен.", "Draft saved."), "success");
+    return true;
+  } finally {
+    saveTemplateAnalysisDraft.disabled = false;
+    publishTemplateAnalysis.disabled = false;
+  }
+}
+
+async function publishActiveTemplateAnalysis() {
+  if (!await saveActiveTemplateAnalysisDraft({ quiet: true })) return;
+  const analysis = state.activeTemplateAnalysis;
+  publishTemplateAnalysis.disabled = true;
+  showTemplateImportStatus(localized("Публикация шаблона…", "Publishing template…"));
+  try {
+    const response = await apiFetch(`/api/admin/template-analyses/${encodeURIComponent(analysis.id)}/publish`, { method: "POST" });
+    if (!response.ok) {
+      showTemplateImportStatus((await readProblem(response, localized("Не удалось опубликовать шаблон", "Could not publish template"))).join(" "), "error");
+      return;
+    }
+    templateAnalysisEditor.hidden = true;
+    state.activeTemplateAnalysis = null;
+    showTemplateImportStatus(localized("Шаблон опубликован и доступен в редакторе.", "Template published and available in the editor."), "success");
+    await Promise.all([loadTemplates(), loadAdminTemplates(), loadTemplateAnalyses()]);
+  } finally {
+    publishTemplateAnalysis.disabled = false;
   }
 }
 
@@ -1747,6 +1961,16 @@ adminTemplatesTableBody.addEventListener("change", event => {
   setTemplateEnabled(input.dataset.templateId, input.checked, input);
 });
 templateImportForm?.addEventListener("submit", importTemplate);
+templateAnalysesList?.addEventListener("click", event => {
+  const button = event.target.closest("button[data-analysis-action='review']");
+  if (button) openTemplateAnalysisEditor(button.dataset.analysisId);
+});
+closeTemplateAnalysisEditor?.addEventListener("click", () => {
+  templateAnalysisEditor.hidden = true;
+  state.activeTemplateAnalysis = null;
+});
+saveTemplateAnalysisDraft?.addEventListener("click", () => saveActiveTemplateAnalysisDraft());
+publishTemplateAnalysis?.addEventListener("click", publishActiveTemplateAnalysis);
 window.addEventListener("tflex:languagechange", () => {
   updateAuthView();
   if (pageLoadError && !pageLoadError.hidden) {
@@ -1756,6 +1980,8 @@ window.addEventListener("tflex:languagechange", () => {
   if (canAdmin()) {
     renderAdminUsers();
     renderAdminTemplates();
+    renderTemplateAnalyses();
+    if (state.activeTemplateAnalysis) renderTemplateAnalysisEditor(state.activeTemplateAnalysis);
   }
 });
 

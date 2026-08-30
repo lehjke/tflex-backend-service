@@ -16,9 +16,11 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   const source = readWebSource("home.js");
   const styles = readWebSource("styles.css");
 
-  assert.match(html, /<article class="home-template-card"/u);
-  assert.match(html, /<a class="home-template-card__button" href="\/drawings">Создать чертёж<\/a>/u);
-  assert.match(html, /<a class="home-template-card__button" href="\/pricing">Рассчитать цену<\/a>/u);
+  assert.match(html, /<a class="home-template-card" href="\/drawings" data-template-card aria-labelledby="drawingsCardTitle">/u);
+  assert.match(html, /<a class="home-template-card" href="\/pricing" data-template-card aria-labelledby="pricingCardTitle">/u);
+  assert.match(html, /<span class="home-template-card__button">Создать чертёж<\/span>/u);
+  assert.match(html, /<span class="home-template-card__button">Рассчитать цену<\/span>/u);
+  assert.doesNotMatch(html, /class="home-template-card__button"[^>]*href=/u);
   assert.doesNotMatch(source, /addEventListener\("pointerdown"/u);
   assert.match(source, /function setTemplateCardState\(card, isOpen\)/u);
   assert.match(source, /function openTemplateCard\(card\)/u);
@@ -27,6 +29,7 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   assert.match(source, /addEventListener\("pointerleave"/u);
   assert.match(source, /addEventListener\("focusin"/u);
   assert.match(source, /addEventListener\("focusout"/u);
+  assert.match(source, /link instanceof HTMLAnchorElement/u);
   assert.match(source, /setupTemplateCards\(\);/u);
   assert.match(styles, /\.home-template-card \{[\s\S]*?height: 240px;[\s\S]*?transition: height 0\.34s/u);
   assert.match(styles, /\.home-template-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
@@ -36,6 +39,8 @@ test("home cards keep link navigation and restore interruptible disclosure motio
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__description \{\s*opacity: 1;/u);
   assert.match(styles, /@media \(max-width: 620px\) \{[\s\S]*?\.home-template-card\.is-open \{\s*height: 500px;/u);
   assert.match(styles, /\.home-template-card\.is-open \.home-template-card__footer \{[\s\S]*?flex-direction: column;/u);
+  assert.match(styles, /\.home-template-card\.is-open \.home-template-card__footer \{[\s\S]*?gap: 24px;/u);
+  assert.match(styles, /\.home-template-card__button \{[\s\S]*?padding: 0 16px;[\s\S]*?white-space: nowrap;/u);
   assert.match(styles, /\.skeleton-home-card \{[\s\S]*?--home-card-padding: 10px;[\s\S]*?--home-card-inner-radius: calc\(var\(--surface-radius\) - var\(--home-card-padding\)\);[\s\S]*?border-radius: var\(--surface-radius\);/u);
 });
 
@@ -60,6 +65,7 @@ test("major surfaces share a 16px exterior and close nesting remains concentric"
 test("pricing keeps all categories visible and uses a lazy keyboard-operated visual listbox", () => {
   const html = readWebSource("pricing.html");
   const source = readWebSource("pricing.js");
+  const styles = readWebSource("styles.css");
   const sections = html.match(/<section class="pricing-section/gu) || [];
 
   assert.equal(sections.length, 12);
@@ -93,7 +99,21 @@ test("pricing keeps all categories visible and uses a lazy keyboard-operated vis
   assert.match(source, /method: editingId \? "PUT" : "POST"/u);
   assert.match(source, /Сохранить изменения/u);
   assert.match(source, /data-exclusive-group="xizi-iled"/u);
+  assert.match(source, /<input type="checkbox" \$\{isDisplayOption/u);
+  assert.match(source, /if \(!input\?\.checked\) return;/u);
   assert.match(source, /\^ILED\(\?:\\s\|_\)\/i/u);
+  assert.match(source, /pricing-option-group pricing-option-group--iled/u);
+  assert.match(source, /id="xiziIledHint"/u);
+  assert.match(source, /Можно выбрать один вариант\. Повторное нажатие снимает выбор\./u);
+  assert.match(source, /pricing-option--exclusive/u);
+  assert.match(source, /return getSize\(left\) - getSize\(right\);/u);
+  assert.match(styles, /\.pricing-option-group--iled \{\s*grid-column: 1 \/ -1;/u);
+  assert.match(styles, /\.pricing-option--exclusive:has\(input:checked\)/u);
+  assert.match(source, /class="saved-pricing-item__summary"/u);
+  assert.match(source, /class="saved-pricing-item__meta"/u);
+  assert.match(source, /class="saved-pricing-actions" role="group"/u);
+  assert.match(styles, /\.saved-pricing-item \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/u);
+  assert.match(styles, /\.saved-pricing-actions \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/u);
 });
 
 test("editor exposes labels, preserves text selection, announces collisions, and can retry boot", () => {
@@ -102,7 +122,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260827-lobby-units-1/u);
+  assert.match(html, /\/app\.js\?v=20260828-speed-dependent-oh-pd-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -209,7 +229,9 @@ test("responsive and user-preference contracts cover the audited breakpoints", (
   assert.match(source, /\.intro p\.role-note:not\(\[hidden\]\)/u);
   assert.match(source, /input:focus,[\s\S]*?box-shadow: none;/u);
   assert.match(source, /#parametersForm input:not\(:disabled\),[\s\S]*?cursor: pointer;/u);
-  assert.match(source, /@media \(max-width: 900px\)[\s\S]*?\.topbar \{\s*display: none;/u);
+  assert.match(source, /@media \(max-width: 900px\)[\s\S]*?\.topbar \{\s*position: sticky;\s*top: 96px;\s*z-index: 50;[\s\S]*?display: grid;[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/u);
+  assert.match(source, /\.topbar > \.global-search,\s*\.topbar > \.topbar__actions \{\s*display: none;/u);
+  assert.doesNotMatch(source, /\.topbar \{\s*display: none;/u);
   assert.match(source, /@media \(max-width: 620px\)[\s\S]*?textarea \{\s*font-size: 16px;/u);
   assert.match(source, /\.generation-actions \.primary \{\s*grid-column: 1 \/ -1;/u);
   assert.doesNotMatch(source, /#submitButton:not\(\[hidden\]\) \{[\s\S]*?position: fixed;/u);
@@ -271,7 +293,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260827-asset-grouping-1/u,
+      /\/styles\.css\?v=20260829-saved-pricing-cards-1/u,
       `${pageName} must load the current stylesheet`);
   }
 });
@@ -288,6 +310,29 @@ test("all pages expose skip navigation, stable logo dimensions, and current navi
 
   for (const pageName of ["drawings.html", "pricing.html", "account.html"]) {
     assert.match(readWebSource(pageName), /class="is-active"[^>]*aria-current="page"/u);
+  }
+});
+
+test("breadcrumbs link the MLT site, engineering center, and current section", () => {
+  const homeHtml = readWebSource("index.html");
+  assert.match(
+    homeHtml,
+    /<nav class="breadcrumbs" aria-label="Навигация">\s*<a href="https:\/\/mlt\.pro\/">Главная<\/a>\s*<span aria-hidden="true">\/<\/span>\s*<span aria-current="page">Инженерный центр<\/span>\s*<\/nav>/u);
+
+  const internalPages = new Map([
+    ["drawings.html", "Создание чертежей"],
+    ["pricing.html", "Базовая цена"],
+    ["account.html", "Личный кабинет"]
+  ]);
+
+  for (const [pageName, currentSection] of internalPages) {
+    const html = readWebSource(pageName);
+    assert.match(html, /<nav class="breadcrumbs" aria-label="Навигация">/u);
+    assert.match(html, /<a href="https:\/\/mlt\.pro\/">Главная<\/a>/u);
+    assert.match(html, /<a href="\/">Инженерный центр<\/a>/u);
+    assert.match(
+      html,
+      new RegExp(`<span aria-current="page">${currentSection}</span>`, "u"));
   }
 });
 

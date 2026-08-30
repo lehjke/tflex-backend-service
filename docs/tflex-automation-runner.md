@@ -51,6 +51,16 @@ dotnet run --project .\src\TFlexAutomationRunner\TFlexAutomationRunner.csproj -c
   --inspect-variables "C:\Shared\LEHY-L-PRO [320-1050].grb" ".\docs\inspect-320-1050-variables.json"
 ```
 
+The automatic admin import uses the combined inspection command. It performs a
+full rebuild and returns variables, controls, linked document properties, and
+non-fatal rebuild warnings in one JSON document:
+
+```powershell
+TFlexAutomationRunner.exe --inspect-template `
+  "C:\Shared\New lift.grb" `
+  ".\template-inspection.json"
+```
+
 To inspect calculated values after applying input parameters, pass a JSON object
 as the optional fourth argument:
 

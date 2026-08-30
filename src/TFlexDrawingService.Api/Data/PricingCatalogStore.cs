@@ -187,12 +187,15 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var request = JsonSerializer.Deserialize<PricingCalculationRequest>(
             specification.RequestJson,
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var isSmec = string.Equals(specification.Supplier, "SMEC", StringComparison.OrdinalIgnoreCase);
         var templatePath = Path.Combine(
             environment.ContentRootPath,
             "Data",
             "Templates",
-            "shablon_zaprosa.xlsx");
-        return PricingRequestXlsxBuilder.Build(templatePath, specification, project, request);
+            isSmec ? "smec_request.xlsx" : "shablon_zaprosa.xlsx");
+        return isSmec
+            ? SmecPricingRequestXlsxBuilder.Build(templatePath, specification, project, request)
+            : PricingRequestXlsxBuilder.Build(templatePath, specification, project, request);
     }
 
     private void CalculateXizi(

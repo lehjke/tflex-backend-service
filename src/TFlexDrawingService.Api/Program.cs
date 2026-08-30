@@ -14,6 +14,7 @@ using TFlexDrawingService.Core.Abstractions;
 using TFlexDrawingService.Core.Models;
 using TFlexDrawingService.Core.Requests;
 using TFlexDrawingService.Infrastructure.Configuration;
+using TFlexDrawingService.Infrastructure.Persistence;
 
 const string ViewerPolicy = "Viewer";
 const string OperatorPolicy = "Operator";
@@ -27,6 +28,7 @@ const long MaxTemplateImportRequestBodyBytes =
     + TemplateImportService.MaxTemplateBytes
     + TemplateImportService.MaxFragmentsArchiveBytes
     + (2L * 1024 * 1024);
+const long MaxTemplateDraftRequestBodyBytes = TemplateImportService.MaxManifestBytes + (64 * 1024);
 
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 {
@@ -101,6 +103,7 @@ builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<TemplateAccessStore>();
 builder.Services.AddSingleton<PricingCatalogStore>();
 builder.Services.AddSingleton<TemplateImportService>();
+builder.Services.AddSingleton<TemplateAnalysisUploadService>();
 builder.Services.AddSingleton<ServiceReadinessProbe>();
 builder.Services.AddHttpClient();
 builder.Services.AddDrawingInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
@@ -247,7 +250,9 @@ app.Use(async (context, next) =>
 {
     var requestBodyLimit = IsTemplateImportRequest(context.Request)
         ? MaxTemplateImportRequestBodyBytes
-        : securityOptions.MaxRequestBodyBytes;
+        : IsTemplateDraftRequest(context.Request)
+            ? MaxTemplateDraftRequestBodyBytes
+            : securityOptions.MaxRequestBodyBytes;
     var maxRequestBodySizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (maxRequestBodySizeFeature is { IsReadOnly: false })
     {
@@ -752,6 +757,144 @@ var adminTemplateImportEndpoint = app.MapPost("/api/admin/templates/import", asy
         ToPublicTemplateDto(result.Template));
 });
 RequirePolicy(adminTemplateImportEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var adminTemplateAnalysesEndpoint = app.MapGet("/api/admin/template-analyses", async (
+    TemplateAnalysisStore store,
+    CancellationToken cancellationToken) =>
+{
+    var jobs = await store.ListAsync(20, cancellationToken);
+    return Results.Ok(jobs.Select(ToTemplateAnalysisSummaryDto));
+});
+RequirePolicy(adminTemplateAnalysesEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var adminTemplateAnalysisEndpoint = app.MapGet("/api/admin/template-analyses/{id}", async (
+    string id,
+    TemplateAnalysisStore store,
+    CancellationToken cancellationToken) =>
+{
+    var job = await store.GetAsync(id, cancellationToken);
+    return job is null ? Results.NotFound() : Results.Ok(ToTemplateAnalysisDto(job));
+});
+RequirePolicy(adminTemplateAnalysisEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var adminTemplateAnalysisCreateEndpoint = app.MapPost("/api/admin/template-analyses", async (
+    HttpRequest request,
+    TemplateAnalysisUploadService uploadService,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["A multipart/form-data request is required."]
+        });
+    }
+
+    IFormCollection form;
+    try
+    {
+        form = await request.ReadFormAsync(cancellationToken);
+    }
+    catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException or IOException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["request"] = ["The multipart upload is invalid, interrupted, or exceeds the configured limit."]
+        });
+    }
+
+    var result = await uploadService.CreateAsync(
+        form.Files.GetFile("template"),
+        form.Files.GetFile("components"),
+        GetUserName(context.User),
+        cancellationToken);
+    if (!result.IsSuccess || result.Job is null)
+    {
+        return Results.ValidationProblem(result.Errors.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase));
+    }
+
+    return Results.Accepted(
+        $"/api/admin/template-analyses/{Uri.EscapeDataString(result.Job.Id)}",
+        ToTemplateAnalysisDto(result.Job));
+});
+RequirePolicy(adminTemplateAnalysisCreateEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+adminTemplateAnalysisCreateEndpoint.RequireRateLimiting(JobCreateRateLimitPolicy);
+
+var adminTemplateAnalysisDraftEndpoint = app.MapPut("/api/admin/template-analyses/{id}/draft", async (
+    string id,
+    JsonElement payload,
+    TemplateAnalysisStore store,
+    CancellationToken cancellationToken) =>
+{
+    var job = await store.GetAsync(id, cancellationToken);
+    if (job is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (job.Status != TemplateAnalysisStatus.Completed)
+    {
+        return Results.Conflict(new { message = "Only a completed analysis draft can be edited." });
+    }
+
+    if (!TemplateAnalysisUploadService.TryNormalizeDraft(payload, out var draft, out var error)
+        || draft is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["draft"] = [error ?? "Template draft is invalid."]
+        });
+    }
+
+    await store.UpdateDraftAsync(
+        id,
+        TemplateAnalysisUploadService.SerializeDraft(draft),
+        cancellationToken);
+    return Results.Ok(ToTemplateAnalysisDto((await store.GetAsync(id, cancellationToken))!));
+});
+RequirePolicy(adminTemplateAnalysisDraftEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var adminTemplateAnalysisPublishEndpoint = app.MapPost("/api/admin/template-analyses/{id}/publish", async (
+    string id,
+    TemplateAnalysisStore store,
+    TemplateAnalysisUploadService uploadService,
+    TemplateImportService importer,
+    TemplateAccessStore templateAccess,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var job = await store.GetAsync(id, cancellationToken);
+    if (job is null)
+    {
+        return Results.NotFound();
+    }
+
+    var result = await uploadService.PublishAsync(job, importer, cancellationToken);
+    if (!result.IsSuccess || result.Template is null)
+    {
+        return Results.ValidationProblem(result.Errors.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase));
+    }
+
+    await templateAccess.SetEnabledAsync(
+        result.Template.Id,
+        enabled: true,
+        GetUserName(context.User),
+        cancellationToken);
+    await store.MarkPublishedAsync(id, cancellationToken);
+    return Results.Ok(new
+    {
+        Analysis = ToTemplateAnalysisDto((await store.GetAsync(id, cancellationToken))!),
+        Template = ToPublicTemplateDto(result.Template)
+    });
+});
+RequirePolicy(adminTemplateAnalysisPublishEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
 
 var adminTemplateEnabledEndpoint = app.MapPut("/api/admin/templates/{templateId}/enabled", async (
     string templateId,
@@ -1730,10 +1873,87 @@ static bool IsApiRequest(HttpRequest request)
 static bool IsTemplateImportRequest(HttpRequest request)
 {
     return HttpMethods.IsPost(request.Method)
-        && string.Equals(
-            request.Path.Value,
-            "/api/admin/templates/import",
-            StringComparison.OrdinalIgnoreCase);
+        && (string.Equals(
+                request.Path.Value,
+                "/api/admin/templates/import",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                request.Path.Value,
+                "/api/admin/template-analyses",
+                StringComparison.OrdinalIgnoreCase));
+}
+
+static bool IsTemplateDraftRequest(HttpRequest request)
+{
+    return HttpMethods.IsPut(request.Method)
+        && request.Path.StartsWithSegments("/api/admin/template-analyses")
+        && request.Path.Value?.EndsWith("/draft", StringComparison.OrdinalIgnoreCase) == true;
+}
+
+static object ToTemplateAnalysisDto(TemplateAnalysisJob job)
+{
+    return new
+    {
+        job.Id,
+        Status = job.Status.ToString().ToLowerInvariant(),
+        job.OriginalTemplateFileName,
+        Draft = ParseStoredJson(job.DraftJson, JsonValueKind.Object),
+        Inspection = ParseStoredJson(job.InspectionJson, JsonValueKind.Object),
+        Warnings = ParseStoredJson(job.WarningsJson, JsonValueKind.Array),
+        Components = ParseStoredJson(job.ComponentManifestJson, JsonValueKind.Array),
+        job.CreatedAt,
+        job.StartedAt,
+        job.FinishedAt,
+        job.PublishedAt,
+        job.ErrorMessage
+    };
+}
+
+static object ToTemplateAnalysisSummaryDto(TemplateAnalysisJob job)
+{
+    var draft = ParseStoredJson(job.DraftJson, JsonValueKind.Object);
+    var warnings = ParseStoredJson(job.WarningsJson, JsonValueKind.Array);
+    return new
+    {
+        job.Id,
+        Status = job.Status.ToString().ToLowerInvariant(),
+        job.OriginalTemplateFileName,
+        ParameterCount = TryGetArrayLength(draft, "parameters"),
+        CalculatedVariableCount = TryGetArrayLength(draft, "calculatedVariables"),
+        WarningCount = warnings?.GetArrayLength() ?? 0,
+        job.CreatedAt,
+        job.StartedAt,
+        job.FinishedAt,
+        job.PublishedAt,
+        job.ErrorMessage
+    };
+}
+
+static int TryGetArrayLength(JsonElement? element, string propertyName)
+{
+    return element is { ValueKind: JsonValueKind.Object } value
+        && value.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.Array
+            ? property.GetArrayLength()
+            : 0;
+}
+
+static JsonElement? ParseStoredJson(string json, JsonValueKind expectedKind)
+{
+    if (string.IsNullOrWhiteSpace(json))
+    {
+        return null;
+    }
+
+    try
+    {
+        var element = JsonSerializer.Deserialize<JsonElement>(json);
+        return element.ValueKind == expectedKind ? element : null;
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
 }
 
 static bool IsUnsafeApiRequest(HttpRequest request)

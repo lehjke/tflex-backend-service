@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Core.Requests;
@@ -116,6 +117,80 @@ public sealed class JsonTemplateCatalogTests
             }
         }
 
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_BoundaryContextsHaveEvaluableValidationRules()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var catalog = new JsonTemplateCatalog(
+            Options.Create(new TemplateCatalogOptions
+            {
+                ProjectRootPath = repositoryRoot,
+                ConfigPath = Path.Combine(repositoryRoot, "templates", "templates.json")
+            }),
+            NullLogger<JsonTemplateCatalog>.Instance);
+        var failures = new List<string>();
+        var scenarioCount = 0;
+        var ruleEvaluationCount = 0;
+
+        foreach (var template in await catalog.ListAsync())
+        {
+            var defaults = BuildDefaultParameterValues(template);
+            var scenarios = new List<(string Name, Dictionary<string, object?> Values)>
+            {
+                ("defaults", defaults)
+            };
+
+            foreach (var parameter in template.Parameters.Where(parameter => !parameter.IsReadOnly))
+            {
+                var values = new List<object?>();
+                if (parameter.AllowedValues.Count > 0)
+                {
+                    var allowedValues = parameter.AllowedValues.Count <= 12
+                        ? parameter.AllowedValues
+                        :
+                        [
+                            parameter.AllowedValues[0],
+                            parameter.AllowedValues[parameter.AllowedValues.Count / 2],
+                            parameter.AllowedValues[^1]
+                        ];
+                    values.AddRange(allowedValues.Select(value => CoerceVariant(parameter.Type, value)));
+                }
+
+                if (parameter.MinValue is { } minimum) values.Add(minimum);
+                if (parameter.MaxValue is { } maximum) values.Add(maximum);
+
+                foreach (var value in values.Distinct())
+                {
+                    var variant = new Dictionary<string, object?>(defaults, StringComparer.Ordinal)
+                    {
+                        [parameter.Name] = value
+                    };
+                    scenarios.Add(($"{parameter.Name}={value}", variant));
+                }
+            }
+
+            foreach (var scenario in scenarios)
+            {
+                scenarioCount++;
+                var context = TemplateExpressionContextBuilder.Build(template, scenario.Values);
+                foreach (var rule in template.ValidationRules)
+                {
+                    ruleEvaluationCount++;
+                    if (!SafeTFlexExpressionEvaluator.TryEvaluateRule(rule.Expression, context, out _))
+                    {
+                        failures.Add($"{template.Id}/{scenario.Name}/{rule.Name}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(scenarioCount >= 750, $"Only {scenarioCount} production scenarios were checked.");
+        Assert.True(
+            ruleEvaluationCount >= 18_000,
+            $"Only {ruleEvaluationCount} validation rules were checked.");
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
@@ -542,6 +617,34 @@ public sealed class JsonTemplateCatalogTests
                 out _));
     }
 
+    [Theory]
+    [InlineData("lehy_l_pro_320_1050", 1050, "$speed_1050", "1.00", 4050, 1300)]
+    [InlineData("lehy_l_pro_320_1050", 1050, "$speed_1050", "2.50", 5050, 1850)]
+    [InlineData("lehy_l_pro_1050_2500", 1200, "$speed_1200", "1.00", 4400, 1350)]
+    [InlineData("lehy_l_pro_1050_2500", 1200, "$speed_1200", "3.00", 4850, 2300)]
+    public async Task ProductionCatalog_SpeedRecalculatesAutomaticHeadroomAndPit(
+        string templateId,
+        int capacity,
+        string speedParameterName,
+        string speed,
+        int expectedHeadroom,
+        int expectedPit)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var parameters = BuildDefaultParameterValues(template);
+        parameters["cap"] = (decimal)capacity;
+        parameters[speedParameterName] = speed;
+
+        var context = TemplateExpressionContextBuilder.Build(template, parameters);
+
+        Assert.Equal((decimal)capacity, Assert.IsType<decimal>(context["cap"]));
+        Assert.Equal(
+            decimal.Parse(speed, CultureInfo.InvariantCulture),
+            Assert.IsType<decimal>(context["speed"]));
+        Assert.Equal((decimal)expectedHeadroom, Assert.IsType<decimal>(context["OH"]));
+        Assert.Equal((decimal)expectedPit, Assert.IsType<decimal>(context["PD"]));
+    }
+
     [Fact]
     public void ExpressionEvaluator_UsesUniqueCaseInsensitiveFallbackForCompatibility()
     {
@@ -614,6 +717,16 @@ public sealed class JsonTemplateCatalogTests
             System.Text.Json.JsonValueKind.True => true,
             System.Text.Json.JsonValueKind.False => false,
             _ => null
+        };
+    }
+
+    private static object? CoerceVariant(string type, string value)
+    {
+        return type.Trim().ToLowerInvariant() switch
+        {
+            "number" or "integer" => decimal.Parse(value, CultureInfo.InvariantCulture),
+            "bool" or "boolean" => value.Equals("true", StringComparison.OrdinalIgnoreCase),
+            _ => value
         };
     }
 

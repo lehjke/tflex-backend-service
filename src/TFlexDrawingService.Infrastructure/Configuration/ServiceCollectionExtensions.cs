@@ -141,6 +141,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDrawingRequestValidator, DrawingJobValidator>();
         services.AddSingleton<IDrawingJobRepository, SqliteDrawingJobRepository>();
         services.AddSingleton<IDrawingJobQueue, SqliteDrawingJobQueue>();
+        services.AddSingleton<TemplateAnalysisStore>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<TFlexAutomationExecutionGate>();
         services.AddSingleton<TFlexAutomationReadinessState>();
@@ -165,9 +166,11 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDrawingGenerationWorker(this IServiceCollection services)
     {
         services.AddSingleton<DrawingJobProcessor>();
+        services.AddSingleton<TemplateAnalysisProcessor>();
         services.AddHostedService<TFlexAutomationStartupHostedService>();
         services.AddHostedService<WorkerHeartbeatHostedService>();
         services.AddHostedService<DrawingGenerationBackgroundService>();
+        services.AddHostedService<TemplateAnalysisBackgroundService>();
         services.AddHostedService<StorageCleanupHostedService>();
         return services;
     }

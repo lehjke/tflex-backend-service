@@ -92,6 +92,58 @@ test("supports bounded lookup-table expressions", () => {
   assert.equal(result, 850);
 });
 
+test("lookup predicates compare table fields with same-named context variables", () => {
+  const catalog = JSON.parse(
+    fs.readFileSync(path.join(repositoryRoot, "templates/templates.json"), "utf8"));
+  const cases = [
+    {
+      templateId: "lehy_l_pro_320_1050",
+      speed: 1,
+      expectedHeadroom: 3650,
+      expectedPit: 1300
+    },
+    {
+      templateId: "lehy_l_pro_320_1050",
+      speed: 2.5,
+      expectedHeadroom: 4250,
+      expectedPit: 1850
+    },
+    {
+      templateId: "lehy_l_pro_1050_2500",
+      speed: 1,
+      expectedHeadroom: 3650,
+      expectedPit: 1350
+    },
+    {
+      templateId: "lehy_l_pro_1050_2500",
+      speed: 3,
+      expectedHeadroom: 4500,
+      expectedPit: 2300
+    }
+  ];
+
+  for (const currentCase of cases) {
+    const template = catalog.templates.find(item => item.id === currentCase.templateId);
+    const context = { speed: currentCase.speed, TR: 30 };
+    const options = { lookupTables: template.lookupTables };
+
+    assert.equal(
+      evaluateTFlexExpression(
+        "find(OH.HE, (OH.speed==speed)&&(OH.TR>=TR))",
+        context,
+        options),
+      currentCase.expectedHeadroom,
+      `${currentCase.templateId}: headroom at ${currentCase.speed} m/s`);
+    assert.equal(
+      evaluateTFlexExpression(
+        "find(OH.PD, (OH.speed==speed)&&(OH.TR>=TR))",
+        context,
+        options),
+      currentCase.expectedPit,
+      `${currentCase.templateId}: pit at ${currentCase.speed} m/s`);
+  }
+});
+
 test("returns the server-side zero fallback when find has no matching row", () => {
   const result = evaluateTFlexExpression(
     "find(TH.AA, (TH.cap == cap)&&(TH.car_type == $car_type))",

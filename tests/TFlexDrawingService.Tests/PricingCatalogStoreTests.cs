@@ -970,6 +970,106 @@ public sealed class PricingCatalogStoreTests
         }
     }
 
+    [Fact]
+    public void BuildPricingRequestXlsx_ForSmec_UsesFactoryConfigurationWorkbookAndClearsReferenceData()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var templateDirectory = Path.Combine(root, "Data", "Templates");
+        Directory.CreateDirectory(templateDirectory);
+
+        try
+        {
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/Data/Templates/smec_request.xlsx")),
+                Path.Combine(templateDirectory, "smec_request.xlsx"));
+            var request = new PricingCalculationRequest(
+                "SMEC", "LEHY-III", 1600, 2.5m, 8, 1100, null, null, 8,
+                0, null, ["CWT WITH SAFETY", "FER"], false, false, "CNY", "project-smec", null,
+                new Dictionary<string, string>
+                {
+                    ["Ele Series"] = "Passenger Elevator",
+                    ["Quantity"] = "2",
+                    ["Floors"] = "25",
+                    ["Main Floor"] = "1",
+                    ["Other Floors"] = "2~25",
+                    ["Power Supply"] = "380V, 50 Hz",
+                    ["Lighting Supply"] = "220V, 50 Hz",
+                    ["Operation"] = "Simplex",
+                    ["AH"] = "2265",
+                    ["BH"] = "1900",
+                    ["TR"] = "27900",
+                    ["OH"] = "4300",
+                    ["PD"] = "1500",
+                    ["AA"] = "1600",
+                    ["BB"] = "1500",
+                    ["HL"] = "2700",
+                    ["JJ"] = "1100",
+                    ["HH"] = "2400",
+                    ["Door type"] = "1D1G",
+                    ["Door mode"] = "Central opening",
+                    ["Other Requirements"] = "Factory confirmation required"
+                },
+                "L1");
+            var specification = new PricingSpecification(
+                "specification-smec", "project-smec", null, "L1", "SMEC", "LEHY-III", "ready",
+                195900m, "CNY", 195900m,
+                JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                "{}", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            var project = new UserProject(
+                "project-smec", "admin", "Мост Багратион", "Москва", "C100300001", "",
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+            var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory());
+
+            var xlsx = store.BuildPricingRequestXlsx(specification, project);
+
+            using var archive = new ZipArchive(new MemoryStream(xlsx), ZipArchiveMode.Read);
+            Assert.NotNull(archive.GetEntry("xl/styles.xml"));
+            Assert.NotNull(archive.GetEntry("xl/drawings/drawing1.xml"));
+            Assert.NotNull(archive.GetEntry("xl/media/image1.png"));
+            using var workbookReader = new StreamReader(archive.GetEntry("xl/workbook.xml")!.Open());
+            var workbookXml = workbookReader.ReadToEnd();
+            Assert.Contains("电梯配置表", workbookXml);
+            Assert.Contains("ZPML-G660(8ms)", workbookXml);
+
+            using var worksheetReader = new StreamReader(
+                archive.GetEntry("xl/worksheets/sheet5.xml")!.Open());
+            var worksheet = XDocument.Parse(worksheetReader.ReadToEnd());
+            Assert.Equal("项目储备：C100300001", ReadCell(worksheet, "B1"));
+            Assert.Equal("L1（2台）", ReadCell(worksheet, "E2"));
+            Assert.Equal("1600", ReadCell(worksheet, "E3"));
+            Assert.Equal("2.5", ReadCell(worksheet, "E4"));
+            Assert.Equal("27.9", ReadCell(worksheet, "E5"));
+            Assert.Equal("25层/8站", ReadCell(worksheet, "E6"));
+            Assert.Equal("AA 1600 x BB 1500 x HC 2700", ReadCell(worksheet, "E7"));
+            Assert.Equal("JJ 1100 x HH 2400", ReadCell(worksheet, "E8"));
+            Assert.Equal("1D1G / Central opening", ReadCell(worksheet, "E9"));
+            Assert.Equal("1500", ReadCell(worksheet, "E34"));
+            Assert.Contains("Shaft: AH 2265 x BH 1900", ReadCell(worksheet, "E59"));
+            Assert.Contains("Options: CWT WITH SAFETY, FER", ReadCell(worksheet, "E59"));
+            Assert.Equal("", ReadCell(worksheet, "G2"));
+            Assert.Equal("", ReadCell(worksheet, "M59"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static string ReadCell(XDocument worksheet, string reference)
+    {
+        var cell = worksheet.Descendants().Single(element =>
+            element.Name.LocalName == "c" && element.Attribute("r")?.Value == reference);
+        if (cell.Attribute("t")?.Value == "inlineStr")
+        {
+            return string.Concat(cell.Descendants().Where(element => element.Name.LocalName == "t")
+                .Select(element => element.Value));
+        }
+
+        return cell.Elements().FirstOrDefault(element => element.Name.LocalName == "v")?.Value ?? "";
+    }
+
     private sealed class TestWebHostEnvironment(string root) : IWebHostEnvironment
     {
         public string ApplicationName { get; set; } = "TFlexDrawingService.Tests";

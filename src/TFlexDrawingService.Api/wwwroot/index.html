@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101A38">
   <title>Инженерный центр — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260827-asset-grouping-1">
+  <link rel="stylesheet" href="/styles.css?v=20260829-saved-pricing-cards-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -39,11 +39,11 @@
 
     <div class="workspace">
       <header class="topbar">
-        <div class="breadcrumbs" aria-label="Навигация">
-          <a href="/">Главная</a>
+        <nav class="breadcrumbs" aria-label="Навигация">
+          <a href="https://mlt.pro/">Главная</a>
           <span aria-hidden="true">/</span>
-          <span>Инженерный центр</span>
-        </div>
+          <span aria-current="page">Инженерный центр</span>
+        </nav>
 
         <label class="global-search">
           <span class="sr-only">Поиск</span>
@@ -140,7 +140,7 @@
         </section>
 
         <section class="home-module-showcase" aria-label="Быстрый доступ">
-          <article class="home-template-card" data-template-card aria-labelledby="drawingsCardTitle">
+          <a class="home-template-card" href="/drawings" data-template-card aria-labelledby="drawingsCardTitle">
             <span class="home-template-card__hero" aria-hidden="true">
               <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
                 <image href="/assets/card-create-drawings-open-1.svg" width="752" height="565"/>
@@ -154,7 +154,7 @@
               <span class="home-template-card__description">Создание строительных заданий через САПР TFlex.</span>
             </span>
             <span class="home-template-card__footer">
-              <a class="home-template-card__button" href="/drawings">Создать чертёж</a>
+              <span class="home-template-card__button">Создать чертёж</span>
               <span class="home-template-card__meta">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M12 7.5v8M8.5 11l3.5-3.5 3.5 3.5"></path>
@@ -164,9 +164,9 @@
                 <span>активных шаблонов</span>
               </span>
             </span>
-          </article>
+          </a>
 
-          <article class="home-template-card" data-template-card aria-labelledby="pricingCardTitle">
+          <a class="home-template-card" href="/pricing" data-template-card aria-labelledby="pricingCardTitle">
             <span class="home-template-card__hero" aria-hidden="true">
               <svg viewBox="227 132 282 146" preserveAspectRatio="xMidYMid slice" focusable="false">
                 <image href="/assets/card-pricing-open.svg" width="752" height="565"/>
@@ -179,9 +179,9 @@
               <span class="home-template-card__description">Расчет базовой цены.</span>
             </span>
             <span class="home-template-card__footer">
-              <a class="home-template-card__button" href="/pricing">Рассчитать цену</a>
+              <span class="home-template-card__button">Рассчитать цену</span>
             </span>
-          </article>
+          </a>
         </section>
 
       </main>
@@ -189,6 +189,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
-  <script type="module" src="/home.js?v=20260827-home-disclosure-1"></script>
+  <script type="module" src="/home.js?v=20260828-card-link-1"></script>
 </body>
 </html>

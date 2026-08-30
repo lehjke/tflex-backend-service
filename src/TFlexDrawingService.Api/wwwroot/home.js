@@ -297,8 +297,8 @@ function setupHomeSearch() {
     if (event.key !== "Enter") return;
     const visibleCards = applySearch();
     if (visibleCards.length === 1) {
-      const link = visibleCards[0].querySelector(".home-template-card__button[href]");
-      if (!link) return;
+      const link = visibleCards[0];
+      if (!(link instanceof HTMLAnchorElement)) return;
       event.preventDefault();
       window.location.assign(link.href);
     }

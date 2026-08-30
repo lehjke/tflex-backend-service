@@ -1,6 +1,6 @@
 import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
-import { evaluateTFlexExpression } from "./safe-expression.js?v=20260721-validation-parity-1";
+import { evaluateTFlexExpression } from "./safe-expression.js?v=20260828-speed-dependent-oh-pd-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
   calculateAutomaticStopLevel,

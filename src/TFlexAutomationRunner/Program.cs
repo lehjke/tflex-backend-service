@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
@@ -63,6 +64,22 @@ namespace TFlexAutomationRunner
 
                     TFlexApiBootstrap.Initialize();
                     InspectVariables(templatePath, outputPath, parametersPath);
+                    return 0;
+                }
+
+                if (string.Equals(args[0], "--inspect-template", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (args.Length < 3)
+                    {
+                        throw new ArgumentException(
+                            "Usage: TFlexAutomationRunner.exe --inspect-template <templatePath> <outputPath>");
+                    }
+
+                    var templatePath = Path.GetFullPath(args[1]);
+                    var outputPath = Path.GetFullPath(args[2]);
+
+                    TFlexApiBootstrap.Initialize();
+                    InspectTemplate(templatePath, outputPath);
                     return 0;
                 }
 
@@ -145,38 +162,70 @@ namespace TFlexAutomationRunner
                     Regenerate(document);
                 }
 
-                var variables = new List<Dictionary<string, object>>();
-                foreach (Variable variable in document.GetVariables())
-                {
-                    var item = new Dictionary<string, object>
-                    {
-                        ["name"] = GetSafeValue(delegate { return variable.Name; }),
-                        ["expression"] = GetSafeValue(delegate { return variable.Expression; }),
-                        ["value"] = FormatVariableValue(variable),
-                        ["isText"] = GetSafeValue(delegate { return variable.IsText; }),
-                        ["isReal"] = GetSafeValue(delegate { return variable.IsReal; }),
-                        ["isUsed"] = GetSafeValue(delegate { return variable.IsUsed; }),
-                        ["isConstant"] = GetSafeValue(delegate { return variable.IsConstant; }),
-                        ["hidden"] = GetSafeValue(delegate { return variable.Hidden; }),
-                        ["service"] = GetSafeValue(delegate { return variable.Service; }),
-                        ["external"] = GetSafeValue(delegate { return variable.External; }),
-                        ["comment"] = GetSafeValue(delegate { return variable.Comment; }),
-                        ["groupName"] = GetSafeValue(delegate { return variable.GroupName; }),
-                        ["unit"] = GetSafeString(delegate { return variable.Unit; }),
-                        ["autoUnit"] = GetSafeValue(delegate { return variable.AutoUnit; }),
-                        ["listType"] = GetSafeString(delegate { return variable.ListType; }),
-                        ["groupType"] = GetSafeString(delegate { return variable.GroupType; }),
-                        ["errorState"] = GetSafeString(delegate { return variable.ErrorState; }),
-                        ["errorString"] = GetSafeValue(delegate { return variable.ErrorString; }),
-                        ["allowedValues"] = GetVariableValueList(variable)
-                    };
-
-                    variables.Add(item);
-                }
+                var variables = ReadVariables(document);
 
                 var serializer = new JavaScriptSerializer();
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
                 File.WriteAllText(outputPath, serializer.Serialize(variables), Encoding.UTF8);
+            }
+            finally
+            {
+                if (document != null && !document.IsDisposed)
+                {
+                    document.Close();
+                }
+
+                Application.ExitSession();
+            }
+        }
+
+        private static void InspectTemplate(string templatePath, string outputPath)
+        {
+            var setup = new ApplicationSessionSetup
+            {
+                ReadOnly = false,
+                Enable3D = true,
+                EnableDOCs = false,
+                EnableMacros = false,
+                PromptToSaveModifiedDocuments = false
+            };
+
+            if (!Application.InitSession(setup))
+            {
+                throw new InvalidOperationException("T-FLEX CAD Open API session initialization failed.");
+            }
+
+            Document document = null;
+            try
+            {
+                Application.DisableSubstituteFontDialog = true;
+                document = Application.OpenDocument(templatePath, false, false);
+                if (document == null)
+                {
+                    throw new InvalidOperationException("T-FLEX CAD failed to open document '" + templatePath + "'.");
+                }
+
+                var rebuildWarnings = new List<string>();
+                try
+                {
+                    Regenerate(document);
+                }
+                catch (Exception exception)
+                {
+                    rebuildWarnings.Add(exception.GetType().Name + ": " + exception.Message);
+                }
+
+                var result = new Dictionary<string, object>
+                {
+                    ["variables"] = ReadVariables(document),
+                    ["controls"] = ReadControls(document),
+                    ["dependencies"] = ReadDocumentDependencies(document),
+                    ["rebuildWarnings"] = rebuildWarnings
+                };
+
+                var serializer = new JavaScriptSerializer();
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+                File.WriteAllText(outputPath, serializer.Serialize(result), Encoding.UTF8);
             }
             finally
             {
@@ -269,43 +318,7 @@ namespace TFlexAutomationRunner
                     throw new InvalidOperationException("T-FLEX CAD failed to open document '" + templatePath + "'.");
                 }
 
-                var controls = new List<Dictionary<string, object>>();
-                foreach (ModelObject modelObject in document.GetObjects())
-                {
-                    if (!modelObject.IsKindOf(ObjectType.Control))
-                    {
-                        continue;
-                    }
-
-                    var control = modelObject as TFlex.Model.Model2D.Control;
-                    var variableControl = modelObject as VariableControl;
-                    var staticTextControl = modelObject as StaticTextControl;
-                    var checkBoxControl = modelObject as CheckBoxControl;
-                    var variable = variableControl == null ? null : variableControl.Variable;
-
-                    var item = new Dictionary<string, object>
-                    {
-                        ["objectName"] = modelObject.Name,
-                        ["objectType"] = modelObject.GetType().FullName,
-                        ["controlType"] = control == null ? null : control.ControlType.ToString(),
-                        ["level"] = control == null ? null : FormatParameter(control.Level),
-                        ["levelVariable"] = control == null ? null : GetParameterVariableName(control.Level),
-                        ["levelValue"] = control == null ? null : GetParameterValue(control.Level),
-                        ["variable"] = variable == null ? null : variable.Name,
-                        ["variableExpression"] = variable == null ? null : variable.Expression,
-                        ["variableValue"] = FormatVariableValue(variable),
-                        ["allowedValues"] = GetVariableValueList(variable),
-                        ["caption"] = staticTextControl == null ? null : staticTextControl.Caption,
-                        ["valueOn"] = checkBoxControl == null ? null : checkBoxControl.ValueOn,
-                        ["valueOff"] = checkBoxControl == null ? null : checkBoxControl.ValueOff,
-                        ["x1"] = control == null ? null : FormatParameter(control.X1),
-                        ["y1"] = control == null ? null : FormatParameter(control.Y1),
-                        ["x2"] = control == null ? null : FormatParameter(control.X2),
-                        ["y2"] = control == null ? null : FormatParameter(control.Y2)
-                    };
-
-                    controls.Add(item);
-                }
+                var controls = ReadControls(document);
 
                 var serializer = new JavaScriptSerializer();
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
@@ -320,6 +333,188 @@ namespace TFlexAutomationRunner
 
                 Application.ExitSession();
             }
+        }
+
+        private static List<Dictionary<string, object>> ReadVariables(Document document)
+        {
+            var variables = new List<Dictionary<string, object>>();
+            foreach (Variable variable in document.GetVariables())
+            {
+                variables.Add(new Dictionary<string, object>
+                {
+                    ["name"] = GetSafeValue(delegate { return variable.Name; }),
+                    ["expression"] = GetSafeValue(delegate { return variable.Expression; }),
+                    ["value"] = FormatVariableValue(variable),
+                    ["isText"] = GetSafeValue(delegate { return variable.IsText; }),
+                    ["isReal"] = GetSafeValue(delegate { return variable.IsReal; }),
+                    ["isUsed"] = GetSafeValue(delegate { return variable.IsUsed; }),
+                    ["isConstant"] = GetSafeValue(delegate { return variable.IsConstant; }),
+                    ["hidden"] = GetSafeValue(delegate { return variable.Hidden; }),
+                    ["service"] = GetSafeValue(delegate { return variable.Service; }),
+                    ["external"] = GetSafeValue(delegate { return variable.External; }),
+                    ["comment"] = GetSafeValue(delegate { return variable.Comment; }),
+                    ["groupName"] = GetSafeValue(delegate { return variable.GroupName; }),
+                    ["unit"] = GetSafeString(delegate { return variable.Unit; }),
+                    ["autoUnit"] = GetSafeValue(delegate { return variable.AutoUnit; }),
+                    ["listType"] = GetSafeString(delegate { return variable.ListType; }),
+                    ["groupType"] = GetSafeString(delegate { return variable.GroupType; }),
+                    ["errorState"] = GetSafeString(delegate { return variable.ErrorState; }),
+                    ["errorString"] = GetSafeValue(delegate { return variable.ErrorString; }),
+                    ["allowedValues"] = GetVariableValueList(variable)
+                });
+            }
+
+            return variables;
+        }
+
+        private static List<Dictionary<string, object>> ReadControls(Document document)
+        {
+            var controls = new List<Dictionary<string, object>>();
+            foreach (ModelObject modelObject in document.GetObjects())
+            {
+                if (!modelObject.IsKindOf(ObjectType.Control))
+                {
+                    continue;
+                }
+
+                var control = modelObject as TFlex.Model.Model2D.Control;
+                var variableControl = modelObject as VariableControl;
+                var staticTextControl = modelObject as StaticTextControl;
+                var checkBoxControl = modelObject as CheckBoxControl;
+                var variable = variableControl == null ? null : variableControl.Variable;
+
+                controls.Add(new Dictionary<string, object>
+                {
+                    ["objectName"] = modelObject.Name,
+                    ["objectType"] = modelObject.GetType().FullName,
+                    ["controlType"] = control == null ? null : control.ControlType.ToString(),
+                    ["level"] = control == null ? null : FormatParameter(control.Level),
+                    ["levelVariable"] = control == null ? null : GetParameterVariableName(control.Level),
+                    ["levelValue"] = control == null ? null : GetParameterValue(control.Level),
+                    ["variable"] = variable == null ? null : variable.Name,
+                    ["variableExpression"] = variable == null ? null : variable.Expression,
+                    ["variableValue"] = FormatVariableValue(variable),
+                    ["allowedValues"] = GetVariableValueList(variable),
+                    ["caption"] = staticTextControl == null ? null : staticTextControl.Caption,
+                    ["valueOn"] = checkBoxControl == null ? null : checkBoxControl.ValueOn,
+                    ["valueOff"] = checkBoxControl == null ? null : checkBoxControl.ValueOff,
+                    ["x1"] = control == null ? null : FormatParameter(control.X1),
+                    ["y1"] = control == null ? null : FormatParameter(control.Y1),
+                    ["x2"] = control == null ? null : FormatParameter(control.X2),
+                    ["y2"] = control == null ? null : FormatParameter(control.Y2)
+                });
+            }
+
+            return controls;
+        }
+
+        private static List<Dictionary<string, object>> ReadDocumentDependencies(Document document)
+        {
+            var dependencies = new List<Dictionary<string, object>>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ModelObject modelObject in document.GetObjects())
+            {
+                var type = modelObject.GetType();
+                var typeName = type.FullName ?? type.Name;
+                if (typeName.IndexOf("Fragment", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("Detail", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("Picture", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("Image", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("External", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("Link", StringComparison.OrdinalIgnoreCase) < 0
+                    && typeName.IndexOf("Assembly", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                foreach (PropertyInfo property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+                {
+                    if (property.GetIndexParameters().Length != 0 || !IsDependencyProperty(property.Name))
+                    {
+                        continue;
+                    }
+
+                    object rawValue;
+                    try
+                    {
+                        rawValue = property.GetValue(modelObject, null);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    var value = GetDependencyValue(rawValue);
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    var key = typeName + "|" + property.Name + "|" + value;
+                    if (!seen.Add(key))
+                    {
+                        continue;
+                    }
+
+                    dependencies.Add(new Dictionary<string, object>
+                    {
+                        ["objectName"] = modelObject.Name,
+                        ["objectType"] = typeName,
+                        ["property"] = property.Name,
+                        ["value"] = value
+                    });
+                }
+            }
+
+            return dependencies;
+        }
+
+        private static bool IsDependencyProperty(string name)
+        {
+            return name.IndexOf("File", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Path", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Source", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Document", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Reference", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string GetDependencyValue(object value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            var text = value as string;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+
+            var valueType = value.GetType();
+            foreach (var propertyName in new[] { "FilePath", "FullName", "Path", "Name" })
+            {
+                var property = valueType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+                if (property == null || property.GetIndexParameters().Length != 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    text = property.GetValue(value, null) as string;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+                catch
+                {
+                    // Try the next common path property.
+                }
+            }
+
+            return null;
         }
 
         private static string FormatParameter(Parameter parameter)
