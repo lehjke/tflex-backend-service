@@ -1119,33 +1119,41 @@ internal static class TkpDocxBuilder
                 Value("Размеры дверей (Ш x В), мм", JoinDimensions(Field("JJ"), Field("HH")), boldValue: true),
                 Value("Тип дверей", TranslateDoorOpening(Field("Door mode"))),
                 Value("Огнестойкость дверей шахты", ResolveFireRating()),
+                Value("Стеклянные двери", Field("Glass Door")),
                 Section("Отделка кабины"),
                 Value("Дизайн по каталогу", string.Equals(carDesign, "Customized", StringComparison.OrdinalIgnoreCase) ? "Нет" : carDesign, carDesign),
                 Value("Потолок", Field("Ceiling"), Field("Ceiling")),
                 Value("Пол", floor, Field("Floor Pattern")),
                 Value("Стены кабины", wallDescription, carDesign),
+                Value("Отделка плинтуса", Field("Kickplate Finish")),
                 Value("Двери кабины", doorDescription, Field("Car Door")),
                 Value("Зеркало", TranslateCommonValue(JoinValues(Field("Mirror"), Field("Mirror Position")))),
                 Value("Поручень", FormatHandrail(Field("Handrail"), Field("Handrail Position")), Field("Handrail")),
+                Value("Отделка поручня", Field("Handrail Finish")),
+                Value("Отделка кнопок (все этажи)", Field("Button Finish")),
+                Value("Отделка лицевой панели COP", Field("COP Faceplate")),
                 Value("Основная панель приказов (COP)", Field("COP"), Field("COP")),
                 Value("Вспомогательная панель приказов (COP 2)", Field("COP 2"), Field("COP 2")),
                 Value("Кнопки панели приказов", Field("COP Button"), Field("COP Button")),
                 Section("Главный посадочный этаж"),
                 Value("Двери шахты", JoinValues(Field("Main Jamb"), Field("Main Landing Door")), Field("Main Landing Door")),
                 Value("Панель вызовов (LOP)", Field("Main LOP"), Field("Main LOP")),
+                Value("Отделка лицевой панели LOP", Field("Main LOP Faceplate")),
                 Value("Кнопки панели вызовов", Field("LOP Button"), Field("LOP Button")),
                 Value("Вспомогательная панель вызовов", Field("Main Auxiliary LOP"), Field("Main Auxiliary LOP")),
                 Section("Остальные посадочные этажи"),
                 Value("Двери шахты", JoinValues(Field("Other Jamb"), Field("Other Landing Door")), Field("Other Landing Door")),
                 Value("Панель вызовов (LOP)", Field("Other LOP"), Field("Other LOP")),
+                Value("Отделка лицевой панели LOP", Field("Other LOP Faceplate")),
                 Value("Кнопки панели вызовов", Field("Other LOP Button"), Field("Other LOP Button")),
                 Value("Вспомогательная панель вызовов", Field("Other Auxiliary LOP"), Field("Other Auxiliary LOP"))
             };
             if (options.Count > 0)
             {
-                rows.Add(Section("Стандартные опции"));
+                rows.Add(Section("Функции и опции"));
                 rows.AddRange(options.Select(option => Value("", option)));
             }
+            rows.Add(Value("Сохранённые примечания", Field("Other Requirements")));
             rows.AddRange([
                 Value("Источник питания", FirstText(Field("Power Supply"), "380±7% В, 50±2% Гц"), boldLabel: true),
                 Value("Мощность, кВт", power?.ToString("0.##", RuCulture) ?? "—", boldLabel: true),
@@ -1271,7 +1279,15 @@ internal static class TkpDocxBuilder
                 Spec("Панели", "LOP остальные этажи", "Other LOP"),
                 Spec("Площадки", "Портал основного этажа", "Main Jamb", "Main Landing Material"),
                 Spec("Площадки", "Порталы остальных этажей", "Other Jamb", "Other Landing Material"),
-                Spec("Прочее", "Прочие требования", "Other Requirements")
+                Spec("Двери", "Огнестойкость дверей шахты", "Fire Rating"),
+                Spec("Двери", "Стеклянные двери", "Glass Door"),
+                Spec("Отделка", "Отделка плинтуса", "Kickplate Finish"),
+                Spec("Отделка", "Отделка поручня", "Handrail Finish"),
+                Spec("Отделка", "Отделка кнопок", "Button Finish"),
+                Spec("Панели", "Отделка лицевой панели COP", "COP Faceplate"),
+                Spec("Панели", "Отделка LOP основного этажа", "Main LOP Faceplate"),
+                Spec("Панели", "Отделка LOP остальных этажей", "Other LOP Faceplate"),
+                Spec("Прочее", "Сохранённые примечания", "Other Requirements")
             ];
         }
 
@@ -1319,7 +1335,14 @@ internal static class TkpDocxBuilder
             {
                 if (option.StartsWith("CONTAINER_", StringComparison.OrdinalIgnoreCase)) continue;
                 var entry = catalogEntries.FirstOrDefault(item => CodeMatches(item.Code, option));
-                rows.Add(FirstText(entry?.Description, option));
+                var description = Supplier.Equals("SMEC", StringComparison.OrdinalIgnoreCase) ? option switch
+                {
+                    "UV" => "Ультрафиолетовая дезинфекция (8 ламп)",
+                    "Reduced OH/PD" => "Исполнение с уменьшенным оголовком / приямком",
+                    "EN81" => "Дополнительное требование EN81 (цена требует подтверждения SMEC)",
+                    _ => null
+                } : null;
+                rows.Add(FirstText(description, entry?.Description, option));
             }
             return rows;
         }

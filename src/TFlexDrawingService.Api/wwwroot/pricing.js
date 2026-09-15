@@ -1,3 +1,4 @@
+import { normalizeSmecRequirements, smecRequirementControls, smecRequirementFunctions } from "./smec-requirements.js?v=20260915-1";
 import { isXiziManualOption, xiziArdCode, xiziConfigurationInput } from "./xizi-option-rules.js?v=20260915";
 import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
@@ -181,7 +182,8 @@ const hallLanternSelect = document.querySelector("#hallLanternSelect");
 const optionsList = document.querySelector("#optionsList");
 const efsToggle = document.querySelector("#efsToggle");
 const e312Toggle = document.querySelector("#e312Toggle");
-const smecOtherRequirementsInput = document.querySelector("#smecOtherRequirementsInput");
+let smecLegacyRequirements = "";
+const smecRequirementElements = new Map(smecRequirementControls.map(([key, id]) => [key, document.getElementById(id)]));
 const savePricingButton = document.querySelector("#savePricingButton");
 const downloadTkpButton = document.querySelector("#downloadTkpButton");
 const downloadRequestXlsxButton = document.querySelector("#downloadRequestXlsxButton");
@@ -335,6 +337,7 @@ function clearPricingSessionState() {
   state.lastCalculation = null;
   state.lastRequest = null;
   state.xiziInitialized = false;
+  smecLegacyRequirements = "";
 
   loginForm?.reset();
   registerForm?.reset();
@@ -625,7 +628,8 @@ function getVisualOptionMeta(code, select) {
     };
   }
 
-  const item = getSmecVisualItem(code);
+  const item = getSmecVisualItem(code)
+    || (select?.id?.startsWith("smec") && getSmecVisualItem(/^ZDT-\d{3}$/.test(code) ? `${code} SUS-H` : `${code}A`));
   return {
     code,
     imageUrl: item?.imageUrl || "",
@@ -1046,6 +1050,17 @@ function renderSmecControls() {
   fillVisualSelect(otherAuxiliaryLopButtonSelect, getSmecChoices("Auxiliary LOP Button"), ["A14"], "A14");
   fillVisualSelect(hallIndicatorSelect, getSmecChoices("Hall Indicator"));
   fillVisualSelect(hallLanternSelect, getSmecChoices("Hall Lantern"));
+  for (const [key, control] of smecRequirementElements) {
+    let choices;
+    if (key === "Fire Rating") choices = ["E30", "E60", "E120", "EI30", "EI60", "EI120"];
+    else if (key === "Glass Door") choices = ["ZPKG-050", "ZPKG-150", "ZPKG-200"];
+    else if (key.includes("Faceplate")) choices = getSmecChoices(key === "COP Faceplate" ? "CopFaceplate" : "LopFaceplate");
+    else choices = [...new Set(["SUS-H", "SUS-M", ...materialCodes.map(code => code.match(/^ZDT-\d{3}/)?.[0]).filter(Boolean)])];
+    if (key === "Fire Rating") fillSelect(control, ["", ...choices], "");
+    else fillVisualSelect(control, choices);
+    control.options[0].textContent = "Без дополнительного исполнения";
+    syncVisualSelect(control);
+  }
   renderSmecCarDesigns();
   updateSmecPower();
 }
@@ -1415,7 +1430,7 @@ function getManualSmecFunctions() {
     }
     result.push(item);
   }
-  return result;
+  return [...result, ...smecRequirementFunctions];
 }
 
 function renderDecorationPreview() {
@@ -1444,6 +1459,7 @@ function readJsonValue(value) {
 }
 
 function applyConfiguration(configuration) {
+  smecLegacyRequirements = "";
   const template = state.templatesById.get(configuration?.templateId);
   const parameters = template
     ? resolveDrawingConfigurationValues(configuration, template)
@@ -1556,8 +1572,11 @@ function setStoredControlValue(control, value) {
     const option = [...control.options].find(item => item.value === stored)
       || [...control.options].find(item => codeMatches(item.value, stored))
       || [...control.options].find(item => item.textContent.trim() === stored);
-    if (!option) return;
-    control.value = option.value;
+    if (!option) {
+      if (![...smecRequirementElements.values()].includes(control)) return;
+      control.add(new Option(stored, stored));
+    }
+    control.value = option?.value ?? stored;
     syncVisualSelect(control);
     return;
   }
@@ -1617,7 +1636,7 @@ function applyStoredSpecificationFields(fields = {}) {
     ["Auxiliary LOP Button", auxiliaryLopButtonSelect],
     ["Other Auxiliary LOP Button", otherAuxiliaryLopButtonSelect],
     ["Hall Indicator", hallIndicatorSelect], ["Hall Lantern", hallLanternSelect],
-    ["Other Requirements", smecOtherRequirementsInput]
+    ...smecRequirementElements
   ]);
   const mapping = supplierSelect.value === "XIZI" ? xiziFields : smecFields;
   for (const [name, control] of mapping) {
@@ -1634,8 +1653,9 @@ function applyStoredSpecificationFields(fields = {}) {
 }
 
 async function applyPricingSpecification(specification) {
-  const request = specification?.request;
-  if (!request) return;
+  if (!specification?.request) return;
+  const request = normalizeSmecRequirements(specification.request);
+  smecLegacyRequirements = request.supplier === "SMEC" ? request.specificationFields?.["Other Requirements"] || "" : "";
 
   state.editingSpecificationId = specification.id;
   pricingProjectSelect.value = specification.projectId;
@@ -1814,7 +1834,8 @@ function collectSpecificationFields() {
     "Other Auxiliary LOP Button": otherAuxiliaryLopButtonSelect?.value || "",
     "Hall Indicator": hallIndicatorSelect?.value || "",
     "Hall Lantern": hallLanternSelect?.value || "",
-    "Other Requirements": smecOtherRequirementsInput?.value || ""
+    ...Object.fromEntries([...smecRequirementElements].map(([key, control]) => [key, control.value])),
+    "Other Requirements": smecLegacyRequirements
   };
 }
 

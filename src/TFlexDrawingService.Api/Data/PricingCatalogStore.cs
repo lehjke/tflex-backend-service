@@ -62,7 +62,10 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             catalog.Smec.ChoiceGroups.Select(group => group with
             {
                 Options = group.Options.Where(option => !ExcludedSmecSeries.Contains(option)).ToArray()
-            }).ToArray(),
+            }).Concat(new[] { "CopFaceplate", "LopFaceplate" }.Select(category =>
+                new SpecificationChoiceGroup(category, "", [], catalog.Smec.Decorations
+                    .Where(item => item.Category == category).Select(item => item.Code).Distinct().ToArray())))
+                .ToArray(),
             catalog.Smec.FloorPatterns);
     }
 
@@ -126,7 +129,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         }
         else if (string.Equals(request.Supplier, "SMEC", StringComparison.OrdinalIgnoreCase))
         {
-            CalculateSmec(request, lines, warnings, blockers, out container);
+            CalculateSmec(SmecRequirements.Normalize(request), lines, warnings, blockers, out container);
         }
         else
         {
@@ -183,7 +186,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 ? "TKP-XIZI.docx"
                 : "TKP-SMEC.docx");
         var assetsRoot = Path.Combine(environment.ContentRootPath, "wwwroot", "assets");
-        return TkpDocxBuilder.Build(templatePath, assetsRoot, Catalog, specification, project, request, calculation);
+        return TkpDocxBuilder.Build(templatePath, assetsRoot, Catalog, specification, project, request is null ? null : SmecRequirements.Normalize(request), calculation);
     }
 
     public byte[] BuildXiziProjectExport(IReadOnlyList<PricingSpecification> specifications, UserProject? project)
@@ -201,7 +204,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             "Templates",
             isSmec ? "smec_request.xlsx" : "shablon_zaprosa.xlsx");
         return isSmec
-            ? SmecPricingRequestXlsxBuilder.Build(templatePath, specification, project, request)
+            ? SmecPricingRequestXlsxBuilder.Build(templatePath, specification, project, request is null ? null : SmecRequirements.Normalize(request))
             : PricingRequestXlsxBuilder.Build(templatePath, specification, project, request, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.Options : null, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.VisualItems : null);
     }
 
@@ -1422,6 +1425,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var travelMeters = GetSpecificationNumber(request, "TR") / 1000m;
         foreach (var option in (request.Options ?? []).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            if (SmecRequirements.AdditionalOptions.Contains(option, StringComparer.OrdinalIgnoreCase)) continue;
             var lookupCode = option;
             decimal multiplier = 1;
             if (EqualsText(option, "CWT Safety Gear"))
@@ -1490,109 +1494,71 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> warnings)
     {
         decimal doorAddonPrice = 0;
-        var requirements = (GetSpecificationField(request, "Other Requirements") ?? "")
-            .Split(['\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Take(6);
-        foreach (var requirement in requirements)
+        string Field(string key) => GetSpecificationField(request, key) ?? "";
+        bool Selected(string key) => HasText(Field(key)) && !EqualsText(Field(key), "None");
+        decimal Add(string key, string label, decimal? price, int quantity)
         {
-            decimal? amount = null;
-            decimal? unitPrice = null;
-            var quantity = 1;
-            if (ContainsAny(requirement, "EI60", "EI30"))
+            if (quantity <= 0) return 0;
+            if (price is null || price < 0)
             {
-                unitPrice = FindSmecDecoration(catalog.Decorations, request, "DoorAddon", "EI120", null)?.Price;
-                quantity = request.DoorCount;
-                doorAddonPrice = unitPrice ?? 0;
+                warnings.Add($"{label}: цена не найдена.");
+                return 0;
             }
-            else if (ContainsAny(requirement, "E60", "E30"))
-            {
-                unitPrice = FindSmecDecoration(catalog.Decorations, request, "DoorAddon", "E120", null)?.Price;
-                quantity = request.DoorCount;
-                doorAddonPrice = unitPrice ?? 0;
-            }
-            else if (ContainsAny(requirement, "ZPKG-050", "ZPKG-150", "ZPKG-200"))
-            {
-                var code = new[] { "ZPKG-050", "ZPKG-150", "ZPKG-200" }.First(item => requirement.Contains(item, StringComparison.OrdinalIgnoreCase));
-                unitPrice = FindSmecDecoration(catalog.Decorations, request, "DoorAddon", code, null)?.Price;
-                var carDoorCount = EqualsText(GetSpecificationField(request, "Door type"), "1D1G") ? 1 : 2;
-                amount = unitPrice * (request.DoorCount + carDoorCount);
-                doorAddonPrice = unitPrice ?? 0;
-            }
-            else if (requirement.Contains("CWT", StringComparison.OrdinalIgnoreCase))
-            {
-                var series = GetSpecificationField(request, "Ele Series")?.Contains("LEHY", StringComparison.OrdinalIgnoreCase) == true
-                    ? "LEHY"
-                    : "ELENESSA";
-                unitPrice = catalog.CwtPrices.FirstOrDefault(item =>
-                    EqualsText(item.Series, series)
-                    && request.CapacityKg >= item.MinCapacity
-                    && request.CapacityKg <= item.MaxCapacity)?.Price;
-            }
-            else if (requirement.Contains("oller", StringComparison.OrdinalIgnoreCase))
-            {
-                unitPrice = FindSmecFunctionPrice(catalog, "Roller guide shoe");
-            }
-            else if (requirement.Contains("UV", StringComparison.OrdinalIgnoreCase))
-            {
-                unitPrice = 220;
-                quantity = 8;
-            }
-            else if (requirement.Contains("ickplate", StringComparison.OrdinalIgnoreCase))
-            {
-                unitPrice = 1000;
-            }
-            else if (requirement.Contains("andrail", StringComparison.OrdinalIgnoreCase))
-            {
-                unitPrice = requirement.Contains("ZDT-500", StringComparison.OrdinalIgnoreCase)
-                    ? 400
-                    : requirement.Contains("ZDT-50", StringComparison.OrdinalIgnoreCase)
-                        ? 700
-                        : 300;
-                quantity = handrailQuantity;
-            }
-            else if (requirement.Contains("utton", StringComparison.OrdinalIgnoreCase))
-            {
-                unitPrice = requirement.Contains("ZDT-50", StringComparison.OrdinalIgnoreCase) ? 300 : 200;
-                quantity = request.Stops;
-            }
-            else if (ContainsAny(requirement, "OH/PD", "PD/OH"))
-            {
-                unitPrice = 16000;
-            }
-            else if (requirement.Contains("aceplate", StringComparison.OrdinalIgnoreCase))
-            {
-                var material = requirement.Contains("SUS-M", StringComparison.OrdinalIgnoreCase) ? "SUS-M" : "SUS-H";
-                var titanium = Regex.Match(requirement, @"ZDT-\d{3}", RegexOptions.IgnoreCase).Value.ToUpperInvariant();
-                if (titanium == "ZDT-007")
-                {
-                    titanium = "ZDT-001";
-                }
-                var code = HasText(titanium) ? $"{titanium} {material}" : material;
-                var category = requirement.Contains("COP", StringComparison.OrdinalIgnoreCase) ? "CopFaceplate" : "LopFaceplate";
-                unitPrice = FindSmecDecoration(catalog.Decorations, request, category, code, null)?.Price;
-                quantity = EqualsText(category, "CopFaceplate")
-                    ? HasText(GetSpecificationField(request, "COP 2")) ? 2 : 1
-                    : request.DoorCount;
-            }
-            else if (requirement.Contains("EN81", StringComparison.OrdinalIgnoreCase))
-            {
-                warnings.Add($"Требование «{requirement}»: цена EN81 отсутствует в исходном каталоге 2025 и требует проверки SMEC.");
-                continue;
-            }
-            else
-            {
-                warnings.Add($"Требование «{requirement}» не распознано KIP-совместимым расчетом.");
-                continue;
-            }
-
-            amount ??= unitPrice * quantity;
-            if (unitPrice is null || amount is null)
-            {
-                warnings.Add($"Требование «{requirement}»: цена не найдена.");
-                continue;
-            }
-            AddReadyLine(lines, $"requirement-{NormalizeCode(requirement)}", requirement, unitPrice.Value, amount.Value, quantity);
+            AddReadyLine(lines, $"requirement-{NormalizeCode(key)}", label, price.Value, price.Value * quantity, quantity);
+            return price.Value;
         }
+        if (Selected("Fire Rating"))
+        {
+            var rating = Field("Fire Rating");
+            var code = rating.ToUpperInvariant() switch
+            {
+                "EI30" or "EI60" or "EI120" => "EI120",
+                "E30" or "E60" or "E120" => "E120",
+                _ => rating
+            };
+            doorAddonPrice += Add("fire-rating", $"Fire-rated landing doors: {rating}",
+                FindSmecDecoration(catalog.Decorations, request, "DoorAddon", $"Firerated door({code})", null)?.Price, request.DoorCount);
+            if (!EqualsText(code, rating))
+                warnings.Add($"Огнестойкость {rating}: для предварительной цены использована строка {code} исходного прайса. Исполнение и цену {rating} необходимо подтвердить у SMEC.");
+        }
+        if (Selected("Glass Door"))
+        {
+            var carDoorCount = EqualsText(Field("Door type"), "1D1G") ? 1 : 2;
+            doorAddonPrice += Add("glass-door", $"Glass doors: {Field("Glass Door")}",
+                FindSmecDecoration(catalog.Decorations, request, "DoorAddon", $"Glass door({Field("Glass Door")})", null)?.Price,
+                request.DoorCount + carDoorCount);
+        }
+        if (Selected("Kickplate Finish"))
+            Add("kickplate-finish", $"Kickplate finish: {Field("Kickplate Finish")}", 1000, 1);
+        if (Selected("Handrail Finish"))
+        {
+            var code = Field("Handrail Finish");
+            var quantity = Selected("Handrail") ? handrailQuantity : 0;
+            if (quantity == 0) warnings.Add("Отделка поручня выбрана без поручня: надбавка не начислена.");
+            Add("handrail-finish", $"Handrail finish: {code}", code.Contains("ZDT-500", StringComparison.OrdinalIgnoreCase) ? 400
+                : code.Contains("ZDT-50", StringComparison.OrdinalIgnoreCase) ? 700 : 300, quantity);
+        }
+        if (Selected("Button Finish"))
+            Add("button-finish", $"Button finish: {Field("Button Finish")}",
+                Field("Button Finish").Contains("ZDT-50", StringComparison.OrdinalIgnoreCase) ? 300 : 200, request.Stops);
+        foreach (var (field, category, quantity) in new[]
+        {
+            ("COP Faceplate", "CopFaceplate", (Selected("COP") ? 1 : 0) + (Selected("COP 2") ? 1 : 0)),
+            ("Main LOP Faceplate", "LopFaceplate", request.DoorCount > 0 ? 1 : 0),
+            ("Other LOP Faceplate", "LopFaceplate", Math.Max(0, request.DoorCount - 1))
+        })
+        {
+            if (!Selected(field)) continue;
+            if (quantity == 0) warnings.Add($"{field}: нет соответствующих панелей; надбавка не начислена.");
+            Add(field, $"{field}: {Field(field)}",
+                FindSmecDecoration(catalog.Decorations, request, category, Field(field), null)?.Price, quantity);
+        }
+        var options = (request.Options ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (options.Contains("UV")) Add("uv", "UV disinfection (8 lamps)", 220, 8);
+        if (options.Contains("Reduced OH/PD")) Add("reduced-oh-pd", "Reduced overhead / pit (OH/PD)", 16000, 1);
+        if (options.Contains("EN81")) warnings.Add("Дополнительное требование EN81: цена отсутствует в исходном каталоге 2025 и требует проверки SMEC.");
+        foreach (var note in Field("Other Requirements").Split(['\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            warnings.Add($"Сохранённое требование «{note}» не распознано; необходима ручная проверка SMEC.");
         return doorAddonPrice;
     }
 

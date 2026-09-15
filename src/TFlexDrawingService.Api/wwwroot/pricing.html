@@ -331,6 +331,14 @@
                     <select id="doorModeSelect"></select>
                   </label>
                   <label class="field">
+                    <span class="field__label">Огнестойкость дверей шахты</span>
+                    <select id="smecFireRatingSelect"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Стеклянные двери</span>
+                    <select id="smecGlassDoorSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
                     <span class="field__label">Ширина дверей в чистоте (JJ), мм</span>
                     <input id="smecDoorWidthInput" type="number" min="0" step="1">
                   </label>
@@ -579,6 +587,10 @@
                     <select id="wallMaterialSelect" data-visual-select></select>
                   </label>
                   <label class="field">
+                    <span class="field__label">Плинтус — отделка</span>
+                    <select id="smecKickplateFinishSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
                     <span class="field__label">Двери кабины</span>
                     <select id="carDoorMaterialSelect" data-visual-select></select>
                   </label>
@@ -595,6 +607,10 @@
                     <select id="handrailSelect" data-visual-select></select>
                   </label>
                   <label class="field">
+                    <span class="field__label">Отделка поручня</span>
+                    <select id="smecHandrailFinishSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
                     <span class="field__label">COP</span>
                     <select id="copSelect" data-visual-select></select>
                   </label>
@@ -603,8 +619,16 @@
                     <select id="cop2Select" data-visual-select></select>
                   </label>
                   <label class="field">
+                    <span class="field__label">Отделка лицевой панели COP</span>
+                    <select id="smecCopFaceplateSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
                     <span class="field__label">Кнопки COP</span>
                     <select id="copButtonSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Отделка кнопок (все этажи)</span>
+                    <select id="smecButtonFinishSelect" data-visual-select></select>
                   </label>
                   <label class="field">
                     <span class="field__label">COP для МГН</span>
@@ -682,6 +706,14 @@
                     <span class="field__label">LOP</span>
                     <select id="otherLopSelect" data-visual-select></select>
                   </label>
+                  <label class="field">
+                    <span class="field__label">Отделка LOP — основной этаж</span>
+                    <select id="smecMainLopFaceplateSelect" data-visual-select></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Отделка LOP — остальные этажи</span>
+                    <select id="smecOtherLopFaceplateSelect" data-visual-select></select>
+                  </label>
 
                   <label class="field">
                     <span class="field__label">Кнопка</span>
@@ -734,10 +766,6 @@
                   </label>
                 </div>
                 <div id="optionsList" class="pricing-options"></div>
-                <label class="field field--wide" data-smec-only>
-                  <span class="field__label">Прочие требования</span>
-                  <textarea id="smecOtherRequirementsInput" rows="4" placeholder="1 EI60&#10;2 Kickplate ZDT-001&#10;3 Handrail ZDT-501"></textarea>
-                </label>
               </section>
 
               <div class="pricing-actions">
@@ -780,6 +808,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
-  <script type="module" src="/pricing.js?v=20260915-xizi-review-1"></script>
+  <script type="module" src="/pricing.js?v=20260915-smec-requirements-1"></script>
 </body>
 </html>

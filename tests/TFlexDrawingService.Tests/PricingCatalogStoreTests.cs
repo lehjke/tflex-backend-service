@@ -761,7 +761,15 @@ public sealed class PricingCatalogStoreTests
                     ["Floor Type"] = "concave-down",
                     ["Floor Pattern"] = "depth 25mm",
                     ["COP"] = "ZCB-ND10",
-                    ["Main LOP"] = "ZPI-GD10"
+                    ["Main LOP"] = "ZPI-GD10",
+                    ["COP Faceplate"] = "ZDT-001 SUS-H",
+                    ["Main LOP Faceplate"] = "SUS-M",
+                    ["Other LOP Faceplate"] = "ZDT-501 SUS-M",
+                    ["Kickplate Finish"] = "ZDT-001",
+                    ["Handrail Finish"] = "ZDT-501",
+                    ["Button Finish"] = "ZDT-500",
+                    ["Glass Door"] = "ZPKG-050",
+                    ["Other Requirements"] = "Confirm factory colour"
                 },
                 "L1");
             var calculation = new PricingCalculationResult(
@@ -822,7 +830,15 @@ public sealed class PricingCatalogStoreTests
             Assert.Contains("Спецификация оборудования и материалов", documentXml);
             Assert.Contains("Размеры шахты (Ш x Г), мм", documentXml);
             Assert.Contains("1700 x 2500", documentXml);
-            Assert.Contains("Стандартные опции", documentXml);
+            Assert.Contains("Функции и опции", documentXml);
+            Assert.Contains("Отделка лицевой панели COP", documentXml);
+            Assert.Contains("ZDT-001 SUS-H", documentXml);
+            Assert.Contains("ZDT-501 SUS-M", documentXml);
+            Assert.Contains("Отделка плинтуса", documentXml);
+            Assert.Contains("Отделка поручня", documentXml);
+            Assert.Contains("Отделка кнопок", documentXml);
+            Assert.Contains("ZPKG-050", documentXml);
+            Assert.Contains("Confirm factory colour", documentXml);
             Assert.Contains("Ниша под материал Заказчика", documentXml);
             Assert.DoesNotContain("concave-down", documentXml);
             Assert.DoesNotContain("■", documentXml);
@@ -1009,6 +1025,8 @@ public sealed class PricingCatalogStoreTests
                     ["HH"] = "2400",
                     ["Door type"] = "1D1G",
                     ["Door mode"] = "Central opening",
+                    ["COP Faceplate"] = "ZDT-501 SUS-M",
+                    ["Other LOP Faceplate"] = "SUS-H",
                     ["Other Requirements"] = "Factory confirmation required"
                 },
                 "L1");
@@ -1050,6 +1068,19 @@ public sealed class PricingCatalogStoreTests
             Assert.Contains("Options: CWT WITH SAFETY, FER", ReadCell(worksheet, "E59"));
             Assert.Equal("", ReadCell(worksheet, "G2"));
             Assert.Equal("", ReadCell(worksheet, "M59"));
+            Assert.Contains("COP Faceplate: ZDT-501 SUS-M", ReadCell(worksheet, "E59"));
+            Assert.Contains("Selected requirements", workbookXml);
+            var detailSheet = XDocument.Parse(workbookXml).Descendants().Single(element => (string?)element.Attribute("name") == "Selected requirements");
+            var detailId = detailSheet.Attributes().Single(attribute => attribute.Name.LocalName == "id").Value;
+            using var relReader = new StreamReader(archive.GetEntry("xl/_rels/workbook.xml.rels")!.Open());
+            var detailTarget = XDocument.Parse(relReader.ReadToEnd()).Descendants()
+                .Single(element => (string?)element.Attribute("Id") == detailId).Attribute("Target")!.Value;
+            using var detailReader = new StreamReader(archive.GetEntry($"xl/{detailTarget}")!.Open());
+            var detail = XDocument.Parse(detailReader.ReadToEnd());
+            var detailText = string.Join(" ", detail.Descendants().Where(element => element.Name.LocalName == "t").Select(element => element.Value));
+            Assert.Contains("ZDT-501 SUS-M", detailText);
+            Assert.Contains("Factory confirmation required", detailText);
+            Assert.Contains("CWT WITH SAFETY", detailText);
         }
         finally
         {
@@ -1367,6 +1398,82 @@ public sealed class PricingCatalogStoreTests
         using var priceReader = new StreamReader(prices.GetEntry("xl/worksheets/sheet1.xml")!.Open());
         var priceSheet = XDocument.Parse(priceReader.ReadToEnd());
         Assert.Equal((calculation.TotalCny * 4).ToString(System.Globalization.CultureInfo.InvariantCulture), ReadCell(priceSheet, "E4"));
+    }
+
+    [Fact]
+    public async Task SmecStructuredRequirements_PriceEverySelectionAndSplitLopQuantities()
+    {
+        var request = new PricingCalculationRequest(
+            "SMEC", "LEHY-L-Pro", 1050, 1m, 5, 900, null, null, 5, 0, null,
+            ["UV", "Reduced OH/PD", "CWT Safety Gear", "Roller guide shoe"], false, false, "CNY", null, null,
+            new Dictionary<string, string>
+            {
+                ["Ele Series"] = "LEHY Series", ["Door type"] = "1D1G", ["HH"] = "2100",
+                ["COP"] = "ZCB-ND10", ["COP 2"] = "None", ["Handrail"] = "ZYH-RH06", ["Handrail Position"] = "rear wall",
+                ["Fire Rating"] = "EI60", ["Glass Door"] = "ZPKG-050",
+                ["Kickplate Finish"] = "ZDT-001", ["Handrail Finish"] = "ZDT-501", ["Button Finish"] = "ZDT-501",
+                ["COP Faceplate"] = "ZDT-001 SUS-H", ["Main LOP Faceplate"] = "SUS-M", ["Other LOP Faceplate"] = "ZDT-501 SUS-M"
+            }, "SMEC test");
+        var store = CreateSupplierCatalogStore();
+        var result = await store.CalculateAsync(request);
+        PricingLine Line(string label) => Assert.Single(result.Lines, line => line.Label.StartsWith(label, StringComparison.Ordinal));
+        Assert.Equal(1760m, Line("UV disinfection").AmountCny);
+        Assert.Equal(16000m, Line("Reduced overhead").AmountCny);
+        Assert.Equal(1000m, Line("Kickplate finish").AmountCny);
+        Assert.Equal(700m, Line("Handrail finish").AmountCny);
+        Assert.Equal(1500m, Line("Button finish").AmountCny);
+        Assert.Equal(490m, Line("COP Faceplate").AmountCny);
+        Assert.Equal(60m, Line("Main LOP Faceplate").AmountCny);
+        Assert.Equal(1920m, Line("Other LOP Faceplate").AmountCny);
+        Assert.Equal(5, Line("Fire-rated landing doors").Quantity);
+        Assert.True(Line("Fire-rated landing doors").AmountCny > 0);
+        Assert.Equal(6, Line("Glass doors").Quantity);
+        Assert.True(Line("Glass doors").AmountCny > 0);
+        Assert.Equal(9280m, Line("CWT Safety Gear").AmountCny);
+        Assert.Equal(6000m, Line("Функция Roller guide shoe").AmountCny);
+        Assert.Contains(result.Warnings, warning => warning.Contains("EI60") && warning.Contains("EI120"));
+
+        var legacy = request with
+        {
+            Options = ["CWT Safety Gear", "Roller guide shoe"],
+            SpecificationFields = new Dictionary<string, string>
+            {
+                ["Ele Series"] = "LEHY Series", ["Door type"] = "1D1G", ["HH"] = "2100",
+                ["COP"] = "ZCB-ND10", ["COP 2"] = "None", ["Handrail"] = "ZYH-RH06", ["Handrail Position"] = "rear wall",
+                ["Other Requirements"] = "EI60;ZPKG-050;CWT;Roller;UV;Kickplate ZDT-001;Handrail ZDT-501;Button ZDT-501;OH/PD;COP Faceplate ZDT-001 SUS-H;LOP Faceplate ZDT-501 SUS-M"
+            }
+        };
+        var legacyResult = await store.CalculateAsync(legacy);
+        // The old common LOP finish applies to the main floor too (480 instead of 60).
+        Assert.Equal(result.TotalCny + 420, legacyResult.TotalCny);
+        Assert.Single(legacyResult.Lines, line => line.Code == "function-cwt-safety-gear");
+        Assert.Single(legacyResult.Lines, line => line.Label.StartsWith("Функция Roller guide shoe", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SmecLegacyRequirements_PreserveUnknownNotesAndExplicitOverrides()
+    {
+        var request = CreateXiziSupplierRequest() with
+        {
+            Supplier = "SMEC", Options = ["UV"],
+            SpecificationFields = new Dictionary<string, string>
+            {
+                ["Fire Rating"] = "", ["COP Faceplate"] = "SUS-M",
+                ["Other Requirements"] = "1 EI60\n2 COP Faceplate ZDT-007 SUS-H\n3 LOP Faceplate ZDT-007 SUS-M\n4 UV\n5 EN81\nConfirm factory colour"
+            }
+        };
+        var migrated = SmecRequirements.Normalize(request);
+        Assert.Equal("", migrated.SpecificationFields!["Fire Rating"]);
+        Assert.Equal("SUS-M", migrated.SpecificationFields["COP Faceplate"]);
+        Assert.Equal("ZDT-001 SUS-M", migrated.SpecificationFields["Main LOP Faceplate"]);
+        Assert.Equal("ZDT-001 SUS-M", migrated.SpecificationFields["Other LOP Faceplate"]);
+        Assert.Equal("Confirm factory colour", migrated.SpecificationFields["Other Requirements"]);
+        Assert.Equal(new[] { "UV", "EN81" }, migrated.Options);
+        var repeated = SmecRequirements.Normalize(migrated);
+        Assert.Equal(migrated.SpecificationFields, repeated.SpecificationFields);
+        Assert.Equal(migrated.Options, repeated.Options);
+        var xizi = request with { Supplier = "XIZI" };
+        Assert.Same(xizi, SmecRequirements.Normalize(xizi));
     }
 
     private static PricingCatalogStore CreateSupplierCatalogStore()

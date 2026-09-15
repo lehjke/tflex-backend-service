@@ -30,9 +30,12 @@ internal static class SmecPricingRequestXlsxBuilder
             ClearReferenceConfiguration(worksheet);
             FillConfiguration(worksheet, specification, project, request);
 
-            using var output = worksheetEntry.Open();
-            output.SetLength(0);
-            worksheet.Save(output, SaveOptions.DisableFormatting);
+            using (var output = worksheetEntry.Open())
+            {
+                output.SetLength(0);
+                worksheet.Save(output, SaveOptions.DisableFormatting);
+            }
+            AddSelectedRequirementsSheet(archive, specification, request);
         }
 
         return buffer.ToArray();
@@ -47,6 +50,83 @@ internal static class SmecPricingRequestXlsxBuilder
                 ClearCell(worksheet, $"{column}{row}");
             }
         }
+    }
+
+    private static void AddSelectedRequirementsSheet(
+        ZipArchive archive, PricingSpecification specification, PricingCalculationRequest? request)
+    {
+        XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        XNamespace rel = "http://schemas.openxmlformats.org/package/2006/relationships";
+        XNamespace documentRel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        XNamespace content = "http://schemas.openxmlformats.org/package/2006/content-types";
+        XDocument Read(string path)
+        {
+            using var input = archive.GetEntry(path)!.Open();
+            return XDocument.Load(input);
+        }
+        void Write(string path, XDocument document)
+        {
+            var entry = archive.GetEntry(path) ?? archive.CreateEntry(path);
+            using var output = entry.Open();
+            output.SetLength(0);
+            document.Save(output);
+        }
+
+        var workbook = Read("xl/workbook.xml");
+        var relationships = Read("xl/_rels/workbook.xml.rels");
+        var contentTypes = Read("[Content_Types].xml");
+        var styles = Read("xl/styles.xml");
+        var formats = styles.Root!.Element(main + "cellXfs")!;
+        var styleId = formats.Elements().Count();
+        formats.Add(new XElement(main + "xf", new XAttribute("fontId", 0), new XAttribute("fillId", 0),
+            new XAttribute("borderId", 0), new XAttribute("numFmtId", 0), new XAttribute("applyAlignment", 1),
+            new XElement(main + "alignment", new XAttribute("wrapText", 1), new XAttribute("vertical", "top"))));
+        formats.SetAttributeValue("count", styleId + 1);
+
+        var sheets = workbook.Root!.Element(main + "sheets")!;
+        var sheetId = sheets.Elements().Max(sheet => (int?)sheet.Attribute("sheetId") ?? 0) + 1;
+        var fileNumber = sheetId;
+        while (archive.GetEntry($"xl/worksheets/sheet{fileNumber}.xml") is not null) fileNumber++;
+        var relationshipId = "rIdSmecRequirements";
+        while (relationships.Root!.Elements().Any(element => (string?)element.Attribute("Id") == relationshipId)) relationshipId += "1";
+        sheets.Add(new XElement(main + "sheet", new XAttribute("name", "Selected requirements"),
+            new XAttribute("sheetId", sheetId), new XAttribute(documentRel + "id", relationshipId)));
+        relationships.Root!.Add(new XElement(rel + "Relationship", new XAttribute("Id", relationshipId),
+            new XAttribute("Type", documentRel.NamespaceName + "/worksheet"), new XAttribute("Target", $"worksheets/sheet{fileNumber}.xml")));
+        contentTypes.Root!.Add(new XElement(content + "Override", new XAttribute("PartName", $"/xl/worksheets/sheet{fileNumber}.xml"),
+            new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")));
+
+        var values = new List<(string Key, string Value)> { ("Specification", specification.Name), ("Model", specification.Series) };
+        values.AddRange((request?.SpecificationFields ?? new Dictionary<string, string>())
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Value)).Select(pair => (pair.Key, pair.Value)));
+        values.AddRange((request?.Options ?? []).Distinct(StringComparer.OrdinalIgnoreCase).Select(option => ("Function", option)));
+        var data = new XElement(main + "sheetData");
+        for (var index = 0; index < values.Count; index++)
+        {
+            var (key, value) = values[index];
+            var rowNumber = index + 1;
+            XElement Cell(string column, string text) => new(main + "c", new XAttribute("r", $"{column}{rowNumber}"),
+                new XAttribute("t", "inlineStr"), new XAttribute("s", styleId),
+                new XElement(main + "is", new XElement(main + "t", new XAttribute(XNamespace.Xml + "space", "preserve"), text)));
+            var wrappedLines = value.Split('\n').Sum(line => Math.Max(1, (int)Math.Ceiling(line.Length / 60d)));
+            data.Add(new XElement(main + "row", new XAttribute("r", rowNumber),
+                new XAttribute("ht", Math.Min(409, Math.Max(30, wrappedLines * 15 + 10))), new XAttribute("customHeight", 1),
+                Cell("A", key), Cell("B", value)));
+        }
+        var worksheet = new XDocument(new XElement(main + "worksheet",
+            new XElement(main + "cols",
+                new XElement(main + "col", new XAttribute("min", 1), new XAttribute("max", 1), new XAttribute("width", 32), new XAttribute("customWidth", 1)),
+                new XElement(main + "col", new XAttribute("min", 2), new XAttribute("max", 2), new XAttribute("width", 65), new XAttribute("customWidth", 1))),
+            data,
+            new XElement(main + "pageMargins", new XAttribute("left", .3), new XAttribute("right", .3),
+                new XAttribute("top", .4), new XAttribute("bottom", .4), new XAttribute("header", .2), new XAttribute("footer", .2)),
+            new XElement(main + "pageSetup", new XAttribute("orientation", "portrait"), new XAttribute("paperSize", 9),
+                new XAttribute("fitToWidth", 1), new XAttribute("fitToHeight", 0))));
+        Write($"xl/worksheets/sheet{fileNumber}.xml", worksheet);
+        Write("xl/workbook.xml", workbook);
+        Write("xl/_rels/workbook.xml.rels", relationships);
+        Write("[Content_Types].xml", contentTypes);
+        Write("xl/styles.xml", styles);
     }
 
     private static void FillConfiguration(
@@ -128,6 +208,7 @@ internal static class SmecPricingRequestXlsxBuilder
         var options = request?.Options?.Where(HasText).ToArray() ?? [];
         if (options.Length > 0) lines.Add($"Options: {string.Join(", ", options)}");
 
+        foreach (var key in SmecRequirements.Fields) AddLine(lines, key, field([key]));
         AddLine(lines, "Other", field(["Other Requirements"]));
         return string.Join('\n', lines);
     }
