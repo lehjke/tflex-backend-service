@@ -9,6 +9,22 @@ namespace TFlexDrawingService.Core.Services;
 
 public sealed partial class DrawingJobValidator : IDrawingRequestValidator
 {
+    public static IReadOnlyList<string> ValidateConfigurationRules(
+        DrawingTemplate template, IReadOnlyDictionary<string, object?> parameters,
+        IReadOnlySet<string> fields)
+    {
+        var scoped = new DrawingTemplate
+        {
+            Parameters = template.Parameters,
+            CalculatedVariables = template.CalculatedVariables,
+            LookupTables = template.LookupTables,
+            ValidationRules = template.ValidationRules.Where(rule => rule.FieldNames.Any(fields.Contains)).ToList()
+        };
+        var errors = new List<string>();
+        ValidateTemplateRules(scoped, TemplateExpressionContextBuilder.BuildRuntimeContext(scoped, parameters), errors);
+        return errors;
+    }
+
     private const int MaxStringParameterLength = 16 * 1024;
     private readonly ITemplateCatalog _templateCatalog;
     private readonly int _maxLookupRowEvaluations;

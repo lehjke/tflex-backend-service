@@ -98,7 +98,7 @@ Invoke-WebRequest `
   -Branch "main" `
   -InstallRoot "C:\Services\TFlexDrawingService" `
   -TFlexCadProgramDir "C:\Program Files\T-FLEX CAD 17\Program" `
-  -Domain "lehjke.online" `
+  -Domain "alesnichiy.ru" `
   -AcmeEmail "admin@example.com"
 ```
 
@@ -116,7 +116,10 @@ Invoke-WebRequest `
 7. запускает production-контейнер с отображением `5011:8080`; Windows Firewall
    разрешает обращаться к внутренним портам 5011/5012 только с loopback;
 8. проверяет `/api/health/ready`, Worker и аутентификацию;
-9. устанавливает или обновляет Caddy и проверяет публичный HTTPS endpoint.
+9. устанавливает или обновляет Caddy и проверяет публичный HTTPS endpoint;
+10. регистрирует задачу `TFlexDrawingService.AutoUpdate`, которая каждый день в
+    `00:00` по локальному времени сервера проверяет `origin/main` и запускает
+    этот же транзакционный deployment только при наличии нового commit.
 
 При ошибке до переключения восстанавливается предыдущий контейнер. Если
 обновление служб прошло, но Docker build/start не удался, скрипт возвращает в
@@ -127,13 +130,51 @@ Invoke-WebRequest `
 передайте `-SkipCaddy`. Это диагностический вариант, доступный только через
 `http://127.0.0.1:5011`.
 
+### Ежедневное автоматическое обновление
+
+После успешного гибридного deployment задача создается автоматически. В ней не
+хранятся пароль администратора или пароль учетной записи служб: installer
+повторно использует действующий password hash и не меняет существующую service
+identity. Caddy не переустанавливается при каждом ежедневном запуске; он
+продолжает проксировать стабильный внутренний порт `5011`.
+
+Перед обновлением выполняются обязательные проверки:
+
+- checkout должен быть чистым;
+- `origin` должен совпадать с настроенным repository URL;
+- новый commit должен быть fast-forward относительно локального;
+- повторный экземпляр обновления не запускается;
+- при ошибке deployment рабочий checkout возвращается на предыдущий commit, а
+  штатный deployment восстанавливает прежний контейнер или нативный API.
+
+Состояние и журналы:
+
+```text
+C:\Services\TFlexDrawingService\AutoUpdate\status.json
+C:\Services\TFlexDrawingService\AutoUpdate\last-successful-revision.txt
+C:\Services\TFlexDrawingService\logs\auto-update\update-*.log
+```
+
+Проверка задания и ручной диагностический запуск:
+
+```powershell
+Get-ScheduledTask -TaskName "TFlexDrawingService.AutoUpdate"
+Get-ScheduledTaskInfo -TaskName "TFlexDrawingService.AutoUpdate"
+Start-ScheduledTask -TaskName "TFlexDrawingService.AutoUpdate"
+Get-Content "C:\Services\TFlexDrawingService\AutoUpdate\status.json"
+```
+
+Для другого времени передайте, например,
+`-AutomaticUpdateTime "02:30"`. Отключить регистрацию можно только явным
+параметром `-SkipAutomaticUpdates`.
+
 ### Состояние после успешного запуска
 
 ```powershell
 docker ps --filter "name=tflex-drawing-api"
 Get-Service TFlexDrawingService.Api, TFlexDrawingService.Worker, Caddy
 Invoke-WebRequest http://127.0.0.1:5011/api/health/ready -UseBasicParsing
-Invoke-WebRequest https://lehjke.online/api/health/ready -UseBasicParsing
+Invoke-WebRequest https://alesnichiy.ru/api/health/ready -UseBasicParsing
 ```
 
 Ожидаемое состояние:
@@ -314,13 +355,13 @@ Kestrel HTTPS с валидным сертификатом.
 Схема:
 
 ```text
-https://lehjke.online -> Caddy :443 -> http://127.0.0.1:5011
-http://lehjke.online  -> Caddy :80  -> HTTPS redirect / ACME challenge
+https://alesnichiy.ru -> Caddy :443 -> http://127.0.0.1:5011
+http://alesnichiy.ru  -> Caddy :80  -> HTTPS redirect / ACME challenge
 ```
 
 В адресной строке порт указывать не нужно: для `http://` браузер использует `80`, для `https://` использует `443`.
 
-Перед выпуском сертификата в Cloudflare лучше оставить запись `lehjke.online` в режиме `DNS only` / серое облако, чтобы ACME-проверка шла напрямую на сервер. После успешной проверки `https://lehjke.online/api/health/ready` можно включить orange cloud и поставить Cloudflare SSL/TLS mode `Full (strict)`.
+Перед выпуском сертификата в Cloudflare лучше оставить запись `alesnichiy.ru` в режиме `DNS only` / серое облако, чтобы ACME-проверка шла напрямую на сервер. После успешной проверки `https://alesnichiy.ru/api/health/ready` можно включить orange cloud и поставить Cloudflare SSL/TLS mode `Full (strict)`.
 
 Сначала убедитесь, что API не занимает публичный порт `80`. Если раньше сервис был установлен на `http://0.0.0.0:80`, переустановите его на внутренний порт:
 
@@ -342,7 +383,7 @@ Invoke-WebRequest "https://raw.githubusercontent.com/lehjke/tflex-backend-servic
 $caddyScript = "$env:TEMP\Install-CaddyAcmeProxy.ps1"
 Invoke-WebRequest "https://raw.githubusercontent.com/lehjke/tflex-backend-service/main/scripts/Install-CaddyAcmeProxy.ps1" -OutFile $caddyScript
 & $caddyScript `
-  -Domain "lehjke.online" `
+  -Domain "alesnichiy.ru" `
   -UpstreamUrl "http://127.0.0.1:5011"
 ```
 
@@ -360,7 +401,7 @@ deployment: старые binary, Caddyfile, ImagePath, startup/recovery settings
 ```powershell
 Get-Service TFlexDrawingService.Api, TFlexDrawingService.Worker, Caddy
 Invoke-WebRequest http://127.0.0.1:5011/api/health/ready -UseBasicParsing
-Invoke-WebRequest https://lehjke.online/api/health/ready -UseBasicParsing
+Invoke-WebRequest https://alesnichiy.ru/api/health/ready -UseBasicParsing
 ```
 
 ## Пользователи и роли
@@ -385,13 +426,13 @@ C:\Services\TFlexDrawingService\storage\drawings.db
 
 ```powershell
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-Invoke-RestMethod "https://lehjke.online/api/auth/login" `
+Invoke-RestMethod "https://alesnichiy.ru/api/auth/login" `
   -Method Post `
   -WebSession $session `
   -ContentType "application/json" `
   -Body (@{ userName = "admin"; password = "admin-password" } | ConvertTo-Json)
 
-Invoke-RestMethod "https://lehjke.online/api/admin/users/operator" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator" `
   -Method Put `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" } `
@@ -407,7 +448,7 @@ Invoke-RestMethod "https://lehjke.online/api/admin/users/operator" `
 Подтвердить заявку:
 
 ```powershell
-Invoke-RestMethod "https://lehjke.online/api/admin/users/operator/approve" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator/approve" `
   -Method Post `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" } `
@@ -418,7 +459,7 @@ Invoke-RestMethod "https://lehjke.online/api/admin/users/operator/approve" `
 Отклонить заявку:
 
 ```powershell
-Invoke-RestMethod "https://lehjke.online/api/admin/users/operator/reject" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator/reject" `
   -Method Post `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" }
@@ -427,7 +468,7 @@ Invoke-RestMethod "https://lehjke.online/api/admin/users/operator/reject" `
 Отключить пользователя:
 
 ```powershell
-Invoke-RestMethod "https://lehjke.online/api/admin/users/operator" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator" `
   -Method Delete `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" }
@@ -442,7 +483,7 @@ Invoke-RestMethod "https://lehjke.online/api/admin/users/operator" `
 Личный кабинет доступен по адресу:
 
 ```text
-https://lehjke.online/account.html
+https://alesnichiy.ru/account.html
 ```
 
 В редакторе пользователь выбирает проект и сохраняет текущую конфигурацию в него. Название сохраненной конфигурации берется из названия выбранного шаблона. В личном кабинете пользователь видит список проектов; раскрытие проекта показывает сохраненные в нем конфигурации.

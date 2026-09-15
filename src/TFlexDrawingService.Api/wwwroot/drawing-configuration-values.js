@@ -1,4 +1,5 @@
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260828-speed-dependent-oh-pd-1";
+import { expandValidationParameterNames } from "./parameter-labels.js?v=20260830-readable-validation-errors-1";
 
 function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== "";
@@ -165,13 +166,15 @@ export function evaluateDrawingConfigurationValidation(
       lookupTables: template.lookupTables
     });
     if (isValidationPassed(result)) continue;
-    const message = String(rule.message || "Параметры не проходят проверку T-FLEX.")
+    const message = expandValidationParameterNames(
+      String(rule.message || "Параметры не проходят проверку T-FLEX.")
       .replace(/\{([^{}]+)\}/g, (_, expression) => {
         const value = evaluateTFlexExpression(expression, context, {
           lookupTables: template.lookupTables
         });
         return hasValue(value) ? formatValidationValue(value) : `{${expression}}`;
-      });
+      }),
+      template);
     if (seen.has(message)) continue;
     seen.add(message);
     issues.push({

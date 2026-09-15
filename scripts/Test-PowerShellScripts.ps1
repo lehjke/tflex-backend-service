@@ -41,10 +41,14 @@ $installerPath = Join-Path $PSScriptRoot "Install-TFlexDrawingService.ps1"
 $bootstrapPath = Join-Path $PSScriptRoot "Bootstrap-WindowsServer2022.ps1"
 $caddyInstallerPath = Join-Path $PSScriptRoot "Install-CaddyAcmeProxy.ps1"
 $hybridDeploymentPath = Join-Path $PSScriptRoot "Deploy-TFlexHybridServer2022.ps1"
+$automaticUpdateInstallerPath = Join-Path $PSScriptRoot "Install-TFlexAutomaticUpdate.ps1"
+$automaticUpdateRunnerPath = Join-Path $PSScriptRoot "Invoke-TFlexAutomaticUpdate.ps1"
 $installerText = Get-Content -LiteralPath $installerPath -Raw
 $bootstrapText = Get-Content -LiteralPath $bootstrapPath -Raw
 $caddyInstallerText = Get-Content -LiteralPath $caddyInstallerPath -Raw
 $hybridDeploymentText = Get-Content -LiteralPath $hybridDeploymentPath -Raw
+$automaticUpdateInstallerText = Get-Content -LiteralPath $automaticUpdateInstallerPath -Raw
+$automaticUpdateRunnerText = Get-Content -LiteralPath $automaticUpdateRunnerPath -Raw
 
 $requiredInstallerContracts = @(
     'VariableName "DOTNET_ENVIRONMENT"',
@@ -232,7 +236,10 @@ $requiredHybridContracts = @(
     '"--urls", "http://+:8080"',
     '"container", "ls", "--all", "--format", "{{.Names}}"',
     'Retrying once without cached layers.',
-    '"--no-cache"'
+    '"--no-cache"',
+    '[string]$AutomaticUpdateTime = "00:00"',
+    'Install-TFlexAutomaticUpdate.ps1',
+    'last-successful-revision.txt'
 )
 foreach ($contract in $requiredHybridContracts) {
     if (-not $hybridDeploymentText.Contains($contract)) {
@@ -261,6 +268,46 @@ if ($hybridServiceUpdateIndex -lt 0 -or
     $hybridNativeDisableIndex -le $hybridCandidateIndex -or
     $hybridFinalHealthIndex -le $hybridNativeDisableIndex) {
     throw "The hybrid deployment must validate a candidate before disabling the native API and validating the final container."
+}
+
+$requiredAutomaticUpdateInstallerContracts = @(
+    'New-ScheduledTaskTrigger -Daily -At $dailyTime',
+    '-UserId "SYSTEM"',
+    '-LogonType ServiceAccount',
+    '-RunLevel Highest',
+    '-MultipleInstances IgnoreNew',
+    '-StartWhenAvailable',
+    'Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force',
+    '"*S-1-5-18:(OI)(CI)F"',
+    '"*S-1-5-32-544:(OI)(CI)F"',
+    'dailyAt = $DailyAt'
+)
+foreach ($contract in $requiredAutomaticUpdateInstallerContracts) {
+    if (-not $automaticUpdateInstallerText.Contains($contract)) {
+        throw "The automatic update installer is missing required contract '$contract'."
+    }
+}
+
+$requiredAutomaticUpdateRunnerContracts = @(
+    '"fetch", "--prune", "origin", $branch',
+    '"merge-base", "--is-ancestor", $currentRevision, $targetRevision',
+    '"merge", "--ff-only", $remoteReference',
+    '"status", "--porcelain=v1", "--untracked-files=all"',
+    'SkipCaddy = $true',
+    'UseExistingSource = $true',
+    '"reset", "--hard", $currentRevision',
+    'last-successful-revision.txt',
+    '[IO.FileShare]::None',
+    'Get-ConfigValue $config "repositoryUrl" -Required'
+)
+foreach ($contract in $requiredAutomaticUpdateRunnerContracts) {
+    if (-not $automaticUpdateRunnerText.Contains($contract)) {
+        throw "The automatic update runner is missing required contract '$contract'."
+    }
+}
+if ($automaticUpdateRunnerText.Contains('AdminPassword') -or
+    $automaticUpdateRunnerText.Contains('ServicePassword')) {
+    throw "The automatic update runner must not persist or pass deployment passwords."
 }
 
 $requiredBootstrapDownloadContracts = @(

@@ -10,6 +10,11 @@ if (!sourceDir) {
   throw new Error("Usage: sync_xizi_reference.mjs <reference-directory> [catalog-path]");
 }
 
+const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+if (catalog.xizi?.priceSource?.kind === "excel") {
+  throw new Error("XIZI prices are sourced from the supplier Excel workbook. Use tools/sync_xizi_excel.py to update them; reference JS prices would overwrite the verified supplier prices.");
+}
+
 const referenceFiles = [
   "xizi-base-prices.js",
   "xizi-extra-rise.js",
@@ -25,7 +30,6 @@ for (const file of referenceFiles) {
 }
 
 const data = sandbox.window;
-const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 const series = Object.keys(data.XIZIPRICEDATA);
 const extraRiseSeries = name => name.includes("MRL(T)") ? "UN-Victor MRL" : name;
 const basePrices = [];
@@ -139,7 +143,7 @@ const setChoices = (name, values) => {
   group.options = values;
   choices.set(name, group);
 };
-setChoices("Model", ["UN-Victor R", "UN-Victior MRL", "MRL-T", "G3"]);
+setChoices("Model", ["UN-Victor R", "UN-Victor MRL", "MRL-T", "G3"]);
 setChoices("Cabin Design", ["U-CR126-BASE", ...Object.keys(data.CABINFINISHDATA_RAW.designs).filter(code => code !== "U-CR126")]);
 setChoices("Car Wall Material", Object.keys(data.CABINFINISHDATA_RAW.wall_materials));
 setChoices("Ceiling", Object.keys(data.CABINFINISHDATA_RAW.ceilings));

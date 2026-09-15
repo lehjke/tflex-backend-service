@@ -1,3 +1,5 @@
+using TFlexDrawingService.Core.Abstractions;
+using TFlexDrawingService.Core.Services;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
@@ -7,7 +9,7 @@ using System.Text.RegularExpressions;
 
 namespace TFlexDrawingService.Api.Data;
 
-public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpClientFactory httpClientFactory)
+public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpClientFactory httpClientFactory, ITemplateCatalog? templateCatalog = null)
 {
     private static readonly HashSet<string> ExcludedSmecSeries = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -118,6 +120,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
         if (string.Equals(request.Supplier, "XIZI", StringComparison.OrdinalIgnoreCase))
         {
+            request = NormalizeXiziOptions(request);
+            await ValidateXiziConfigurationAsync(request, blockers, cancellationToken);
             CalculateXizi(request, lines, warnings, blockers, out container);
         }
         else if (string.Equals(request.Supplier, "SMEC", StringComparison.OrdinalIgnoreCase))
@@ -182,6 +186,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         return TkpDocxBuilder.Build(templatePath, assetsRoot, Catalog, specification, project, request, calculation);
     }
 
+    public byte[] BuildXiziProjectExport(IReadOnlyList<PricingSpecification> specifications, UserProject? project)
+        => XiziProjectExportBuilder.Build(this, specifications, project);
+
     public byte[] BuildPricingRequestXlsx(PricingSpecification specification, UserProject? project)
     {
         var request = JsonSerializer.Deserialize<PricingCalculationRequest>(
@@ -195,7 +202,61 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             isSmec ? "smec_request.xlsx" : "shablon_zaprosa.xlsx");
         return isSmec
             ? SmecPricingRequestXlsxBuilder.Build(templatePath, specification, project, request)
-            : PricingRequestXlsxBuilder.Build(templatePath, specification, project, request);
+            : PricingRequestXlsxBuilder.Build(templatePath, specification, project, request, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.Options : null, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.VisualItems : null);
+    }
+
+    public static string XiziArdCode(int capacity, decimal speed) => capacity <= 1050
+        ? speed <= 1.75m ? "ARD_15" : speed <= 2m ? "ARD_22" : "ARD_37"
+        : speed <= 1.75m ? "ARD_22_2" : "ARD_37_2";
+
+    public static PricingCalculationRequest NormalizeXiziOptions(PricingCalculationRequest request)
+    {
+        var ac = GetSpecificationField(request, "AC");
+        var hasAc = HasText(ac) && !ContainsAny(ac!, "Нет", "None");
+        return request with { Options = (request.Options ?? [])
+            .Where(code => !code.StartsWith("CONTAINER_", StringComparison.OrdinalIgnoreCase) && code is not "40HQ" and not "20GP")
+            .Where(code => !hasAc || !code.StartsWith("AC", StringComparison.OrdinalIgnoreCase))
+            .Select(code => code.StartsWith("ARD_", StringComparison.OrdinalIgnoreCase) ? XiziArdCode(request.CapacityKg, request.Speed) : code)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray() };
+    }
+
+    private async Task ValidateXiziConfigurationAsync(PricingCalculationRequest request, List<string> blockers, CancellationToken cancellationToken)
+    {
+        var width = GetSpecificationNumber(request, "Car Width");
+        var depth = GetSpecificationNumber(request, "Car Depth");
+        var shaftWidth = GetSpecificationNumber(request, "Shaft Width");
+        var shaftDepth = GetSpecificationNumber(request, "Shaft Depth");
+        if (shaftWidth > 0 && width >= shaftWidth) blockers.Add("Ширина шахты должна быть больше ширины кабины.");
+        if (shaftDepth > 0 && depth >= shaftDepth) blockers.Add("Глубина шахты должна быть больше глубины кабины.");
+        if (width <= 0 || depth <= 0 || templateCatalog is null) return;
+        var templateId = request.Series switch { "UN-Victor MRL" => "un_victor_mrl", "UN-Victor MRL(T)" => "un_victor_mrl_t", _ => null };
+        if (templateId is null) return;
+        var template = await templateCatalog.GetByIdOrCodeAsync(templateId, cancellationToken);
+        if (template is null) { blockers.Add("Не найден шаблон для проверки геометрии XIZI."); return; }
+        var car = template.Parameters.FirstOrDefault(p => p.Name == "$CARTYPE_MENU")?.AllowedValues
+            .FirstOrDefault(value => Regex.IsMatch(value, $@"/\s*{request.CapacityKg}\s*/\s*{width}×{depth}$"));
+        if (car is null)
+        {
+            blockers.Add($"Кабина {width}×{depth} мм при {request.CapacityKg} кг отсутствует в подтверждённых конфигурациях {request.Series}.");
+            return;
+        }
+        var parameters = new Dictionary<string, object?>
+        {
+            ["$CARTYPE_MENU"] = car, ["$V"] = request.Speed.ToString("0.0#", CultureInfo.InvariantCulture),
+            ["$N"] = request.Stops.ToString(CultureInfo.InvariantCulture),
+            ["$R"] = (GetSpecificationNumber(request, "Travel Height") / 1000m).ToString(CultureInfo.InvariantCulture),
+            ["NBENT_MENU"] = IsXiziThroughCar(GetSpecificationField(request, "Car Type")) ? 2 : 1,
+            ["$DOOR_MENU"] = request.DoorType == "CO" ? "CLD" : "TLD",
+            ["$CWT"] = (request.Options ?? []).Contains("CWTSAFETY") ? "WSAFE" : "WOSAF"
+        };
+        var fields = new HashSet<string> { "$R", "$N" };
+        foreach (var (key, field) in new[] { ("K", "Overhead"), ("S", "Pit"), ("HW", "Shaft Width"), ("WTW", "Shaft Depth"), ("CH", "Car Height"), ("OPH", "Door Height") })
+        {
+            var value = GetSpecificationNumber(request, field);
+            if (value > 0) { parameters[key] = value; fields.Add(key); }
+        }
+        if (request.DoorWidthMm > 0) parameters["OP"] = request.DoorWidthMm;
+        blockers.AddRange(DrawingJobValidator.ValidateConfigurationRules(template, parameters, fields));
     }
 
     private void CalculateXizi(
@@ -315,14 +376,16 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         AddXiziLocalRequirements(catalog, request, lines, warnings, blockers);
         var defaultContainerCode = catalog.Options.FirstOrDefault(item =>
             EqualsText(item.Code, "CONTAINER_40HQ") || EqualsText(item.Code, "40HQ"))?.Code;
-        if (HasText(defaultContainerCode)
-            && !(request.Options ?? []).Any(option => EqualsText(option, defaultContainerCode)))
-        {
-            AddXiziOption(catalog, request, defaultContainerCode!, lines, warnings, blockers);
-        }
+        if (HasText(defaultContainerCode)) AddXiziOption(catalog, request, defaultContainerCode!, lines, warnings, blockers);
 
         foreach (var option in request.Options ?? [])
         {
+            if (catalog.LocalRequirements.Any(entry => EqualsText(entry.Code, option))) continue;
+            if (option == "CWT_SIDE" && request.Series != "UN-Victor R")
+            {
+                blockers.Add("CWT at side доступна только для UN-Victor R с машинным помещением.");
+                continue;
+            }
             AddXiziOption(catalog, request, option, lines, warnings, blockers);
         }
 
@@ -335,7 +398,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var rcc = GetSpecificationField(request, "RCC");
         if (HasText(rcc) && !ContainsAny(rcc!, "Нет", "None"))
         {
-            warnings.Add($"RCC {rcc}: цена отсутствует в прайсе XIZI, требуется ручная проверка.");
+            blockers.Add($"RCC {rcc}: опция недоступна до подтверждения цены поставщиком.");
             lines.Add(new PricingLine("rcc", $"Перенос станции управления RCC: {rcc}", 1, null, null, "warning"));
         }
 
@@ -363,15 +426,18 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> blockers)
     {
         var capacity = request.CapacityKg == 1275 ? 1250 : request.CapacityKg;
-        var entry = catalog.Doors.FirstOrDefault(item =>
+        var entry = catalog.Doors.Where(item =>
             EqualsText(item.Manufacturer, manufacturer)
             && EqualsText(item.Part, part)
             && EqualsText(item.DoorType, request.DoorType)
-            && EqualsText(item.FireRating, fireRating)
+            && (EqualsText(item.FireRating, fireRating)
+                || (part != "Shaft door" && EqualsText(item.FireRating, "None")))
             && EqualsText(item.Finish, finish)
             && item.Capacity == capacity
             && item.Width == request.DoorWidthMm
-            && EqualsText(item.Floor, floor));
+            && EqualsText(item.Floor, floor))
+            .OrderByDescending(item => EqualsText(item.FireRating, fireRating))
+            .FirstOrDefault();
         AddCatalogValue(lines, warnings, blockers, "door", label, entry?.Price, true, quantity);
     }
 
@@ -696,7 +762,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> warnings,
         List<string> blockers)
     {
-        if (!HasText(code) || quantity <= 0 || ContainsAny(code!, "Нет", "None"))
+        if (!HasText(code) || quantity <= 0 || ContainsAny(code!, "Нет", "None", "Integrated in LOP"))
         {
             return;
         }
@@ -719,15 +785,16 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
         foreach (var entry in catalog.LocalRequirements)
         {
-            if (ContainsAny(entry.Code, "Hydraulic buffer")
+            var normalized = NormalizeCode(entry.Code);
+            if ((normalized == "RUSHYDRAULICBUFFERCAPACITY" || ContainsAny(entry.Code, "Hydraulic buffer"))
                 && !(request.CapacityKg > 1600 && request.Speed > 1m))
             {
                 continue;
             }
 
-            if (ContainsAny(entry.Code, "Pit Inspection"))
+            if (normalized == "RUSPITINSPECTIONBOX" || ContainsAny(entry.Code, "Pit Inspection"))
             {
-                if (TryReadDecimal(entry.Price, out var basePrice))
+                if (TryReadDecimal(entry.Price, out var basePrice) && basePrice != -1m)
                 {
                     var amount = basePrice + 24m * (travel + overhead + 16m);
                     AddReadyLine(lines, "lmr-pit-inspection", $"LMR: {entry.Code.Trim()}", amount, amount);
@@ -739,9 +806,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 continue;
             }
 
-            if (ContainsAny(entry.Code, "Hoistway lighting"))
+            if (normalized == "RUSHOISTWAYLIGHTINGBY" || ContainsAny(entry.Code, "Hoistway lighting"))
             {
-                if (TryReadDecimal(entry.Price, out var unitPrice))
+                if (TryReadDecimal(entry.Price, out var unitPrice) && unitPrice != -1m)
                 {
                     var quantity = Math.Max(0m, buildingHeight / 4m - buildingHeight / 7m);
                     AddReadyLine(lines, "lmr-hoistway-lighting", $"LMR: {entry.Code}", unitPrice, unitPrice * quantity);
@@ -772,13 +839,21 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             return;
         }
 
-        if (TryCalculateXiziFormulaOption(request, entry.Code, out var formulaPrice))
+        if (EqualsText(entry.Type, "formula"))
         {
-            AddReadyLine(lines, $"option-{NormalizeCode(option)}", $"Опция {option}", formulaPrice, formulaPrice);
+            if (TryCalculateXiziFormulaOption(request, entry, out var formulaPrice))
+            {
+                AddReadyLine(lines, $"option-{NormalizeCode(option)}", $"Опция {option}", formulaPrice, formulaPrice);
+            }
+            else
+            {
+                var unavailable = TryReadDecimal(entry.Price, out var value) && value == -1m;
+                AddCatalogValue(lines, warnings, blockers, "option", $"Опция {option}", unavailable ? entry.Price : null, true);
+            }
             return;
         }
 
-        if (!TryReadDecimal(entry.Price, out var basePrice))
+        if (!TryReadDecimal(entry.Price, out var basePrice) || basePrice == -1m)
         {
             AddCatalogValue(lines, warnings, blockers, "option", $"Опция {option}", entry.Price, true);
             return;
@@ -817,31 +892,33 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
     private static bool TryCalculateXiziFormulaOption(
         PricingCalculationRequest request,
-        string code,
+        PriceEntry entry,
         out decimal amount)
     {
-        var normalized = NormalizeCode(code);
+        amount = 0m;
+        if (!TryReadDecimal(entry.Price, out var basePrice) || basePrice == -1m)
+        {
+            return false;
+        }
+
+        var normalized = NormalizeCode(entry.Code);
         var travel = GetSpecificationNumber(request, "Travel Height") / 1000m;
         var overhead = GetSpecificationNumber(request, "Overhead") / 1000m;
         var pit = GetSpecificationNumber(request, "Pit") / 1000m;
         var buildingHeight = travel + overhead + pit;
-        amount = normalized switch
+        decimal? calculatedAmount = normalized switch
         {
-            "CWTSIDE" or "CWTSAFETY" => 4500m + buildingHeight * 4m,
-            "COP2" => 1508m + (request.Stops - 10) * 45m,
-            "CCTV" => 14m * (travel + overhead + 16m),
-            "TC" => 21m * (travel + overhead + 16m),
-            "EARTHQUAKEEMERGENCYRETURN" => 3500m + 300m * (buildingHeight / 1.5m - buildingHeight / 2.5m),
-            "ACCOLDSMALL" when request.CapacityKg <= 1350 => 3654m + 11m * (travel + overhead + 12m),
-            "ACCOLDLARGE" when request.CapacityKg > 1350 => 4583m + 11m * (travel + overhead + 12m),
-            "ACHEATSMALL" when request.CapacityKg <= 1350 => 3983m + 11m * (travel + overhead + 12m),
-            "ACHEATLARGE" when request.CapacityKg > 1350 => 4925m + 11m * (travel + overhead + 12m),
-            "HAD" => 600m + 101m * request.DoorCount,
-            "RUSPITINSPECTIONBOX" => 1050m + 24m * (travel + overhead + 16m),
-            "RUSHOISTWAYLIGHTINGBY" => (buildingHeight / 4m - buildingHeight / 7m) * 15m,
-            _ => 0m
+            "CWTSIDE" or "CWTSAFETY" => basePrice + buildingHeight * 4m,
+            "COP2" => basePrice + (request.Stops - 10) * 45m,
+            "CCTV" or "TC" => basePrice * (travel + overhead + 16m),
+            "EARTHQUAKEEMERGENCYRETURN" => basePrice + 300m * (buildingHeight / 1.5m - buildingHeight / 2.5m),
+            "ACCOLDSMALL" or "ACHEATSMALL" when request.CapacityKg <= 1350 => basePrice + 11m * (travel + overhead + 12m),
+            "ACCOLDLARGE" or "ACHEATLARGE" when request.CapacityKg > 1350 => basePrice + 11m * (travel + overhead + 12m),
+            "HAD" => basePrice + 101m * request.DoorCount,
+            _ => null
         };
-        return amount != 0m || normalized is "COP2";
+        amount = calculatedAmount ?? 0m;
+        return calculatedAmount.HasValue;
     }
 
     private static void AddXiziAirConditioner(
@@ -855,10 +932,20 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var code = selection.Contains("нагрев", StringComparison.OrdinalIgnoreCase)
             ? "AC Охлаждение и нагрев"
             : "AC Охлаждение";
-        var entry = catalog.Options.FirstOrDefault(item => EqualsText(item.Code, code));
+        var formulaCode = (selection.Contains("нагрев", StringComparison.OrdinalIgnoreCase) ? "ACHEAT" : "ACCOLD")
+            + (request.CapacityKg > 1350 ? "LARGE" : "SMALL");
+        var entry = catalog.Options.FirstOrDefault(item => EqualsText(item.Code, code))
+            ?? catalog.Options.FirstOrDefault(item => NormalizeCode(item.Code) == formulaCode);
         if (entry is null)
         {
             AddCatalogValue(lines, warnings, blockers, "air-conditioner", code, null, true);
+            return;
+        }
+
+        if (EqualsText(entry.Type, "formula")
+            && TryCalculateXiziFormulaOption(request, entry, out var formulaPrice))
+        {
+            AddReadyLine(lines, "air-conditioner", code, formulaPrice, formulaPrice);
             return;
         }
 
@@ -914,15 +1001,20 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
     private static string MapXiziWallFinish(string? value)
     {
-        if (ContainsAny(value ?? "", "GOLD"))
+        var normalized = NormalizeCode(value);
+        if (ContainsAny(normalized, "15MM", "15ММ"))
+        {
+            return ContainsAny(normalized, "AISI304") ? "1,5mm AISI304" : "1,5mm AISI443";
+        }
+        if (ContainsAny(normalized, "GOLD"))
         {
             return "ti-gold";
         }
-        if (ContainsAny(value ?? "", "AISI304"))
+        if (ContainsAny(normalized, "AISI304"))
         {
             return "aisi-304";
         }
-        if (ContainsAny(value ?? "", "AISI443", "Нерж"))
+        if (ContainsAny(normalized, "AISI443", "Нерж"))
         {
             return "aisi-443";
         }

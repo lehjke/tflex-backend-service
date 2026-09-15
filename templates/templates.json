@@ -42603,7 +42603,8 @@
           "allowedValues": [
             "0",
             "150"
-          ]
+          ],
+          "description": "Смещение 0 или 150 мм. Доступность определяется типом кабины и дверей в модели T-FLEX."
         },
         {
           "name": "$CWTLOC",
@@ -42689,7 +42690,8 @@
           "isRequired": true,
           "defaultValue": 3850,
           "expression": "3850",
-          "unit": "мм"
+          "unit": "мм",
+          "maxValue": 6000
         },
         {
           "name": "S",
@@ -43887,6 +43889,14 @@
           "fieldNames": [
             "HL6"
           ]
+        },
+        {
+          "name": "overhead_max",
+          "expression": "K <= K_MAX",
+          "message": "Высота верхнего этажа должна быть не более {K_MAX} мм",
+          "fieldNames": [
+            "K"
+          ]
         }
       ]
     },
@@ -44155,7 +44165,8 @@
           "allowedValues": [
             "0",
             "150"
-          ]
+          ],
+          "description": "Смещение 0 или 150 мм. Доступность определяется типом кабины и дверей в модели T-FLEX."
         },
         {
           "name": "$CWTLOC",
@@ -44241,7 +44252,8 @@
           "isRequired": true,
           "defaultValue": 5000,
           "expression": "5000",
-          "unit": "мм"
+          "unit": "мм",
+          "maxValue": 6000
         },
         {
           "name": "S",
@@ -45407,6 +45419,14 @@
           "message": "Привязка оси проема должна быть {HL6_MIN} мм",
           "fieldNames": [
             "HL6"
+          ]
+        },
+        {
+          "name": "overhead_max",
+          "expression": "K <= K_MAX",
+          "message": "Высота верхнего этажа должна быть не более {K_MAX} мм",
+          "fieldNames": [
+            "K"
           ]
         }
       ]

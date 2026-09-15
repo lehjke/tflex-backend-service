@@ -122,7 +122,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260828-speed-dependent-oh-pd-1/u);
+  assert.match(html, /\/app\.js\?v=20260830-readable-validation-errors-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -256,7 +256,7 @@ test("all frontend modules share one i18n instance", () => {
   for (const fileName of ["app.js", "account.js"]) {
     assert.match(
       readWebSource(fileName),
-      /\.\/file-preview\.js\?v=20260806-design-fixes-1/u,
+      /\.\/file-preview\.js\?v=20260915-pdf-zoom-1/u,
       `${fileName} must invalidate the file-preview module graph`);
   }
 

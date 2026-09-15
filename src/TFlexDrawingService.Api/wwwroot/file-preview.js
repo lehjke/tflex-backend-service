@@ -21,12 +21,19 @@ function ensurePreviewDialog() {
         </object>
       </div>
       <footer class="file-preview-dialog__actions">
+        <label>Масштаб PDF <select data-preview-zoom aria-label="Масштаб PDF"><option value="page-width">По ширине</option><option value="100">100%</option><option value="150">150%</option><option value="200">200%</option></select></label>
         <a class="secondary button-link" data-preview-open target="_blank" rel="noopener">Открыть в новой вкладке</a>
         <a class="primary-link" data-preview-download download>Скачать файл</a>
       </footer>
     </div>
   `;
 
+  previewDialog.querySelector("[data-preview-zoom]").addEventListener("change", event => {
+    const object = previewDialog.querySelector(".file-preview-dialog__object");
+    const url = new URL(object.data, window.location.origin);
+    url.hash = event.target.value === "page-width" ? "view=FitH" : `zoom=${event.target.value}`;
+    object.data = url.href;
+  });
   const close = () => previewDialog.close();
   previewDialog.querySelector("[data-preview-close]").addEventListener("click", close);
   previewDialog.addEventListener("click", event => {
@@ -68,7 +75,8 @@ export function openGeneratedFilePreview(file, trigger = document.activeElement)
   const downloadLink = dialog.querySelector("[data-preview-download]");
 
   const inlineUrl = getInlinePreviewUrl(file.downloadUrl);
-  object.data = inlineUrl;
+  object.data = `${inlineUrl.split("#")[0]}#view=FitH`;
+  dialog.querySelector("[data-preview-zoom]").value = "page-width";
   openLink.href = inlineUrl;
   downloadLink.href = file.downloadUrl;
   downloadLink.download = file.fileName || "drawing.pdf";

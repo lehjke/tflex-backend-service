@@ -1,3 +1,4 @@
+import { isXiziManualOption, xiziArdCode, xiziConfigurationInput } from "./xizi-option-rules.js?v=20260915";
 import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -5,7 +6,7 @@ import {
   resolveDrawingDoorCount,
   resolveDrawingConfigurationValues,
   toTravelHeightMillimeters
-} from "./drawing-configuration-values.js?v=20260828-speed-dependent-oh-pd-1";
+} from "./drawing-configuration-values.js?v=20260830-readable-validation-errors-1";
 
 const state = {
   currentUser: null,
@@ -579,6 +580,8 @@ function syncXiziPricingFields() {
     doorManufacturerSelect.value = manufacturer;
   }
   doorManufacturerSelect.disabled = true;
+  xiziElevatorTypeSelect.value = mappedSeries === "UN-Victor R" ? "С МП" : "Без МП";
+  renderOptions();
 }
 
 function byCodePrefix(prefixes) {
@@ -1057,12 +1060,12 @@ function renderXiziControls() {
   fillSelect(xiziDoorHeightSelect, getXiziChoices("Door Height", [2000, 2100, 2200, 2300]), 2300);
   fillSelect(xiziFireRatingSelect, getXiziChoices("Fire Rating", ["E30", "EI60"]), "EI60");
   fillSelect(xiziDoorOpeningSelect, getXiziChoices("Door Opening Type", ["Телескопического открывания", "Центрального открывания"]), "Центрального открывания");
-  fillSelect(xiziCabinDesignSelect, getXiziChoices("Cabin Design"), "U-CR126");
+  fillSelect(xiziCabinDesignSelect, getXiziChoices("Cabin Design"), "U-CR126-BASE");
   fillSelect(xiziCarWallMaterialSelect, getXiziChoices("Car Wall Material", ["Нерж. сталь AISI443"]), "Нерж. сталь AISI443");
   fillSelect(xiziCarDoorMaterialSelect, getXiziChoices("Car Door Material", getXiziChoices("Shaft Door Material", ["Нерж. сталь AISI443"])), "Нерж. сталь AISI443");
   fillSelect(xiziCeilingSelect, getXiziChoices("Ceiling"), "U-CL029");
   fillSelect(xiziFloorSelect, getXiziChoices("Floor"), "U-FL033");
-  fillSelect(xiziMirrorWallSelect, ["Нет", ...getXiziChoices("Mirror Wall", ["Задняя стена"])], "Нет");
+  fillSelect(xiziMirrorWallSelect, ["Нет", "Задняя стена", "Левая стена", "Правая стена"], "Нет");
   fillSelect(xiziMirrorHeightSelect, getXiziChoices("Mirror Height", ["Половина высоты", "Во всю высоту"]), "Половина высоты");
   fillSelect(xiziHandrailPositionSelect, ["Нет", ...getXiziChoices("Handrail Position", ["1 х Задняя стена"])], "Нет");
   fillSelect(xiziHandrailSelect, getXiziChoices("Handrail"), "U-HR001");
@@ -1072,8 +1075,8 @@ function renderXiziControls() {
   fillSelect(xiziOtherShaftDoorSelect, getXiziChoices("Shaft Door Material", ["Нерж. сталь AISI443"]), "Нерж. сталь AISI443");
   fillSelect(xiziMainLopSelect, getXiziChoices("LOP"), "U-ZW1600");
   fillSelect(xiziOtherLopSelect, getXiziChoices("LOP"), "U-ZW1600");
-  fillSelect(xiziMainLipSelect, ["Нет", ...getXiziChoices("LIP")], "Нет");
-  fillSelect(xiziOtherLipSelect, ["Нет", ...getXiziChoices("LIP")], "Нет");
+  fillSelect(xiziMainLipSelect, ["Нет", "Integrated in LOP", ...getXiziChoices("LIP")], "Нет");
+  fillSelect(xiziOtherLipSelect, ["Нет", "Integrated in LOP", ...getXiziChoices("LIP")], "Нет");
   fillSelect(xiziAirConditionerSelect, getXiziChoices("Air Conditioner", ["Нет", "Охлаждение", "Охлаждение и нагрев"]), "Нет");
   fillSelect(xiziRccSelect, getXiziChoices("RCC", ["Нет"]), "Нет");
   syncAllVisualSelects();
@@ -1196,6 +1199,14 @@ function renderSavedPricing() {
     return;
   }
 
+  if (items.some(item => item.supplier === "XIZI")) {
+    const link = document.createElement("a");
+    link.className = "secondary";
+    link.href = `/api/projects/${encodeURIComponent(projectId)}/xizi-export`;
+    link.textContent = "XIZI: общий запрос и цены проекта (ZIP)";
+    savedPricingList.append(link);
+  }
+
   for (const item of items) {
     const row = document.createElement("div");
     row.className = "saved-pricing-item";
@@ -1257,7 +1268,7 @@ function renderCatalogControls() {
       doorCountInput.value = "10";
       xiziShaftWidthInput.value = "1800";
       xiziShaftDepthInput.value = "2700";
-      xiziTravelHeightInput.value = "27900";
+      xiziTravelHeightInput.value = "27.9";
       xiziOverheadInput.value = "5300";
       xiziPitInput.value = "1900";
       xiziCarWidthInput.value = "1100";
@@ -1280,11 +1291,13 @@ function toggleSupplierFields(selector, visible) {
 }
 
 function renderOptions() {
+  const previouslySelected = new Set([...optionsList.querySelectorAll("input:checked")].map(input => input.value));
+  if ([...previouslySelected].some(code => code.startsWith("ARD_"))) previouslySelected.add(xiziArdCode(capacitySelect.value, speedSelect.value));
   const isXizi = supplierSelect.value === "XIZI";
   const source = isXizi ? state.catalog?.xiziOptions : getManualSmecFunctions();
   const defaultSmecOptions = new Set(["ABP", "OLHL", "BA", "ITV", "MELD", "MBS", "AAN-S", "AECC", "ACB", "AHC", "FER", "FERC"]);
   const items = (source || []).filter(item =>
-    !isXizi || !String(item.code).toLowerCase().startsWith("ac "));
+    !isXizi || isXiziManualOption(String(item.code), seriesSelect.value, capacitySelect.value, speedSelect.value));
 
   const createOption = item => {
     const isForced = isXizi && (item.code === "40HQ" || item.code === "CONTAINER_40HQ");
@@ -1301,7 +1314,7 @@ function renderOptions() {
       isForced ? "is-locked" : ""
     ].filter(Boolean).join(" ");
     label.innerHTML = `
-      <input type="checkbox" ${isDisplayOption ? `data-exclusive-group="xizi-iled" aria-describedby="xiziIledHint"` : ""} value="${escapeHtml(item.code)}" ${(isForced || isDefault) ? "checked" : ""} ${isForced ? "disabled" : ""}>
+      <input type="checkbox" ${isDisplayOption ? `data-exclusive-group="xizi-iled" aria-describedby="xiziIledHint"` : ""} value="${escapeHtml(item.code)}" ${(isForced || isDefault || previouslySelected.has(item.code)) ? "checked" : ""} ${isForced ? "disabled" : ""}>
       ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.code)}" width="34" height="34" loading="lazy" decoding="async">` : ""}
       <span>
         <strong>${escapeHtml(optionLabel)}</strong>
@@ -1486,7 +1499,7 @@ function applyConfiguration(configuration) {
   };
 
   if (isXiziTemplate) {
-    const xiziModel = templateKey.includes("mrl-t") ? "MRL-T" : "UN-Victior MRL";
+    const xiziModel = templateKey.includes("mrl-t") ? "MRL-T" : "UN-Victor MRL";
     setSelectValue(xiziModelSelect, xiziModel);
     syncXiziPricingFields();
   } else {
@@ -1508,7 +1521,7 @@ function applyConfiguration(configuration) {
   if (doorWidth && xiziShaftWidthInput && !xiziShaftWidthInput.value) xiziShaftWidthInput.value = "";
   if (shaftWidth && xiziShaftWidthInput) xiziShaftWidthInput.value = String(Number(shaftWidth));
   if (shaftDepth && xiziShaftDepthInput) xiziShaftDepthInput.value = String(Number(shaftDepth));
-  if (travelHeightMm !== null && xiziTravelHeightInput) xiziTravelHeightInput.value = String(travelHeightMm);
+  if (travelHeightMm !== null && xiziTravelHeightInput) xiziTravelHeightInput.value = String(travelHeightMm / 1000);
   if (overhead && xiziOverheadInput) xiziOverheadInput.value = String(Number(overhead));
   if (pit && xiziPitInput) xiziPitInput.value = String(Number(pit));
   if (carWidth && xiziCarWidthInput) xiziCarWidthInput.value = String(Number(carWidth));
@@ -1607,7 +1620,10 @@ function applyStoredSpecificationFields(fields = {}) {
     ["Other Requirements", smecOtherRequirementsInput]
   ]);
   const mapping = supplierSelect.value === "XIZI" ? xiziFields : smecFields;
-  for (const [name, control] of mapping) setStoredControlValue(control, fields[name]);
+  for (const [name, control] of mapping) {
+    const stored = name === "Model" ? fields[name]?.replace("UN-Victior", "UN-Victor") : fields[name];
+    setStoredControlValue(control, name === "Travel Height" && stored ? Number(String(stored).replace(",", ".")) / 1000 : stored);
+  }
 
   if (supplierSelect.value === "SMEC") {
     updateSmecFloorPatterns(fields["Floor Pattern"] || null);
@@ -1635,6 +1651,7 @@ async function applyPricingSpecification(specification) {
     updateSmecModels(request.series);
   } else {
     setStoredControlValue(seriesSelect, request.series);
+    setStoredControlValue(xiziModelSelect, request.series === "UN-Victor MRL(T)" ? "MRL-T" : request.series);
   }
   setStoredControlValue(capacitySelect, request.capacityKg);
   setStoredControlValue(speedSelect, request.speed);
@@ -1651,9 +1668,11 @@ async function applyPricingSpecification(specification) {
   if (e312Toggle) e312Toggle.checked = Boolean(request.e312);
 
   applyStoredSpecificationFields(fields);
+  if (supplierSelect.value === "XIZI") syncXiziPricingFields();
   const selectedOptions = new Set(request.options || []);
+  if (supplierSelect.value === "XIZI" && [...selectedOptions].some(code => code.startsWith("ARD_"))) selectedOptions.add(xiziArdCode(capacitySelect.value, speedSelect.value));
   optionsList.querySelectorAll("input").forEach(input => {
-    input.checked = input.disabled || selectedOptions.has(input.value);
+    input.checked = selectedOptions.has(input.value);
   });
   syncAllVisualSelects();
   savePricingButton.textContent = localized("Сохранить изменения", "Save changes");
@@ -1697,7 +1716,7 @@ function collectSpecificationFields() {
       "Other Floors": xiziOtherFloorsInput?.value || "",
       "Shaft Width": xiziShaftWidthInput?.value || "",
       "Shaft Depth": xiziShaftDepthInput?.value || "",
-      "Travel Height": xiziTravelHeightInput?.value || "",
+      "Travel Height": xiziTravelHeightInput?.value ? String(Math.round(numberValue(xiziTravelHeightInput) * 1000)) : "",
       "Shaft Type": xiziShaftTypeSelect?.value || "",
       "Overhead": xiziOverheadInput?.value || "",
       "Pit": xiziPitInput?.value || "",
@@ -1727,7 +1746,7 @@ function collectSpecificationFields() {
       "Main LIP": xiziMainLipSelect?.value || "",
       "Other LIP": xiziOtherLipSelect?.value || "",
       "AC": xiziAirConditionerSelect?.value || "",
-      "RCC": xiziRccSelect?.value || "",
+
       "Decoration": decorationSelect?.value || ""
     };
   }
@@ -1879,6 +1898,24 @@ function collectPricingValidationIssues() {
     name,
     getPositiveControlNumber(control)
   ]));
+  if (supplierSelect.value === "XIZI") {
+    if (values.TR !== null) values.TR *= 1000;
+    const templateId = seriesSelect.value === "UN-Victor MRL" ? "un_victor_mrl" : seriesSelect.value === "UN-Victor MRL(T)" ? "un_victor_mrl_t" : null;
+    const xiziTemplate = state.templatesById.get(templateId);
+    if (xiziTemplate && values.AA && values.BB) {
+      const overrides = xiziConfigurationInput(xiziTemplate, seriesSelect.value, capacitySelect.value, speedSelect.value,
+        { ...values, stops: numberValue(stopsInput) }, xiziCarTypeSelect.value === "Проходная", doorTypeSelect.value, isCwtSafetyGearEnabled());
+      if (!overrides) addIssue("xizi_car", "Размеры кабины и грузоподъёмность отсутствуют в подтверждённых конфигурациях модели.", ["AA", "BB"]);
+      else {
+        const mapping = { K: "OH", S: "PD", HW: "AH", WTW: "BH", $R: "TR", $N: "stops" };
+        const rules = Object.fromEntries(xiziTemplate.validationRules.filter(r => r.fieldNames?.some(f => mapping[f])).map(r => [r.name, r.fieldNames.map(f => mapping[f] || f)]));
+        issues.push(...evaluateDrawingConfigurationValidation(null, xiziTemplate, overrides, rules));
+      }
+    }
+    if (values.AH && values.AA && values.AH <= values.AA) addIssue("shaft_width", "Шахта должна быть шире кабины.", ["AA", "AH"]);
+    if (values.BH && values.BB && values.BH <= values.BB) addIssue("shaft_depth", "Шахта должна быть глубже кабины.", ["BB", "BH"]);
+    return issues;
+  }
   const configuration = getSelectedDrawingConfiguration();
   const template = configuration ? state.templatesById.get(configuration.templateId) : null;
   if (!configuration) {
@@ -2163,7 +2200,9 @@ async function saveAndDownloadTkp() {
 async function saveAndDownloadRequestXlsx() {
   const savedSpecification = await savePricing();
   if (!savedSpecification?.id) return;
-  window.location.assign(`/api/pricing-specifications/${encodeURIComponent(savedSpecification.id)}/request-xlsx`);
+  window.location.assign(supplierSelect.value === "XIZI"
+    ? `/api/projects/${encodeURIComponent(savedSpecification.projectId)}/xizi-export`
+    : `/api/pricing-specifications/${encodeURIComponent(savedSpecification.id)}/request-xlsx`);
 }
 
 async function register(event) {
@@ -2233,6 +2272,7 @@ async function logout() {
 supplierSelect.addEventListener("change", renderCatalogControls);
 smecEleSeriesInput?.addEventListener("change", () => updateSmecModels());
 xiziModelSelect?.addEventListener("change", syncXiziPricingFields);
+xiziCarWallMaterialSelect?.addEventListener("change", () => { xiziCabinDesignSelect.value = "U-CR126-BASE"; syncVisualSelect(xiziCabinDesignSelect); });
 xiziDoorOpeningSelect?.addEventListener("change", syncXiziPricingFields);
 xiziCarTypeSelect?.addEventListener("change", syncXiziPricingFields);
 xiziShaftDepthInput?.addEventListener("input", syncXiziPricingFields);
@@ -2240,6 +2280,7 @@ xiziCarDepthInput?.addEventListener("input", syncXiziPricingFields);
 decorationSelect.addEventListener("change", renderDecorationPreview);
 [seriesSelect, capacitySelect, speedSelect].forEach(select => {
   select?.addEventListener("change", updateSmecPower);
+  select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderOptions(); });
 });
 document.querySelectorAll("[data-visual-select]").forEach(select => {
   select.addEventListener("change", () => {

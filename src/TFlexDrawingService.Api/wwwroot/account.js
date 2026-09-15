@@ -1,7 +1,11 @@
 import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
-import { openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
+import { openGeneratedFilePreview } from "./file-preview.js?v=20260915-pdf-zoom-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
-import { groupProjectAssets } from "./project-assets.js?v=20260827-asset-grouping-1";
+import {
+  formatProjectAssetTitle,
+  getConfigurationTravelHeightMeters,
+  groupProjectAssets
+} from "./project-assets.js?v=20260830-distinct-drawings-1";
 
 const state = {
   currentUser: null,
@@ -382,6 +386,16 @@ function getProjectMetaLabel(project) {
   return shouldShowProjectOwner(project)
     ? `${project.name} · ${ownerUserName}`
     : project.name;
+}
+
+function getProjectAssetTitle(project, group) {
+  const configuration = group.configurations[0];
+  if (!configuration) return group.name;
+
+  return formatProjectAssetTitle(
+    getConfigurationName(configuration),
+    getConfigurationTravelHeightMeters(configuration, getTemplate(configuration.templateId)),
+    getProjectAddress(project));
 }
 
 function normalizeSearch(value) {
@@ -884,18 +898,19 @@ function renderSavedConfigurations() {
 
   for (const entry of entries) {
     const { project, group } = entry;
+    const displayTitle = getProjectAssetTitle(project, group);
     const item = document.createElement("article");
     const isCombined = group.configurations.length > 0 && group.pricingSpecifications.length > 0;
     item.className = `saved-configuration-item${isCombined ? " saved-configuration-item--combined" : ""}`;
     item.innerHTML = `
       <div class="saved-configuration-item__info">
         ${renderProjectAssetKinds(group)}
-        <strong>${escapeHtml(group.name)}</strong>
+        <strong class="saved-configuration-item__title">${escapeHtml(displayTitle)}</strong>
         <span>${renderProjectAssetModelLabels(group)}</span>
         <small>${escapeHtml(getProjectMetaLabel(project))} · ${formatDate(group.updatedAt)}</small>
       </div>
       <div class="saved-configuration-item__assets">
-        ${renderProjectAssetFormats(group)}
+        ${renderProjectAssetFormats(group, displayTitle)}
         ${renderProjectAssetPrices(group)}
       </div>
       <div class="inline-actions">
@@ -925,14 +940,14 @@ function renderProjectAssetModelLabels(group) {
   return [...new Set(labels)].map(escapeHtml).join("<br>") || '<span class="muted">—</span>';
 }
 
-function renderProjectAssetFormats(group) {
+function renderProjectAssetFormats(group, displayTitle = group.name) {
   const controls = group.configurations.map(configuration => {
     const formats = getTemplateFormats(configuration);
     const options = formats
       .map(format => `<option value="${escapeHtml(format)}" ${format === String(configuration.outputFormat).toLowerCase() ? "selected" : ""}>${escapeHtml(format.toUpperCase())}</option>`)
       .join("");
     return `
-      <select class="format-select" data-format-for="${escapeHtml(configuration.id)}" aria-label="Формат чертежа ${escapeHtml(group.name)}">
+      <select class="format-select" data-format-for="${escapeHtml(configuration.id)}" aria-label="Формат чертежа ${escapeHtml(displayTitle)}">
         ${options}
       </select>`;
   });
@@ -994,15 +1009,16 @@ function createConfigurationsTable(project, assetGroups) {
 
   const tbody = table.querySelector("tbody");
   for (const group of assetGroups) {
+    const displayTitle = getProjectAssetTitle(project, group);
     const row = document.createElement("tr");
     const isCombined = group.configurations.length > 0 && group.pricingSpecifications.length > 0;
     const isPricingOnly = group.configurations.length === 0 && group.pricingSpecifications.length > 0;
     row.className = `configuration-row${isCombined ? " configuration-row--combined" : ""}${isPricingOnly ? " configuration-row--pricing" : ""}`;
     row.innerHTML = `
       <td>${renderProjectAssetKinds(group)}</td>
-      <td><strong>${escapeHtml(group.name)}</strong></td>
+      <td class="configuration-title"><strong>${escapeHtml(displayTitle)}</strong></td>
       <td>${renderProjectAssetModelLabels(group)}</td>
-      <td>${renderProjectAssetFormats(group)}</td>
+      <td>${renderProjectAssetFormats(group, displayTitle)}</td>
       <td>${renderProjectAssetPrices(group)}</td>
       <td>${formatDate(group.updatedAt)}</td>
       <td>

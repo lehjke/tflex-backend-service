@@ -4,7 +4,7 @@ Installs Caddy as an ACME HTTPS reverse proxy for TFlexDrawingService.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File .\scripts\Install-CaddyAcmeProxy.ps1 `
-  -Domain "lehjke.online" `
+  -Domain "alesnichiy.ru" `
   -Email "admin@example.com" `
   -UpstreamUrl "http://127.0.0.1:5011"
 #>
@@ -504,7 +504,7 @@ if (-not (Test-IsAdmin)) {
 }
 
 if ($Domain -match "^\s*$" -or $Domain -match "[/:]") {
-    throw "Domain must be a hostname such as 'lehjke.online', not a URL."
+    throw "Domain must be a hostname such as 'alesnichiy.ru', not a URL."
 }
 
 if ($UpstreamUrl -notmatch "^https?://") {

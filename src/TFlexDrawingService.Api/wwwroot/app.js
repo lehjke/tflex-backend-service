@@ -1,5 +1,5 @@
 import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
-import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260806-design-fixes-1";
+import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=20260915-pdf-zoom-1";
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260828-speed-dependent-oh-pd-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -21,6 +21,10 @@ import {
   normalizeValidationSeverity,
   partitionValidationIssues
 } from "./validation-state.js?v=20260721-validation-parity-1";
+import {
+  expandValidationParameterNames,
+  FIELD_LABEL_OVERRIDES
+} from "./parameter-labels.js?v=20260830-readable-validation-errors-1";
 
 const state = {
   templates: [],
@@ -114,26 +118,6 @@ const DEFAULT_PARAMETER_CATEGORY = "\u0420\u0430\u0437\u043d\u043e\u0435";
 const CATEGORY_LABEL_OVERRIDES = new Map([
   ["LOP", "Панель вызова"],
   ["LIP", "Этажный указатель"]
-]);
-const FIELD_LABEL_OVERRIDES = new Map([
-  ["AA", "Ширина кабины"],
-  ["BB", "Глубина кабины"],
-  ["HL", "Высота кабины (в чистоте)"],
-  ["JJ", "Ширина дверей (в чистоте)"],
-  ["EI", "Огнестойкость дверей"],
-  ["A4", "Эксцентриситет дверей"],
-  ["HH", "Высота дверей (в чистоте)"],
-  ["WW", "Ширина противовеса"],
-  ["WG", "Длина противовеса"],
-  ["AH", "Ширина шахты"],
-  ["BH", "Глубина шахты"],
-  ["CB", "От оси кабины до правой стены шахты"],
-  ["CJ", "Эксцентриситет дверей"],
-  ["NE", "Количество входов"],
-  ["TR", "Высота подъема"],
-  ["A3", "Расстояние от оси кабины до стенки без противовеса"],
-  ["OH", "Оголовок"],
-  ["PD", "Приямок"]
 ]);
 const CATEGORY_DISPLAY_ORDER = [
   "Инфо о проекте",
@@ -2281,7 +2265,9 @@ function getCurrentValidationIssues(context = buildLevelContext()) {
     const result = evaluateFormulaExpression(rule.expression, context);
     if (isValidationPassed(result)) continue;
 
-    const message = formatValidationMessage(rule.message, context);
+    const message = expandValidationParameterNames(
+      formatValidationMessage(rule.message, context),
+      state.selectedTemplate);
     if (seenMessages.has(message)) continue;
 
     seenMessages.add(message);

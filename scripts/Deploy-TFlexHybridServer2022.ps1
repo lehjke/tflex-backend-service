@@ -20,7 +20,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -SourceRoot "C:\src\tflex-backend-service" `
   -InstallRoot "C:\Services\TFlexDrawingService" `
   -TFlexCadProgramDir "C:\Program Files\T-FLEX CAD 17\Program" `
-  -Domain "lehjke.online" `
+  -Domain "alesnichiy.ru" `
   -AcmeEmail "admin@example.com"
 #>
 [CmdletBinding()]
@@ -56,6 +56,10 @@ param(
     [string]$Domain = "",
     [string]$AcmeEmail = "",
     [switch]$SkipCaddy,
+    [switch]$SkipAutomaticUpdates,
+    [ValidatePattern("^(?:[01]\d|2[0-3]):[0-5]\d$")]
+    [string]$AutomaticUpdateTime = "00:00",
+    [string]$AutomaticUpdateTaskName = "TFlexDrawingService.AutoUpdate",
     [switch]$SkipDockerPull,
     [switch]$AllowDirtySource,
     [switch]$SkipGitInstall,
@@ -769,6 +773,60 @@ if (-not $SkipCaddy) {
 
 if (-not $hybridDeploymentSucceeded) {
     throw "Hybrid deployment did not reach its successful terminal state."
+}
+
+if (-not $SkipAutomaticUpdates) {
+    $effectiveSourceRoot = Get-EffectiveSourceRoot
+    $sourceGitDirectory = Join-Path $effectiveSourceRoot ".git"
+    if (-not (Test-Path -LiteralPath $sourceGitDirectory -PathType Container)) {
+        Write-Warning "Automatic updates were not installed because SourceRoot '$effectiveSourceRoot' is not a Git checkout."
+    }
+    else {
+        Write-Step "Installing the daily automatic update task"
+        $automaticUpdateInstaller = Join-Path $effectiveSourceRoot "scripts\Install-TFlexAutomaticUpdate.ps1"
+        if (-not (Test-Path -LiteralPath $automaticUpdateInstaller -PathType Leaf)) {
+            throw "Automatic update installer was not found at '$automaticUpdateInstaller'."
+        }
+
+        $automaticUpdateParameters = @{
+            RepositoryUrl = $RepositoryUrl
+            Branch = $Branch
+            InstallRoot = $InstallRoot
+            SourceRoot = $effectiveSourceRoot
+            TFlexCadProgramDir = $TFlexCadProgramDir
+            TFlexAutomationCommandPath = $TFlexAutomationCommandPath
+            AdminUser = $AdminUser
+            MaxActiveJobs = $MaxActiveJobs
+            MaxActiveJobsPerUser = $MaxActiveJobsPerUser
+            FinishedJobRetentionDays = $FinishedJobRetentionDays
+            HealthCheckAttempts = $HealthCheckAttempts
+            HealthCheckDelaySeconds = $HealthCheckDelaySeconds
+            ApiHostPort = $ApiHostPort
+            CandidateHostPort = $CandidateHostPort
+            ContainerName = $ContainerName
+            ApiImageRepository = $ApiImageRepository
+            Domain = $Domain
+            AcmeEmail = $AcmeEmail
+            TaskName = $AutomaticUpdateTaskName
+            DailyAt = $AutomaticUpdateTime
+        }
+        if ($SkipFirewall) { $automaticUpdateParameters.SkipFirewall = $true }
+        & $automaticUpdateInstaller @automaticUpdateParameters
+
+        $successfulRevisionOutput = Invoke-NativeCapture -FilePath "git" -Arguments @(
+            "-C", $effectiveSourceRoot, "rev-parse", "HEAD")
+        $successfulRevision = (($successfulRevisionOutput -join "").Trim())
+        if ($successfulRevision -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "Could not determine the successful Git revision for automatic updates."
+        }
+
+        $automaticUpdateRoot = Join-Path $InstallRoot "AutoUpdate"
+        $successMarkerPath = Join-Path $automaticUpdateRoot "last-successful-revision.txt"
+        $temporaryMarkerPath = "$successMarkerPath.tmp"
+        Set-Content -LiteralPath $temporaryMarkerPath -Value $successfulRevision -Encoding ASCII -NoNewline
+        Move-Item -LiteralPath $temporaryMarkerPath -Destination $successMarkerPath -Force
+        Write-Host "Automatic update task: $AutomaticUpdateTaskName (daily at $AutomaticUpdateTime)." -ForegroundColor Green
+    }
 }
 
 Write-Host ""

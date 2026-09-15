@@ -3687,6 +3687,17 @@ td {
   min-width: 1180px;
 }
 
+.project-assets-table .configuration-title {
+  min-width: 260px;
+  white-space: normal;
+}
+
+.project-assets-table .configuration-title strong {
+  display: block;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .configuration-row--pricing td {
   background: #f7f9fc;
 }
@@ -3949,6 +3960,14 @@ td {
   color: var(--ink);
   font-size: 14px;
   font-weight: 800;
+}
+
+.saved-configuration-item .saved-configuration-item__title {
+  line-height: 1.4;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .saved-configuration-item span,

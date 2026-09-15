@@ -67,7 +67,7 @@ test("resolves calculated shaft and car dimensions from a saved drawing configur
     { r_HH_HL: ["HL", "HH"] });
   assert.deepEqual(issues, [{
     name: "r_HH_HL",
-    message: "HL-HH = 0. Должно быть HL-HH ≥ 100.",
+    message: "Разница между высотой кабины и высотой дверей (в чистоте) = 0. Должно быть Разница между высотой кабины и высотой дверей (в чистоте) ≥ 100.",
     fieldNames: ["HL", "HH"],
     severity: "error"
   }]);
@@ -106,7 +106,7 @@ test("resolves calculated shaft and car dimensions from a saved drawing configur
     configuration,
     template,
     { ...commonOverrides, $cwt_sg: "Да" },
-    { r_AH: ["AH"] })[0]?.message, "AH = 1740. Должно быть 1765 ≤ AH ≤ 2693.");
+    { r_AH: ["AH"] })[0]?.message, "Ширина шахты = 1740. Должно быть 1765 ≤ Ширина шахты ≤ 2693.");
 });
 
 test("recalculates automatic headroom and pit for LEHY-L-PRO 1050-2500 speed changes", () => {

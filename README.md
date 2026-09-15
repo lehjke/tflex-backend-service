@@ -73,6 +73,12 @@ docker run --detach \
 установка, обновление, проверка candidate-контейнера и rollback выполняются
 скриптом `scripts/Deploy-TFlexHybridServer2022.ps1`.
 
+После успешного production-развертывания тот же скрипт регистрирует задачу
+Windows `TFlexDrawingService.AutoUpdate`: ежедневно в `00:00` она проверяет
+`origin/main` и запускает транзакционное обновление только при появлении нового
+commit. Журнал, статус, проверки fast-forward и команда диагностики описаны в
+`docs/server-bootstrap.md`.
+
 Команда для чистой машины и повторного обновления приведена в
 `docs/server-bootstrap.md`. Классическая установка API и Worker как двух
 Windows-служб сохранена как аварийный fallback.

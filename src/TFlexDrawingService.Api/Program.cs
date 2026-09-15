@@ -1553,6 +1553,29 @@ var pricingRequestXlsxEndpoint = app.MapGet("/api/pricing-specifications/{specif
 });
 RequirePolicy(pricingRequestXlsxEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
+var xiziProjectExportEndpoint = app.MapGet("/api/projects/{projectId}/xizi-export", async (
+    string projectId, ProjectStore projects, PricingCatalogStore pricing, HttpContext context, CancellationToken cancellationToken) =>
+{
+    var ownerScope = GetProjectOwnerScope(context.User, securityOptions);
+    var project = await projects.GetProjectAsync(projectId, ownerScope, cancellationToken);
+    if (project is null) return Results.NotFound();
+    var all = await projects.ListPricingSpecificationsAsync(projectId, ownerScope, cancellationToken);
+    var specifications = new List<PricingSpecification>();
+    foreach (var saved in all.Where(s => s.Supplier.Equals("XIZI", StringComparison.OrdinalIgnoreCase)))
+    {
+        var request = JsonSerializer.Deserialize<PricingCalculationRequest>(saved.RequestJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (request is null) return Results.Problem("Saved XIZI request cannot be read.");
+        var calculation = await pricing.CalculateAsync(request with { TargetCurrency = "CNY" }, cancellationToken);
+        if (calculation.Blockers.Count > 0)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { [saved.Name] = calculation.Blockers.ToArray() });
+        specifications.Add(saved with { CalculationJson = JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+    }
+    if (specifications.Count == 0) return Results.NotFound();
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.File(pricing.BuildXiziProjectExport(specifications, project), "application/zip", $"{SanitizeFileName(project.Name)}-XIZI.zip");
+});
+RequirePolicy(xiziProjectExportEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
 app.Map("/api/{**path}", () => Results.Problem(
     statusCode: StatusCodes.Status404NotFound,
     title: "API endpoint not found."));
