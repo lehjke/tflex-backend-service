@@ -31,44 +31,85 @@ internal static class XiziProjectExportBuilder
         output.Write(requests[0]);
         using (var zip = new ZipArchive(output, ZipArchiveMode.Update, true))
         {
-            var workbook = ReadXml(zip, "xl/workbook.xml");
-            var relationships = ReadXml(zip, "xl/_rels/workbook.xml.rels");
-            var content = ReadXml(zip, "[Content_Types].xml");
-            var sheets = workbook.Root!.Element(Main + "sheets")!;
-            sheets.RemoveNodes();
-            workbook.Root.Element(Main + "definedNames")?.Remove();
-            relationships.Root!.Elements().Where(e => e.Attribute("Type")?.Value.EndsWith("/worksheet", StringComparison.Ordinal) == true).Remove();
-            content.Root!.Elements().Where(e => e.Attribute("PartName")?.Value.StartsWith("/xl/worksheets/", StringComparison.Ordinal) == true).Remove();
+            var sheet = ReadXml(zip, "xl/worksheets/sheet1.xml");
+            var data = sheet.Root!.Element(Main + "sheetData")!;
+            var columns = sheet.Root.Element(Main + "cols")!;
+            var originalColumns = columns.Elements().Select(e => new XElement(e)).ToArray();
             for (var i = 0; i < requests.Count; i++)
             {
                 using var source = new ZipArchive(new MemoryStream(requests[i]), ZipArchiveMode.Read);
-                var sheet = ReadXml(source, "xl/worksheets/sheet1.xml");
+                var sourceSheet = ReadXml(source, "xl/worksheets/sheet1.xml");
                 var strings = ReadXml(source, "xl/sharedStrings.xml").Root!.Elements(Main + "si").ToArray();
-                foreach (var cell in sheet.Descendants(Main + "c").Where(c => c.Attribute("t")?.Value == "s"))
+                foreach (var cell in sourceSheet.Descendants(Main + "c").Where(c => c.Attribute("t")?.Value == "s"))
                 {
                     var index = int.Parse(cell.Element(Main + "v")!.Value, CultureInfo.InvariantCulture);
                     cell.SetAttributeValue("t", "inlineStr");
                     cell.ReplaceNodes(new XElement(Main + "is", strings[index].Elements().Select(e => new XElement(e))));
                 }
-                var id = $"xizi{i + 1}";
-                var filename = $"worksheets/sheet{i + 1}.xml";
-                sheets.Add(new XElement(Main + "sheet", new XAttribute("name", $"Lift {i + 1}"), new XAttribute("sheetId", i + 1), new XAttribute(Rel + "id", id)));
-                relationships.Root.Add(new XElement(PackageRel + "Relationship", new XAttribute("Id", id), new XAttribute("Type", Rel.NamespaceName + "/worksheet"), new XAttribute("Target", filename)));
-                content.Root.Add(new XElement(Content + "Override", new XAttribute("PartName", "/xl/" + filename), new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")));
-                WriteXml(zip, "xl/" + filename, sheet);
+                if (i == 0)
+                {
+                    data.ReplaceNodes(sourceSheet.Root!.Element(Main + "sheetData")!.Elements().Select(e => new XElement(e)));
+                    continue;
+                }
+                foreach (var row in sourceSheet.Descendants(Main + "row").Where(row => (int)row.Attribute("r")! >= 5))
+                {
+                    var target = data.Elements().Single(r => (string?)r.Attribute("r") == (string?)row.Attribute("r"));
+                    if (row.Attribute("ht") is not null)
+                        target.SetAttributeValue("ht", Math.Max((double?)target.Attribute("ht") ?? 15, (double)row.Attribute("ht")!));
+                    foreach (var cell in row.Elements(Main + "c").Where(c => c.Attribute("r")!.Value[0] is 'D' or 'E'))
+                    {
+                        var copy = new XElement(cell);
+                        var address = cell.Attribute("r")!.Value;
+                        copy.SetAttributeValue("r", Column(address[0] - 'A' + 1 + 2 * i) + address[1..]);
+                        target.Add(copy);
+                    }
+                }
+                foreach (var column in new[] { 4, 5 })
+                {
+                    var definition = originalColumns.First(c => (int)c.Attribute("min")! <= column && (int)c.Attribute("max")! >= column);
+                    var copy = new XElement(definition);
+                    copy.SetAttributeValue("min", column + 2 * i);
+                    copy.SetAttributeValue("max", column + 2 * i);
+                    columns.Add(copy);
+                }
             }
+            var lastColumn = Column(3 + 2 * requests.Count);
+            sheet.Root.Element(Main + "dimension")?.SetAttributeValue("ref", $"A1:{lastColumn}83");
+            foreach (var row in data.Elements()) row.Attribute("spans")?.Remove();
+            var properties = sheet.Root.Element(Main + "sheetPr");
+            if (properties is null) { properties = new XElement(Main + "sheetPr"); sheet.Root.AddFirst(properties); }
+            properties.SetElementValue(Main + "pageSetUpPr", null);
+            properties.Add(new XElement(Main + "pageSetUpPr", new XAttribute("fitToPage", 1)));
+            sheet.Root.Add(new XElement(Main + "pageSetup", new XAttribute("orientation", "landscape"),
+                new XAttribute("fitToWidth", 1), new XAttribute("fitToHeight", 0)));
+            var workbook = ReadXml(zip, "xl/workbook.xml");
+            workbook.Root!.Element(Main + "sheets")!.Elements().First().SetAttributeValue("name", "XIZI request");
+            var names = workbook.Root.Element(Main + "definedNames");
+            if (names is null) { names = new XElement(Main + "definedNames"); workbook.Root.Element(Main + "sheets")!.AddAfterSelf(names); }
+            names.Elements().Where(e => (string?)e.Attribute("name") == "_xlnm.Print_Area").Remove();
+            names.Add(new XElement(Main + "definedName", new XAttribute("name", "_xlnm.Print_Area"),
+                new XAttribute("localSheetId", 0), $"'XIZI request'!$A$1:${lastColumn}$83"));
+            WriteXml(zip, "xl/worksheets/sheet1.xml", sheet);
             WriteXml(zip, "xl/workbook.xml", workbook);
-            WriteXml(zip, "xl/_rels/workbook.xml.rels", relationships);
-            WriteXml(zip, "[Content_Types].xml", content);
         }
         return output.ToArray();
     }
 
+    private static string Column(int number)
+    {
+        var result = "";
+        for (; number > 0; number = (number - 1) / 26) result = (char)('A' + (number - 1) % 26) + result;
+        return result;
+    }
+
     private static byte[] BuildPrices(IReadOnlyList<PricingSpecification> specifications, XiziCatalog catalog)
     {
-        var rows = new List<object?[]> { new object?[] { "Lift", "Model", "Quantity", "Unit price, CNY", "Total, CNY", "Container", "Allocation per lift" } };
+        var rows = new List<object?[]> { new object?[] { "Lift", "Model", "Capacity, kg", "Speed, m/s", "Stops", "Quantity", "Containers per lift", "Containers total", "Unit price FOB, CNY", "Total FOB, CNY", "Container type" } };
         var details = new List<object?[]> { new object?[] { "Lift", "Item", "Quantity per lift", "Unit price, CNY", "Amount per lift, CNY", "Status" } };
         decimal total = 0;
+        var quantities = 0;
+        var containers = new Dictionary<string, decimal>();
+        var missingContainers = false;
         foreach (var s in specifications)
         {
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -77,13 +118,22 @@ internal static class XiziProjectExportBuilder
             var rawQuantity = request.SpecificationFields?.GetValueOrDefault("Quantity");
             var quantity = int.TryParse(rawQuantity, out var count) && count > 0 ? count : 1;
             var name = PricingRequestXlsxBuilder.English(s.Name);
-            rows.Add([name, s.Series, quantity, calculation.TotalCny, calculation.TotalCny * quantity, calculation.Container?.Code, calculation.Container?.Label ?? "Requires confirmation"]);
+            var container = catalog.Containers.FirstOrDefault(c => c.Capacity == request.CapacityKg && c.Stops == request.Stops);
+            decimal? fraction = container?.Fraction is { ValueKind: JsonValueKind.Number } number && number.TryGetDecimal(out var allocation) && allocation >= 0 ? allocation : null;
+            if (fraction is not null) containers[container!.Container] = containers.GetValueOrDefault(container.Container) + fraction.Value * quantity;
+            else missingContainers = true;
+            quantities += quantity;
+            rows.Add([name, s.Series, request.CapacityKg, request.Speed, request.Stops, quantity,
+                fraction is null ? "Requires confirmation" : fraction, fraction is null ? "Requires confirmation" : fraction * quantity,
+                calculation.TotalCny, calculation.TotalCny * quantity, container?.Container]);
             total += calculation.TotalCny * quantity;
             foreach (var line in calculation.Lines)
                 details.Add([name, PriceLabel(line, catalog), line.Quantity, line.UnitPriceCny, line.AmountCny, line.Status]);
         }
-        rows.Add(["PROJECT TOTAL", null, null, null, total]);
-        rows.Add(["Container loading charges are included in the lift prices. Allocations are per lift; final shipment consolidation requires confirmation."]);
+        rows.Add(["PROJECT TOTAL", null, null, null, null, quantities, null,
+            missingContainers ? "Requires confirmation" : containers.Values.Sum(), null, total]);
+        foreach (var (type, allocation) in containers) rows.Add([$"TOTAL {type}", null, null, null, null, null, null, allocation]);
+        rows.Add(["Container allocations are multiplied by lift quantity without rounding. Final shipment consolidation requires confirmation."]);
         rows.Add(["Preliminary XIZI calculation. Currency: CNY."]);
         using var output = new MemoryStream();
         using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
@@ -101,10 +151,10 @@ internal static class XiziProjectExportBuilder
             WriteXml(zip, "xl/styles.xml", XDocument.Parse($"""
                 <styleSheet xmlns="{Main}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>
                 """));
-            var summary = Sheet(rows, [24, 26, 12, 22, 22, 18, 38]);
+            var summary = Sheet(rows, [18, 24, 16, 16, 12, 12, 20, 20, 22, 22, 18]);
             summary.Root!.Add(new XElement(Main + "mergeCells", new XAttribute("count", 2),
-                new XElement(Main + "mergeCell", new XAttribute("ref", $"A{rows.Count - 1}:G{rows.Count - 1}")),
-                new XElement(Main + "mergeCell", new XAttribute("ref", $"A{rows.Count}:G{rows.Count}"))));
+                new XElement(Main + "mergeCell", new XAttribute("ref", $"A{rows.Count - 1}:K{rows.Count - 1}")),
+                new XElement(Main + "mergeCell", new XAttribute("ref", $"A{rows.Count}:K{rows.Count}"))));
             WriteXml(zip, "xl/worksheets/sheet1.xml", summary);
             WriteXml(zip, "xl/worksheets/sheet2.xml", Sheet(details, [24, 75, 20, 22, 24, 18]));
         }

@@ -103,6 +103,7 @@ const xiziShaftTypeSelect = document.querySelector("#xiziShaftTypeSelect");
 const xiziOverheadInput = document.querySelector("#xiziOverheadInput");
 const xiziPitInput = document.querySelector("#xiziPitInput");
 const xiziCarWidthInput = document.querySelector("#xiziCarWidthInput");
+const xiziCustomConfigurationInput = document.querySelector("#xiziCustomConfigurationInput");
 const xiziCarDepthInput = document.querySelector("#xiziCarDepthInput");
 const xiziCarHeightSelect = document.querySelector("#xiziCarHeightSelect");
 const xiziCarTypeSelect = document.querySelector("#xiziCarTypeSelect");
@@ -1459,6 +1460,7 @@ function readJsonValue(value) {
 }
 
 function applyConfiguration(configuration) {
+  xiziCustomConfigurationInput.checked = false;
   smecLegacyRequirements = "";
   const template = state.templatesById.get(configuration?.templateId);
   const parameters = template
@@ -1584,6 +1586,7 @@ function setStoredControlValue(control, value) {
 }
 
 function applyStoredSpecificationFields(fields = {}) {
+  xiziCustomConfigurationInput.checked = fields["Custom Configuration"] === "Yes";
   const xiziFields = new Map([
     ["Project Name", xiziProjectNameInput], ["Address", xiziAddressInput],
     ["Contract No", xiziContractInput], ["Unit No", xiziUnitInput],
@@ -1741,6 +1744,7 @@ function collectSpecificationFields() {
       "Overhead": xiziOverheadInput?.value || "",
       "Pit": xiziPitInput?.value || "",
       "Car Width": xiziCarWidthInput?.value || "",
+      "Custom Configuration": xiziCustomConfigurationInput.checked ? "Yes" : "No",
       "Car Depth": xiziCarDepthInput?.value || "",
       "Car Height": xiziCarHeightSelect?.value || "",
       "Car Type": xiziCarTypeSelect?.value || "",
@@ -1923,7 +1927,7 @@ function collectPricingValidationIssues() {
     if (values.TR !== null) values.TR *= 1000;
     const templateId = seriesSelect.value === "UN-Victor MRL" ? "un_victor_mrl" : seriesSelect.value === "UN-Victor MRL(T)" ? "un_victor_mrl_t" : null;
     const xiziTemplate = state.templatesById.get(templateId);
-    if (xiziTemplate && values.AA && values.BB) {
+    if (!xiziCustomConfigurationInput.checked && xiziTemplate && values.AA && values.BB) {
       const overrides = xiziConfigurationInput(xiziTemplate, seriesSelect.value, capacitySelect.value, speedSelect.value,
         { ...values, stops: numberValue(stopsInput) }, xiziCarTypeSelect.value === "Проходная", doorTypeSelect.value, isCwtSafetyGearEnabled());
       if (!overrides) addIssue("xizi_car", "Размеры кабины и грузоподъёмность отсутствуют в подтверждённых конфигурациях модели.", ["AA", "BB"]);
@@ -1935,6 +1939,10 @@ function collectPricingValidationIssues() {
     }
     if (values.AH && values.AA && values.AH <= values.AA) addIssue("shaft_width", "Шахта должна быть шире кабины.", ["AA", "AH"]);
     if (values.BH && values.BB && values.BH <= values.BB) addIssue("shaft_depth", "Шахта должна быть глубже кабины.", ["BB", "BH"]);
+    if (xiziCustomConfigurationInput.checked) {
+      if (values.JJ && values.AA && values.JJ > values.AA) addIssue("door_width", "Ширина дверей не может быть больше ширины кабины.", ["JJ", "AA"]);
+      if (values.HH && values.HL && values.HH >= values.HL) addIssue("door_height", "Высота дверей должна быть меньше высоты кабины.", ["HH", "HL"]);
+    }
     return issues;
   }
   const configuration = getSelectedDrawingConfiguration();

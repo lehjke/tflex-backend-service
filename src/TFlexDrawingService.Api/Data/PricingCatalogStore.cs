@@ -125,6 +125,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         {
             request = NormalizeXiziOptions(request);
             await ValidateXiziConfigurationAsync(request, blockers, cancellationToken);
+            if (GetSpecificationField(request, "Custom Configuration") == "Yes")
+                warnings.Add("Нестандартная конфигурация: размеры и цена требуют подтверждения завода; расчёт не подтверждает возможность изготовления.");
             CalculateXizi(request, lines, warnings, blockers, out container);
         }
         else if (string.Equals(request.Supplier, "SMEC", StringComparison.OrdinalIgnoreCase))
@@ -231,6 +233,15 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         var shaftDepth = GetSpecificationNumber(request, "Shaft Depth");
         if (shaftWidth > 0 && width >= shaftWidth) blockers.Add("Ширина шахты должна быть больше ширины кабины.");
         if (shaftDepth > 0 && depth >= shaftDepth) blockers.Add("Глубина шахты должна быть больше глубины кабины.");
+        if (GetSpecificationField(request, "Custom Configuration") == "Yes")
+        {
+            foreach (var field in new[] { "Car Width", "Car Depth", "Car Height", "Shaft Width", "Shaft Depth", "Overhead", "Pit", "Travel Height", "Door Height" })
+                if (GetSpecificationNumber(request, field) <= 0) blockers.Add($"{field}: укажите значение больше нуля.");
+            if (request.DoorWidthMm > width) blockers.Add("Ширина дверей не может быть больше ширины кабины.");
+            if (GetSpecificationNumber(request, "Door Height") >= GetSpecificationNumber(request, "Car Height"))
+                blockers.Add("Высота дверей должна быть меньше высоты кабины.");
+            return;
+        }
         if (width <= 0 || depth <= 0 || templateCatalog is null) return;
         var templateId = request.Series switch { "UN-Victor MRL" => "un_victor_mrl", "UN-Victor MRL(T)" => "un_victor_mrl_t", _ => null };
         if (templateId is null) return;

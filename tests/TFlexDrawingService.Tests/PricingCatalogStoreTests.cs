@@ -1358,13 +1358,41 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
+    public async Task XiziReview_CustomCabinRequiresExplicitSelectionAndKeepsPhysicalChecks()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "../../templates/templates.json")));
+        var templates = JsonSerializer.Deserialize<TFlexDrawingService.Core.Models.DrawingTemplate[]>(document.RootElement.GetProperty("templates"), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory(), new Support.InMemoryTemplateCatalog(templates));
+        var fields = new Dictionary<string, string>
+        {
+            ["Car Width"] = "1600", ["Car Depth"] = "2100", ["Car Height"] = "2400", ["Door Height"] = "2100",
+            ["Shaft Width"] = "2400", ["Shaft Depth"] = "2800", ["Travel Height"] = "13400", ["Overhead"] = "4600", ["Pit"] = "1500"
+        };
+        var request = CreateXiziSupplierRequest() with { CapacityKg = 1600, DoorWidthMm = 900, SpecificationFields = fields };
+        var standard = await store.CalculateAsync(request);
+        Assert.Contains(standard.Blockers, message => message.Contains("отсутствует"));
+        fields["Custom Configuration"] = "Yes";
+        var custom = await store.CalculateAsync(request);
+        Assert.Empty(custom.Blockers);
+        Assert.Contains(custom.Warnings, message => message.Contains("Нестандартная конфигурация"));
+        fields["Shaft Width"] = "1200";
+        var narrow = await store.CalculateAsync(request);
+        Assert.Contains(narrow.Blockers, message => message.Contains("Ширина шахты"));
+        fields["Car Depth"] = "-2100";
+        var negative = await store.CalculateAsync(request);
+        Assert.Contains(negative.Blockers, message => message.Contains("Car Depth"));
+    }
+
+    [Fact]
     public async Task XiziReview_ProjectExportContainsTwoWorkbooksAndAllLifts()
     {
         var store = CreateSupplierCatalogStore();
-        var request = CreateXiziSupplierRequest() with { Options = ["EFS2", "ILED_7"], SpecificationFields = new Dictionary<string, string>
+        var request = CreateXiziSupplierRequest() with { Stops = 10, Speed = 2.5m, Options = ["EFS2", "ILED_7"], SpecificationFields = new Dictionary<string, string>
         {
             ["Travel Height"] = "27900", ["Car Width"] = "1100", ["Car Depth"] = "2100", ["Car Height"] = "2400",
-            ["Handrail Position"] = "Нет", ["Handrail"] = "U-HR001", ["COP"] = "U-CY100", ["Main LIP"] = "Нет", ["Main LOP"] = "U-ZW1600", ["Quantity"] = "2"
+            ["Handrail Position"] = "Нет", ["Handrail"] = "U-HR001", ["COP"] = "U-CY100", ["Main LIP"] = "Нет", ["Main LOP"] = "U-ZW1600", ["Quantity"] = "3",
+            ["Mirror Wall"] = "Left wall", ["Mirror Height"] = "None"
         } };
         var calculation = await store.CalculateAsync(request);
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -1379,7 +1407,10 @@ public sealed class PricingCatalogStoreTests
         using var workbook = new ZipArchive(requestStream, ZipArchiveMode.Read);
         using var sheetReader = new StreamReader(workbook.GetEntry("xl/worksheets/sheet1.xml")!.Open());
         var sheet = XDocument.Parse(sheetReader.ReadToEnd());
-        Assert.NotNull(workbook.GetEntry("xl/worksheets/sheet2.xml"));
+        Assert.Null(workbook.GetEntry("xl/worksheets/sheet2.xml"));
+        Assert.Equal("L1", ReadCell(sheet, "D5"));
+        Assert.Equal("L2", ReadCell(sheet, "F5"));
+        Assert.Equal("27.9", ReadCell(sheet, "F13"));
         Assert.Equal("Russia, Moscow", ReadCell(sheet, "C4"));
         Assert.Equal("27.9", ReadCell(sheet, "D13"));
         Assert.Equal("By XIZI", ReadCell(sheet, "D17"));
@@ -1392,12 +1423,19 @@ public sealed class PricingCatalogStoreTests
         Assert.Contains("GOST 33984.1-2016", ReadCell(sheet, "D83"));
         Assert.Equal("提升高度（米）", ReadCell(sheet, "B13"));
         Assert.Contains("Fire man function", ReadCell(sheet, "D52"));
+        Assert.Contains("Mirror: Left wall", sheet.ToString());
+        Assert.DoesNotContain("Left wall, None", sheet.ToString());
         using var priceStream = new MemoryStream();
         bundle.GetEntry("XIZI-prices.xlsx")!.Open().CopyTo(priceStream);
         using var prices = new ZipArchive(priceStream, ZipArchiveMode.Read);
         using var priceReader = new StreamReader(prices.GetEntry("xl/worksheets/sheet1.xml")!.Open());
         var priceSheet = XDocument.Parse(priceReader.ReadToEnd());
-        Assert.Equal((calculation.TotalCny * 4).ToString(System.Globalization.CultureInfo.InvariantCulture), ReadCell(priceSheet, "E4"));
+        Assert.Equal("3", ReadCell(priceSheet, "F2"));
+        Assert.Equal("0.5", ReadCell(priceSheet, "G2"));
+        Assert.Equal("1.5", ReadCell(priceSheet, "H2"));
+        Assert.Equal("6", ReadCell(priceSheet, "F4"));
+        Assert.Equal("3.0", ReadCell(priceSheet, "H4"));
+        Assert.Equal((calculation.TotalCny * 6).ToString(System.Globalization.CultureInfo.InvariantCulture), ReadCell(priceSheet, "J4"));
     }
 
     [Fact]

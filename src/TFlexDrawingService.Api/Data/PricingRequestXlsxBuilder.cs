@@ -120,7 +120,8 @@ internal static class PricingRequestXlsxBuilder
         if (!IsNone(Field("Cabin Design"))) demands.Add("Cabin design: " + English(Field("Cabin Design")));
         if (!IsNone(Field("Shaft Type"))) demands.Add("Hoistway structure: " + English(Field("Shaft Type")));
         if (!IsNone(Field("AC"))) demands.Add("Air conditioner: " + English(Field("AC")));
-        if (!IsNone(Field("Mirror Wall"))) demands.Add("Mirror: " + English(Field("Mirror Wall")) + ", " + English(Field("Mirror Height")));
+        if (!IsNone(Field("Mirror Wall"))) demands.Add("Mirror: " + string.Join(", ", new[] { Field("Mirror Wall"), Field("Mirror Height") }.Where(value => !IsNone(value)).Select(English)));
+        if (Field("Custom Configuration") == "Yes") demands.Insert(0, "Non-standard configuration: dimensions and price require factory confirmation.");
         var stops = request?.Stops.ToString(CultureInfo.InvariantCulture) ?? Field("Stops");
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
