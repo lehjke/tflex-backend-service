@@ -471,6 +471,11 @@ html[lang="en"] .brand__logo--en {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
+  :is(body.sidebar-collapsed, html.sidebar-collapsed) .layout:not(.layout--auth) {
+    margin-right: 12px;
+    margin-left: 40px;
+  }
+
   :is(body.sidebar-collapsed, html.sidebar-collapsed) .sidebar {
     gap: 20px;
     padding-right: 10px;
@@ -2714,6 +2719,18 @@ textarea.is-invalid:focus {
   color: #101a38;
   font-size: 16px;
   line-height: 1.25;
+}
+
+.pricing-result__block summary {
+  color: #101a38;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.pricing-result__block[open] .pricing-lines {
+  margin-top: 12px;
 }
 
 .pricing-lines,

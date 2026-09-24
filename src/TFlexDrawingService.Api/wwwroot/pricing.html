@@ -7,7 +7,7 @@
   <title>Базовая цена — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
   <script src="/sidebar-init.js?v=20260924-sidebar-collapse-1"></script>
-  <link rel="stylesheet" href="/styles.css?v=20260924-sidebar-collapsed-spacing-1">
+  <link rel="stylesheet" href="/styles.css?v=20260924-collapsed-layout-spacing-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -789,12 +789,12 @@
                 <small id="rateInfo"></small>
               </div>
 
-              <div class="pricing-result__block">
-                <h2>Состав цены</h2>
+              <details class="pricing-result__block">
+                <summary>Состав цены</summary>
                 <div id="pricingLines" class="pricing-lines">
                   <div class="empty">Заполните параметры, расчет обновится автоматически.</div>
                 </div>
-              </div>
+              </details>
 
               <div id="pricingWarnings" class="pricing-warnings" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></div>
 

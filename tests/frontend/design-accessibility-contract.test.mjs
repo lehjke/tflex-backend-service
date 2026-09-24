@@ -326,7 +326,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260924-sidebar-collapsed-spacing-1/u,
+      /\/styles\.css\?v=20260924-collapsed-layout-spacing-1/u,
       `${pageName} must load the current stylesheet`);
   }
 });
