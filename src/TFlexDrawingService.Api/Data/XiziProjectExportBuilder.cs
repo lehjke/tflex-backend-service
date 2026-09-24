@@ -114,7 +114,9 @@ internal static class XiziProjectExportBuilder
         {
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
             var request = JsonSerializer.Deserialize<PricingCalculationRequest>(s.RequestJson, options)!;
-            var calculation = JsonSerializer.Deserialize<PricingCalculationResult>(s.CalculationJson, options)!;
+            var calculation = string.Equals(s.CalculationJson.Trim(), "null", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : JsonSerializer.Deserialize<PricingCalculationResult>(s.CalculationJson, options);
             var rawQuantity = request.SpecificationFields?.GetValueOrDefault("Quantity");
             var quantity = int.TryParse(rawQuantity, out var count) && count > 0 ? count : 1;
             var name = PricingRequestXlsxBuilder.English(s.Name);
@@ -125,13 +127,13 @@ internal static class XiziProjectExportBuilder
             quantities += quantity;
             rows.Add([name, s.Series, request.CapacityKg, request.Speed, request.Stops, quantity,
                 fraction is null ? "Requires confirmation" : fraction, fraction is null ? "Requires confirmation" : fraction * quantity,
-                calculation.TotalCny, calculation.TotalCny * quantity, container?.Container]);
-            total += calculation.TotalCny * quantity;
-            foreach (var line in calculation.Lines)
+                calculation?.TotalCny, calculation is null ? null : calculation.TotalCny * quantity, container?.Container]);
+            if (calculation is not null) total += calculation.TotalCny * quantity;
+            foreach (var line in calculation?.Lines ?? [])
                 details.Add([name, PriceLabel(line, catalog), line.Quantity, line.UnitPriceCny, line.AmountCny, line.Status]);
         }
         rows.Add(["PROJECT TOTAL", null, null, null, null, quantities, null,
-            missingContainers ? "Requires confirmation" : containers.Values.Sum(), null, total]);
+            missingContainers ? "Requires confirmation" : containers.Values.Sum(), null, specifications.Any(s => string.Equals(s.CalculationJson.Trim(), "null", StringComparison.OrdinalIgnoreCase)) ? "Incomplete: drawing-only units require pricing confirmation." : total]);
         foreach (var (type, allocation) in containers) rows.Add([$"TOTAL {type}", null, null, null, null, null, null, allocation]);
         rows.Add(["Container allocations are multiplied by lift quantity without rounding. Final shipment consolidation requires confirmation."]);
         rows.Add(["Preliminary XIZI calculation. Currency: CNY."]);

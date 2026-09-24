@@ -19,6 +19,8 @@ const ENGLISH_BY_RUSSIAN = new Map([
   ["Навигация", "Navigation"],
   ["Открыть меню", "Open menu"],
   ["Закрыть меню", "Close menu"],
+  ["Свернуть меню", "Collapse menu"],
+  ["Развернуть меню", "Expand menu"],
   ["Открыть личный кабинет", "Open account"],
   ["Поиск", "Search"],
   ["Поиск: Быстрый доступ", "Search: Quick access"],

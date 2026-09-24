@@ -1,6 +1,6 @@
 import { normalizeSmecRequirements, smecRequirementControls, smecRequirementFunctions } from "./smec-requirements.js?v=20260915-1";
 import { isXiziManualOption, xiziArdCode, xiziConfigurationInput } from "./xizi-option-rules.js?v=20260915";
-import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
+import { getLanguage, t } from "./i18n.js?v=20260924-sidebar-collapse-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
   evaluateDrawingConfigurationValidation,
@@ -311,7 +311,7 @@ function escapeHtml(value) {
 function money(value, currency = "CNY") {
   return `${new Intl.NumberFormat(getLanguage() === "en" ? "en-GB" : "ru-RU", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    maximumFractionDigits: currency === "CNY" ? 3 : 2
   }).format(Number(value || 0))} ${currency}`;
 }
 
@@ -1215,12 +1215,27 @@ function renderSavedPricing() {
     return;
   }
 
-  if (items.some(item => item.supplier === "XIZI")) {
-    const link = document.createElement("a");
-    link.className = "secondary";
-    link.href = `/api/projects/${encodeURIComponent(projectId)}/xizi-export`;
-    link.textContent = "XIZI: общий запрос и цены проекта (ZIP)";
-    savedPricingList.append(link);
+  const suppliers = new Set(items.map(item => String(item.supplier || "").toUpperCase()));
+  if (suppliers.has("XIZI") || suppliers.has("SMEC")) {
+    const exports = document.createElement("div");
+    exports.className = "inline-actions";
+    exports.setAttribute("role", "group");
+    exports.setAttribute("aria-label", localized("Выгрузки проекта для завода", "Project factory exports"));
+    if (suppliers.has("XIZI")) {
+      const link = document.createElement("a");
+      link.className = "secondary secondary--compact button-link";
+      link.href = `/api/projects/${encodeURIComponent(projectId)}/xizi-export`;
+      link.textContent = localized("Выгрузить все XIZI для завода (ZIP)", "Export all XIZI units for factory (ZIP)");
+      exports.append(link);
+    }
+    if (suppliers.has("SMEC")) {
+      const link = document.createElement("a");
+      link.className = "secondary secondary--compact button-link";
+      link.href = `/api/projects/${encodeURIComponent(projectId)}/smec-export`;
+      link.textContent = localized("Выгрузить все SMEC для завода (XLSX)", "Export all SMEC units for factory (XLSX)");
+      exports.append(link);
+    }
+    savedPricingList.append(exports);
   }
 
   for (const item of items) {

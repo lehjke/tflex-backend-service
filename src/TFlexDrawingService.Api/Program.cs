@@ -1554,15 +1554,34 @@ var pricingRequestXlsxEndpoint = app.MapGet("/api/pricing-specifications/{specif
 RequirePolicy(pricingRequestXlsxEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 var xiziProjectExportEndpoint = app.MapGet("/api/projects/{projectId}/xizi-export", async (
-    string projectId, ProjectStore projects, PricingCatalogStore pricing, HttpContext context, CancellationToken cancellationToken) =>
+    string projectId, bool? includeDrawings, ProjectStore projects, PricingCatalogStore pricing,
+    ITemplateCatalog templates, IDrawingRequestValidator validator, HttpContext context, CancellationToken cancellationToken) =>
 {
     var ownerScope = GetProjectOwnerScope(context.User, securityOptions);
     var project = await projects.GetProjectAsync(projectId, ownerScope, cancellationToken);
     if (project is null) return Results.NotFound();
     var all = await projects.ListPricingSpecificationsAsync(projectId, ownerScope, cancellationToken);
+    if (includeDrawings == true)
+    {
+        try
+        {
+            all = await ProjectFactoryExportSpecifications.BuildAsync(
+                await projects.ListConfigurationsAsync(projectId, ownerScope, cancellationToken),
+                all, templates, validator, "XIZI", cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["project"] = [exception.Message] });
+        }
+    }
     var specifications = new List<PricingSpecification>();
     foreach (var saved in all.Where(s => s.Supplier.Equals("XIZI", StringComparison.OrdinalIgnoreCase)))
     {
+        if (saved.Status == "drawing-only")
+        {
+            specifications.Add(saved);
+            continue;
+        }
         var request = JsonSerializer.Deserialize<PricingCalculationRequest>(saved.RequestJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         if (request is null) return Results.Problem("Saved XIZI request cannot be read.");
         var calculation = await pricing.CalculateAsync(request with { TargetCurrency = "CNY" }, cancellationToken);
@@ -1575,6 +1594,45 @@ var xiziProjectExportEndpoint = app.MapGet("/api/projects/{projectId}/xizi-expor
     return Results.File(pricing.BuildXiziProjectExport(specifications, project), "application/zip", $"{SanitizeFileName(project.Name)}-XIZI.zip");
 });
 RequirePolicy(xiziProjectExportEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var smecProjectExportEndpoint = app.MapGet("/api/projects/{projectId}/smec-export", async (
+    string projectId, ProjectStore projects, PricingCatalogStore pricing,
+    ITemplateCatalog templates, IDrawingRequestValidator validator, HttpContext context, CancellationToken cancellationToken) =>
+{
+    var ownerScope = GetProjectOwnerScope(context.User, securityOptions);
+    var project = await projects.GetProjectAsync(projectId, ownerScope, cancellationToken);
+    if (project is null) return Results.NotFound();
+    IReadOnlyList<PricingSpecification> all;
+    try
+    {
+        all = await ProjectFactoryExportSpecifications.BuildAsync(
+            await projects.ListConfigurationsAsync(projectId, ownerScope, cancellationToken),
+            await projects.ListPricingSpecificationsAsync(projectId, ownerScope, cancellationToken),
+            templates, validator, "SMEC", cancellationToken);
+    }
+    catch (Exception exception) when (exception is InvalidDataException or JsonException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["project"] = [exception.Message] });
+    }
+    var specifications = new List<PricingSpecification>();
+    foreach (var saved in all)
+    {
+        if (saved.Status == "drawing-only")
+        {
+            specifications.Add(saved);
+            continue;
+        }
+        var request = JsonSerializer.Deserialize<PricingCalculationRequest>(saved.RequestJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (request is null) return Results.Problem("Saved SMEC request cannot be read.");
+        var calculation = await pricing.CalculateAsync(request with { TargetCurrency = "CNY" }, cancellationToken);
+        if (calculation.Blockers.Count > 0) return Results.ValidationProblem(new Dictionary<string, string[]> { [saved.Name] = calculation.Blockers.ToArray() });
+        specifications.Add(saved with { CalculationJson = JsonSerializer.Serialize(calculation, new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+    }
+    if (specifications.Count == 0) return Results.NotFound();
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.File(pricing.BuildSmecProjectExport(specifications, project), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{SanitizeFileName(project.Name)}-SMEC.xlsx");
+});
+RequirePolicy(smecProjectExportEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 app.Map("/api/{**path}", () => Results.Problem(
     statusCode: StatusCodes.Status404NotFound,

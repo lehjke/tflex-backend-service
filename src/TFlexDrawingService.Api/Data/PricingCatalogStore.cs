@@ -48,7 +48,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             catalog.Xizi.Doors.Select(item => item.Manufacturer).Where(HasText).Select(item => item!).Distinct().Order().ToArray(),
             catalog.Xizi.Doors.Select(item => item.DoorType).Where(HasText).Select(item => item!).Distinct().Order().ToArray(),
             catalog.Xizi.Decorations.Where(item => HasText(item.Code)).ToArray(),
-            catalog.Xizi.Options.Where(item => HasText(item.Code)).Take(80).ToArray(),
+            catalog.Xizi.Options.Where(item => HasText(item.Code))
+                .Concat(catalog.Xizi.LocalRequirements.Where(item => EqualsText(item.Category, "comfort") && HasText(item.Code)))
+                .Take(80).ToArray(),
             catalog.Xizi.VisualItems.Where(item => HasText(item.Code)).ToArray(),
             catalog.Xizi.ChoiceGroups,
             catalog.Smec.BasePrices.Select(item => item.Capacity).Distinct().Order().ToArray(),
@@ -154,6 +156,10 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             }
         }
 
+        var roundedTotalCny = string.Equals(request.Supplier, "XIZI", StringComparison.OrdinalIgnoreCase)
+            ? Math.Round(totalCny, 3, MidpointRounding.AwayFromZero)
+            : Math.Round(totalCny, 2);
+
         return new PricingCalculationResult(
             status,
             request.Supplier,
@@ -162,8 +168,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             rate.TargetCurrency,
             rate.Rate,
             rate.Source,
-            Math.Round(totalCny, 2),
-            Math.Round(totalCny * rate.Rate, 2),
+            roundedTotalCny,
+            rate.TargetCurrency == "CNY" ? roundedTotalCny : Math.Round(totalCny * rate.Rate, 2),
             lines,
             warnings,
             blockers,
@@ -193,6 +199,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
     public byte[] BuildXiziProjectExport(IReadOnlyList<PricingSpecification> specifications, UserProject? project)
         => XiziProjectExportBuilder.Build(this, specifications, project);
+
+    public byte[] BuildSmecProjectExport(IReadOnlyList<PricingSpecification> specifications, UserProject? project)
+        => SmecProjectExportBuilder.Build(Path.Combine(environment.ContentRootPath, "Data", "Templates", "smec-project-template.xlsx"), specifications, project);
 
     public byte[] BuildPricingRequestXlsx(PricingSpecification specification, UserProject? project)
     {
@@ -373,7 +382,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             AddXiziDoorHeightSurcharge(
                 request,
                 carDoorFinish,
-                1 + (isThrough ? 1 : 0),
+                1,
                 "Высота дверей кабины",
                 lines);
             AddXiziDoorHeightSurcharge(request, mainDoorFinish, 1, "Высота двери основного этажа", lines);
@@ -394,7 +403,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
         foreach (var option in request.Options ?? [])
         {
-            if (catalog.LocalRequirements.Any(entry => EqualsText(entry.Code, option))) continue;
+            if (catalog.LocalRequirements.Any(entry => EqualsText(entry.Code, option)
+                && EqualsText(entry.Category, "russia"))) continue;
             if (option == "CWT_SIDE" && request.Series != "UN-Victor R")
             {
                 blockers.Add("CWT at side доступна только для UN-Victor R с машинным помещением.");
@@ -462,6 +472,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> warnings,
         List<string> blockers)
     {
+        if (string.Equals(request.Series, "UN-Victor MRL(T)", StringComparison.Ordinal))
+        {
+            // The reference calculator has no extra-rise lookup for this literal model name.
+            return;
+        }
+
         var travelHeight = GetSpecificationNumber(request, "Travel Height");
         var standardHeight = Math.Max(0, request.Stops - 1) * 3100m;
         if (travelHeight <= standardHeight)
@@ -799,18 +815,14 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
 
         foreach (var entry in catalog.LocalRequirements)
         {
+            if (!EqualsText(entry.Category, "russia")) continue;
             var normalized = NormalizeCode(entry.Code);
-            if ((normalized == "RUSHYDRAULICBUFFERCAPACITY" || ContainsAny(entry.Code, "Hydraulic buffer"))
-                && !(request.CapacityKg > 1600 && request.Speed > 1m))
-            {
-                continue;
-            }
 
             if (normalized == "RUSPITINSPECTIONBOX" || ContainsAny(entry.Code, "Pit Inspection"))
             {
                 if (TryReadDecimal(entry.Price, out var basePrice) && basePrice != -1m)
                 {
-                    var amount = basePrice + 24m * (travel + overhead + 16m);
+                    var amount = Math.Round(basePrice + 24m * (travel + overhead + 16m), 2, MidpointRounding.AwayFromZero);
                     AddReadyLine(lines, "lmr-pit-inspection", $"LMR: {entry.Code.Trim()}", amount, amount);
                 }
                 else
@@ -825,7 +837,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 if (TryReadDecimal(entry.Price, out var unitPrice) && unitPrice != -1m)
                 {
                     var quantity = Math.Max(0m, buildingHeight / 4m - buildingHeight / 7m);
-                    AddReadyLine(lines, "lmr-hoistway-lighting", $"LMR: {entry.Code}", unitPrice, unitPrice * quantity);
+                    AddReadyLine(lines, "lmr-hoistway-lighting", $"LMR: {entry.Code}", unitPrice,
+                        Math.Round(unitPrice * quantity, 2, MidpointRounding.AwayFromZero));
                 }
                 else
                 {
@@ -846,7 +859,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         List<string> warnings,
         List<string> blockers)
     {
-        var entry = catalog.Options.FirstOrDefault(item => EqualsText(item.Code, option));
+        var entry = catalog.Options.Concat(catalog.LocalRequirements).FirstOrDefault(item => EqualsText(item.Code, option));
         if (entry is null)
         {
             AddCatalogValue(lines, warnings, blockers, "option", $"Опция {option}", null, true);
@@ -931,7 +944,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             "HAD" => basePrice + 101m * request.DoorCount,
             _ => null
         };
-        amount = calculatedAmount ?? 0m;
+        amount = calculatedAmount.HasValue
+            ? Math.Round(calculatedAmount.Value, 2, MidpointRounding.AwayFromZero)
+            : 0m;
         return calculatedAmount.HasValue;
     }
 

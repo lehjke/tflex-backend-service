@@ -1,5 +1,5 @@
-import { getLanguage, t } from "./i18n.js?v=20260826-design-fixes-1";
-import { openGeneratedFilePreview } from "./file-preview.js?v=20260915-pdf-zoom-1";
+import { getLanguage, t } from "./i18n.js?v=20260924-sidebar-collapse-1";
+import { openGeneratedFilePreview } from "./file-preview.js?v=20260924-sidebar-collapse-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
   formatProjectAssetTitle,
@@ -92,6 +92,14 @@ const saveTemplateAnalysisDraft = document.querySelector("#saveTemplateAnalysisD
 const publishTemplateAnalysis = document.querySelector("#publishTemplateAnalysis");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
 const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
+const XIZI_TEMPLATE_IDS = new Set(["un_victor_mrl", "un_victor_mrl_t"]);
+const SMEC_TEMPLATE_IDS = new Set([
+  "lehy_l_pro_320_1050",
+  "lehy_l_pro_1050_2500",
+  "k_ii_type",
+  "lehy_pro_side_cwt",
+  "lehy_pro_rear_cwt"
+]);
 
 function isAuthenticated() {
   return Boolean(state.currentUser?.isAuthenticated);
@@ -791,6 +799,7 @@ function renderAccountData() {
 }
 
 function renderProjects() {
+  const openProjectId = projectsList.querySelector("dialog[open]")?.dataset.projectId;
   projectsList.replaceChildren();
 
   if (state.projects.length === 0) {
@@ -820,21 +829,35 @@ function renderProjects() {
     const configurations = state.configurationsByProjectId.get(project.id) || [];
     const pricingSpecifications = state.pricingByProjectId.get(project.id) || [];
     const assetGroups = groupProjectAssets(configurations, pricingSpecifications, getConfigurationName);
-    const details = document.createElement("details");
-    details.className = "project-item";
-    const summary = document.createElement("summary");
-    summary.className = "project-summary";
-    summary.innerHTML = `
+    const card = document.createElement("article");
+    card.className = "project-item";
+    const openButton = document.createElement("button");
+    openButton.className = "project-summary";
+    openButton.type = "button";
+    openButton.dataset.action = "open-project";
+    openButton.dataset.projectId = project.id;
+    openButton.innerHTML = `
       <span class="project-summary__name"><span class="project-summary__title">${escapeHtml(project.name)}</span>${renderProjectOwnerBadge(project)}</span>
       <span class="project-summary__counts">
         <span>${assetGroups.length} конф.</span>
       </span>
     `;
-    details.append(summary);
+    card.append(openButton);
 
+    const dialog = document.createElement("dialog");
+    dialog.className = "project-dialog";
+    dialog.dataset.projectId = project.id;
+    const titleId = `project-dialog-title-${String(project.id).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    dialog.setAttribute("aria-labelledby", titleId);
+    const heading = document.createElement("div");
+    heading.className = "project-dialog__header";
+    heading.innerHTML = `<h2 id="${titleId}" tabindex="-1">${escapeHtml(project.name)}</h2><button class="secondary project-dialog__close" type="button" data-action="close-project" aria-label="Закрыть">×</button>`;
+    dialog.append(heading);
     const body = document.createElement("div");
     body.className = "project-item__body";
     body.append(createProjectEditForm(project));
+    const factoryExports = renderProjectFactoryExports(project);
+    if (factoryExports) body.append(factoryExports);
 
     if (configurations.length === 0 && pricingSpecifications.length === 0) {
       const empty = document.createElement("div");
@@ -845,8 +868,20 @@ function renderProjects() {
       body.append(createConfigurationsTable(project, assetGroups));
     }
 
-    details.append(body);
-    projectsList.append(details);
+    dialog.append(body);
+    dialog.addEventListener("click", event => {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener("close", () => {
+      projectsList.querySelector(`button[data-action="open-project"][data-project-id="${CSS.escape(project.id)}"]`)
+        ?.focus({ preventScroll: true });
+    });
+    card.append(dialog);
+    projectsList.append(card);
+    if (project.id === openProjectId) {
+      dialog.showModal();
+      heading.querySelector("h2")?.focus({ preventScroll: true });
+    }
   }
 }
 
@@ -962,6 +997,34 @@ function renderProjectAssetPrices(group) {
   return `<span class="configuration-price-stack">${group.pricingSpecifications
     .map(specification => `<strong class="configuration-price">${escapeHtml(getPricingAmountLabel(specification))}</strong>`)
     .join("")}</span>`;
+}
+
+function getProjectFactorySuppliers(project) {
+  const suppliers = new Set((state.pricingByProjectId.get(project.id) || [])
+    .map(specification => String(specification.supplier || "").toUpperCase()));
+  for (const configuration of state.configurationsByProjectId.get(project.id) || []) {
+    const templateId = String(configuration.templateId || "").toLowerCase();
+    if (XIZI_TEMPLATE_IDS.has(templateId)) suppliers.add("XIZI");
+    if (SMEC_TEMPLATE_IDS.has(templateId)) suppliers.add("SMEC");
+  }
+  return suppliers;
+}
+
+function renderProjectFactoryExports(project) {
+  const suppliers = getProjectFactorySuppliers(project);
+  if (suppliers.size === 0) return null;
+
+  const exports = document.createElement("div");
+  exports.className = "inline-actions";
+  exports.setAttribute("role", "group");
+  exports.setAttribute("aria-label", localized("Выгрузки проекта для завода", "Project factory exports"));
+  if (suppliers.has("XIZI")) {
+    exports.insertAdjacentHTML("beforeend", `<a class="secondary secondary--compact button-link" href="/api/projects/${encodeURIComponent(project.id)}/xizi-export?includeDrawings=true">${localized("Выгрузить все XIZI для завода (ZIP)", "Export all XIZI units for factory (ZIP)")}</a>`);
+  }
+  if (suppliers.has("SMEC")) {
+    exports.insertAdjacentHTML("beforeend", `<a class="secondary secondary--compact button-link" href="/api/projects/${encodeURIComponent(project.id)}/smec-export">${localized("Выгрузить все SMEC для завода (XLSX)", "Export all SMEC units for factory (XLSX)")}</a>`);
+  }
+  return exports;
 }
 
 function renderProjectAssetActions(project, group) {
@@ -1928,7 +1991,13 @@ projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
-  if (button.dataset.action === "delete-pricing") {
+  if (button.dataset.action === "open-project") {
+    const dialog = projectsList.querySelector(`dialog[data-project-id="${CSS.escape(button.dataset.projectId)}"]`);
+    dialog?.showModal();
+    dialog?.querySelector("h2")?.focus({ preventScroll: true });
+  } else if (button.dataset.action === "close-project") {
+    button.closest("dialog")?.close();
+  } else if (button.dataset.action === "delete-pricing") {
     deletePricingSpecification(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "delete") {
     deleteConfiguration(button.dataset.projectId, button.dataset.id);

@@ -1,4 +1,4 @@
-import { mountLanguageSwitch, t } from "./i18n.js?v=20260826-design-fixes-1";
+import { mountLanguageSwitch, t } from "./i18n.js?v=20260924-sidebar-collapse-1";
 
 const menuButton = document.querySelector(".sidebar__menu-toggle");
 const sidebarMenu = document.querySelector("#sidebarMenu");
@@ -11,10 +11,46 @@ const sourceUserName = document.querySelector("#currentUserName");
 const sourceLogoutButton = document.querySelector("#logoutButton");
 const sourceSearchLabel = document.querySelector(".global-search");
 const workspace = document.querySelector(".workspace");
+const sidebarStorageKey = "tflex-sidebar-collapsed";
 let searchPlaceholder = null;
 let mobileSearchSlot = null;
 let workspacePreviousAriaHidden = null;
 let workspaceWasSuppressed = false;
+let isSidebarCollapsed = false;
+
+try {
+  isSidebarCollapsed = window.localStorage.getItem(sidebarStorageKey) === "true";
+} catch {
+  // Storage can be unavailable in private or restricted browsing contexts.
+}
+
+function syncSidebarLabels() {
+  for (const link of sidebarMenu?.querySelectorAll(":scope > a[href]") || []) {
+    const label = link.querySelector("span")?.textContent?.trim();
+    if (!label) continue;
+    link.setAttribute("aria-label", label);
+    link.title = label;
+  }
+  const helpLink = sidebarHelp?.querySelector(".sidebar__help-button");
+  if (helpLink) {
+    helpLink.setAttribute("aria-label", t("Запросить"));
+    helpLink.title = t("Запросить");
+  }
+}
+
+function setDesktopSidebarState(collapsed) {
+  isSidebarCollapsed = collapsed;
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
+  menuButton?.removeAttribute("aria-expanded");
+  menuButton?.setAttribute("aria-pressed", collapsed ? "true" : "false");
+  menuButton?.setAttribute("aria-label", t(collapsed ? "Развернуть меню" : "Свернуть меню"));
+  try {
+    window.localStorage.setItem(sidebarStorageKey, String(collapsed));
+  } catch {
+    // Keep the toggle usable when storage is unavailable.
+  }
+}
 
 function setupSidebarControls() {
   if (!sidebarMenu || sidebarMenu.querySelector(".sidebar__controls")) return;
@@ -107,8 +143,11 @@ function setMobileMenuState(isOpen) {
   const wasOpen = document.body.classList.contains("mobile-menu-open");
   const suppressWorkspace = mobileMenuQuery.matches && isOpen;
   document.body.classList.toggle("mobile-menu-open", isOpen);
-  menuButton?.setAttribute("aria-expanded", isOpen ? "true" : "false");
-  menuButton?.setAttribute("aria-label", isOpen ? t("Закрыть меню") : t("Открыть меню"));
+  if (mobileMenuQuery.matches) {
+    menuButton?.removeAttribute("aria-pressed");
+    menuButton?.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    menuButton?.setAttribute("aria-label", isOpen ? t("Закрыть меню") : t("Открыть меню"));
+  }
   if (sidebarMenu) {
     sidebarMenu.setAttribute("aria-hidden", mobileMenuQuery.matches && !isOpen ? "true" : "false");
     if ("inert" in sidebarMenu) {
@@ -169,7 +208,13 @@ function toggleMobileMenu() {
   setMobileMenuState(!document.body.classList.contains("mobile-menu-open"));
 }
 
-menuButton?.addEventListener("click", toggleMobileMenu);
+menuButton?.addEventListener("click", () => {
+  if (mobileMenuQuery.matches) {
+    toggleMobileMenu();
+  } else {
+    setDesktopSidebarState(!isSidebarCollapsed);
+  }
+});
 menuBackdrop?.addEventListener("click", closeMobileMenu);
 
 document.addEventListener("keydown", event => {
@@ -213,6 +258,7 @@ for (const link of sidebarMenu?.querySelectorAll("a") || []) {
 mobileMenuQuery.addEventListener("change", event => {
   if (!event.matches) {
     closeMobileMenu();
+    setDesktopSidebarState(isSidebarCollapsed);
   } else {
     setMobileMenuState(false);
   }
@@ -220,9 +266,19 @@ mobileMenuQuery.addEventListener("change", event => {
 mobileSearchQuery.addEventListener("change", syncSearchPlacement);
 
 window.addEventListener("tflex:languagechange", () => {
+  syncSidebarLabels();
+  if (!mobileMenuQuery.matches) {
+    menuButton?.setAttribute("aria-label", t(isSidebarCollapsed ? "Развернуть меню" : "Свернуть меню"));
+  }
   setMobileMenuState(document.body.classList.contains("mobile-menu-open"));
 });
 
+syncSidebarLabels();
 setupSidebarControls();
 syncSearchPlacement();
-setMobileMenuState(false);
+document.body.classList.add("sidebar-ready");
+if (mobileMenuQuery.matches) {
+  setMobileMenuState(false);
+} else {
+  setDesktopSidebarState(isSidebarCollapsed);
+}

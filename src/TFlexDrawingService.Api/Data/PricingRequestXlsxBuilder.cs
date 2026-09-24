@@ -112,6 +112,7 @@ internal static class PricingRequestXlsxBuilder
         }
 
         var options = request?.Options?.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray() ?? [];
+        var drawingOnly = string.Equals(specification.Status, "drawing-only", StringComparison.OrdinalIgnoreCase);
         var model = specification.Series.Replace("UN-Victior", "UN-Victor", StringComparison.Ordinal);
         var through = Field("Car Type") is "Проходная" or "Through" or "through";
         var descriptions = (optionCatalog ?? []).ToDictionary(e => e.Code, e => e.Description ?? e.Code, StringComparer.OrdinalIgnoreCase);
@@ -139,7 +140,7 @@ internal static class PricingRequestXlsxBuilder
             ["rise_1"] = decimal.TryParse(Field("Travel Height", "TR").Replace(",", "."), NumberStyles.Number, CultureInfo.InvariantCulture, out var rise) ? (rise / 1000m).ToString("0.###", CultureInfo.InvariantCulture) : "",
             ["controlSystem_1"] = Field("Control System", "Operation"),
             ["cwtLocation_1"] = Field("CWT Location"),
-            ["emergencyExit_1"] = options.Contains("EFS2") || request?.Efs == true ? "Yes" : "No",
+            ["emergencyExit_1"] = drawingOnly ? "" : options.Contains("EFS2") || request?.Efs == true ? "Yes" : "No",
             ["hoistwayLighting_1"] = "By XIZI",
             ["carInside_1"] = JoinDimensions(Field("Car Width", "AA"), Field("Car Depth", "BB")),
             ["crh_1"] = Field("Car Height", "HL"),
@@ -162,7 +163,7 @@ internal static class PricingRequestXlsxBuilder
             ["ceiling_1"] = Field("Ceiling"),
             ["floor_1"] = FirstText(Field("Floor"), Field("Floor Pattern")),
             ["mirror_1"] = FirstText(Field("Mirror Height"), Field("Mirror")),
-            ["handrail_1"] = IsNone(Field("Handrail Position")) ? "None" : Field("Handrail") + " / " + English(Field("Handrail Position")),
+            ["handrail_1"] = drawingOnly && IsNone(Field("Handrail Position")) ? "" : IsNone(Field("Handrail Position")) ? "None" : Field("Handrail") + " / " + English(Field("Handrail Position")),
             ["copType_1"] = Field("COP"),
             ["copFaceplate_1"] = Field("Car Wall Material", "Wall"),
             ["copButtons_1"] = Field("COP Button"),

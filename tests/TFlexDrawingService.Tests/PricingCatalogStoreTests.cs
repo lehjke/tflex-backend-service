@@ -57,9 +57,9 @@ public sealed class PricingCatalogStoreTests
                   { "category": "Options", "code": "CCTV", "price": 10, "prices": [10] }
                 ],
                 "localRequirements": [
-                  { "category": "LMR", "code": "Pit unlock device", "price": 77 },
-                  { "category": "LMR", "code": "Pit Inspection box with European standard", "price": 1050 },
-                  { "category": "LMR", "code": "Hoistway lighting by Factory", "price": 15 }
+                  { "category": "russia", "code": "Pit unlock device", "price": 77 },
+                  { "category": "russia", "code": "Pit Inspection box with European standard", "price": 1050 },
+                  { "category": "russia", "code": "Hoistway lighting by Factory", "price": 15 }
                 ]
               },
               "smec": {}
@@ -125,7 +125,7 @@ public sealed class PricingCatalogStoreTests
                     null));
 
             Assert.Equal("warning", result.Status);
-            Assert.Equal(118124.34m, result.TotalCny);
+            Assert.Equal(118004.34m, result.TotalCny);
             Assert.Contains(result.Lines, line => line.Label == "Вторая дверь проходной кабины" && line.AmountCny == 2000m);
             Assert.Contains(result.Lines, line => line.Label == "Превышение расчетной высоты, 1 м" && line.AmountCny == 500m);
             Assert.Contains(result.Lines, line => line.Label == "Кнопки COP: iBR34M(BL)" && line.AmountCny == 140m);
@@ -1111,6 +1111,65 @@ public sealed class PricingCatalogStoreTests
             && decimal.Round(line.AmountCny!.Value, 2) == 31.34m);
     }
 
+    [Fact]
+    public async Task XiziSupplierCatalog_MatchesLegacyHtmlL2ReferencePrice()
+    {
+        var request = CreateXiziSupplierRequest();
+        var fields = new Dictionary<string, string>(request.SpecificationFields!)
+        {
+            ["Travel Height"] = "27900", ["Overhead"] = "4500", ["Pit"] = "1500",
+            ["Car Width"] = "1100", ["Car Depth"] = "2100", ["Car Height"] = "2300",
+            ["Car Type"] = "Непроходная", ["Door Height"] = "2300", ["Fire Rating"] = "EI60",
+            ["Car Door Material"] = "Painted Steel", ["Main Shaft Door"] = "Painted Steel",
+            ["Other Shaft Door"] = "Painted Steel", ["Cabin Design"] = "U-CR126-BASE",
+            ["Car Wall Material"] = "aisi-443", ["Ceiling"] = "U-CL029", ["Floor"] = "U-FL012",
+            ["Mirror Wall"] = "Нет", ["Mirror Height"] = "Нет", ["Handrail Position"] = "Одна сторона",
+            ["Handrail"] = "U-HR001", ["COP"] = "U-CY100", ["COP Button"] = "iBR34M(BL)",
+            ["Main LOP"] = "U-ZW1600", ["Other LOP"] = "U-ZW1600", ["Main LIP"] = "Нет", ["Other LIP"] = "Нет"
+        };
+        var result = await CreateSupplierCatalogStore().CalculateAsync(request with
+        {
+            Speed = 2.5m, Stops = 10, DoorWidthMm = 900, DoorCount = 10, DoorType = "CO",
+            DoorManufacturer = "OPTIMAX", Options = ["48_MONTHS", "60_MONTHS", "EARTHQUAKE_EMERGENCY_RETURN", "TC", "CTL", "DHB"],
+            SpecificationFields = fields
+        });
+
+        Assert.Equal(168404.13m, result.TotalCny);
+        Assert.Equal(100370.65m, Assert.Single(result.Lines, line => line.Code == "base").AmountCny);
+        Assert.Equal(0m, Assert.Single(result.Lines, line => line.Label == "Дверь кабины").AmountCny);
+        Assert.Equal(1536m, Assert.Single(result.Lines, line => line.Label == "Дверь шахты, основной этаж").AmountCny);
+
+        var throughFields = new Dictionary<string, string>(fields) { ["Car Type"] = "Проходная" };
+        var throughResult = await CreateSupplierCatalogStore().CalculateAsync(request with
+        {
+            Speed = 2.5m, Stops = 10, DoorWidthMm = 900, DoorCount = 10, DoorType = "CO",
+            DoorManufacturer = "OPTIMAX", Options = ["48_MONTHS", "60_MONTHS", "EARTHQUAKE_EMERGENCY_RETURN", "TC", "CTL", "DHB"],
+            SpecificationFields = throughFields
+        });
+
+        Assert.Equal(171740.13m, throughResult.TotalCny);
+        Assert.Equal(200m, Assert.Single(throughResult.Lines, line => line.Label == "Высота дверей кабины").AmountCny);
+
+        var g3Result = await CreateSupplierCatalogStore().CalculateAsync(request with
+        {
+            Series = "G3", CapacityKg = 1000, Speed = 1.75m, Stops = 10,
+            DoorWidthMm = 900, DoorCount = 10, DoorType = "CO", DoorManufacturer = "OPTIMAX",
+            Options = ["48_MONTHS", "60_MONTHS", "EARTHQUAKE_EMERGENCY_RETURN", "TC", "CTL", "DHB"],
+            SpecificationFields = fields
+        });
+        Assert.Equal(147696.944m, g3Result.TotalCny);
+        Assert.Equal(g3Result.TotalCny, g3Result.TotalConverted);
+
+        var mrlTResult = await CreateSupplierCatalogStore().CalculateAsync(request with
+        {
+            Series = "UN-Victor MRL(T)", Speed = 1.75m, Stops = 10,
+            DoorWidthMm = 900, DoorCount = 10, DoorType = "CO", DoorManufacturer = "OPTIMAX",
+            Options = ["48_MONTHS", "60_MONTHS", "EARTHQUAKE_EMERGENCY_RETURN", "TC", "CTL", "DHB"],
+            SpecificationFields = new Dictionary<string, string>(fields) { ["Travel Height"] = "32000" }
+        });
+        Assert.Equal(141998.583m, mrlTResult.TotalCny);
+    }
+
     [Theory]
     [InlineData("E30")]
     [InlineData("EI60")]
@@ -1140,26 +1199,13 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal("blocked", Assert.Single(result.Lines, line => line.Code == "BUTTON").Status);
     }
 
-    [Theory]
-    [InlineData(1600, 1.75, false)]
-    [InlineData(2000, 1.0, false)]
-    [InlineData(2000, 1.75, true)]
-    public async Task XiziSupplierCatalog_ChargesHydraulicBufferOnlyWhenApplicable(int capacity, double speed, bool expected)
+    [Fact]
+    public async Task XiziSupplierCatalog_AutomaticallyIncludesRussianHydraulicBufferRequirement()
     {
-        var result = await CreateSupplierCatalogStore().CalculateAsync(CreateXiziSupplierRequest() with
-        {
-            Series = "UN-Victor R", CapacityKg = capacity, Speed = (decimal)speed
-        });
+        var result = await CreateSupplierCatalogStore().CalculateAsync(CreateXiziSupplierRequest());
 
         var buffer = result.Lines.Where(line => line.Label.Contains("RUS_HYDRAULIC_BUFFER_CAPACITY")).ToArray();
-        if (expected)
-        {
-            Assert.Equal(350m, Assert.Single(buffer).AmountCny);
-        }
-        else
-        {
-            Assert.Empty(buffer);
-        }
+        Assert.Equal(350m, Assert.Single(buffer).AmountCny);
     }
 
     [Theory]
@@ -1219,14 +1265,15 @@ public sealed class PricingCatalogStoreTests
         var store = CreateSupplierCatalogStore();
         var result = await store.CalculateAsync(CreateXiziSupplierRequest() with
         {
-            Series = "UN-Victor MRL(T)", Options = ["CWTSAFETY"]
+            Series = "UN-Victor MRL(T)", Options = ["CWTSAFETY"],
+            SpecificationFields = new Dictionary<string, string> { ["Travel Height"] = "16500" }
         });
 
         Assert.Empty(result.Blockers);
         Assert.Single(result.Warnings);
         Assert.Equal(65704.325m, Assert.Single(result.Lines, line => line.Code == "base").AmountCny);
-        Assert.Equal(450m, Assert.Single(result.Lines, line => line.Code == "extra-rise").AmountCny);
-        Assert.Equal(4578m, Assert.Single(result.Lines, line => line.Label == "Опция CWTSAFETY").AmountCny);
+        Assert.DoesNotContain(result.Lines, line => line.Code == "extra-rise");
+        Assert.Equal(4566m, Assert.Single(result.Lines, line => line.Label == "Опция CWTSAFETY").AmountCny);
         Assert.Equal(1612m, store.Catalog.Xizi.Decorations.Single(entry => entry.Category == "Mirror" && entry.Code == "FULL").Price!.Value.GetDecimal());
     }
 
@@ -1305,15 +1352,20 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
-    public async Task XiziSupplierCatalog_ZeroLightingAndIncludedVoiceAreNotMissingOrDuplicated()
+    public async Task XiziSupplierCatalog_VoiceIsOptionalAndSelectableFromSummary()
     {
-        var result = await CreateSupplierCatalogStore().CalculateAsync(CreateXiziSupplierRequest() with
+        var store = CreateSupplierCatalogStore();
+        var resultWithoutVoice = await store.CalculateAsync(CreateXiziSupplierRequest() with { SpecificationFields = new Dictionary<string, string>() });
+        Assert.DoesNotContain(resultWithoutVoice.Lines, line => line.Label.Contains("VOICE_ANNOUNCEMENT_IN"));
+
+        var result = await store.CalculateAsync(CreateXiziSupplierRequest() with
         {
             SpecificationFields = new Dictionary<string, string>(), Options = ["VOICE_ANNOUNCEMENT_IN"]
         });
 
         Assert.Equal(0m, Assert.Single(result.Lines, line => line.Code == "lmr-hoistway-lighting").AmountCny);
         Assert.Equal(240m, Assert.Single(result.Lines, line => line.Label.Contains("VOICE_ANNOUNCEMENT_IN")).AmountCny);
+        Assert.Contains(store.GetSummary().XiziOptions, option => option.Code == "VOICE_ANNOUNCEMENT_IN");
         Assert.Single(result.Warnings);
     }
 
@@ -1512,6 +1564,64 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(migrated.Options, repeated.Options);
         var xizi = request with { Supplier = "XIZI" };
         Assert.Same(xizi, SmecRequirements.Normalize(xizi));
+    }
+
+    [Fact]
+    public void SmecProjectExport_UsesSavedSpecsWithoutTemplateSamples()
+    {
+        var store = CreateSupplierCatalogStore();
+        var request = CreateXiziSupplierRequest() with { Supplier = "SMEC", Series = "LEHY-L-Pro", CapacityKg = 1050, Speed = 1m, Stops = 8,
+            SpecificationFields = new Dictionary<string, string> { ["Quantity"] = "2", ["Lift No"] = "Bad:/Name", ["AH"] = "2400", ["COP 2"] = "COP-2", ["Wheelchair COP 2"] = "WC-COP-2", ["Fire Rating"] = "EI60", ["Glass Door"] = "ZPKG-050", ["Kickplate Finish"] = "SUS-M", ["Handrail Finish"] = "SUS-H", ["Button Finish"] = "ZDT-003", ["COP Faceplate"] = "SUS-M", ["Main LOP Faceplate"] = "SUS-H", ["Main Landing Material"] = "MAIN-MAT", ["Other Landing Material"] = "OTHER-MAT", ["Main Sill Bracket"] = "MAIN-SILL", ["Other Sill Bracket"] = "OTHER-SILL", ["Main Landing Door"] = "MAIN-DOOR", ["Other Landing Door"] = "OTHER-DOOR", ["Main Auxiliary LOP"] = "MAIN-AUX", ["Other Auxiliary LOP"] = "OTHER-AUX", ["Other Auxiliary LOP Button"] = "OTHER-AUX-BTN", ["Hall Indicator"] = "IND", ["Hall Lantern"] = "LANTERN", ["Other Requirements"] = "Confirm colour" } };
+        var calculation = new PricingCalculationResult("ready", "SMEC", request.Series, "CNY", "CNY", 1m, "test", 123m, 123m, [], [], [], null, DateTimeOffset.UtcNow);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var first = new PricingSpecification("s1", "p1", null, "Bad:/Name", "SMEC", request.Series, "ready", 123m, "CNY", 123m, JsonSerializer.Serialize(request, json), JsonSerializer.Serialize(calculation, json), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var second = first with { Id = "s2", Name = "Bad:/Name", CalculationJson = "" };
+        var bytes = store.BuildSmecProjectExport([first, second], new UserProject("p1", "admin", "New project", "Address", "", "", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        using var workbook = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        Assert.Null(workbook.GetEntry("xl/sharedStrings.xml"));
+        Assert.Equal(4, workbook.Entries.Count(entry => entry.FullName.StartsWith("xl/worksheets/sheet", StringComparison.Ordinal)));
+        var sheet = XDocument.Load(workbook.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        Assert.Equal("2", ReadCell(sheet, "C7"));
+        Assert.Equal("2400", ReadCell(sheet, "D12"));
+        Assert.Equal("COP-2", ReadCell(sheet, "F20"));
+        Assert.Equal("Wheelchair COP2", ReadCell(sheet, "E21"));
+        Assert.Equal("WC-COP-2", ReadCell(sheet, "F21"));
+        Assert.Equal("MAIN-MAT", ReadCell(sheet, "E23"));
+        Assert.Equal("OTHER-MAT", ReadCell(sheet, "H23"));
+        Assert.Equal("MAIN-SILL", ReadCell(sheet, "C24"));
+        Assert.Equal("OTHER-DOOR", ReadCell(sheet, "F25"));
+        Assert.Equal("MAIN-AUX", ReadCell(sheet, "C27"));
+        Assert.Equal("OTHER-AUX-BTN", ReadCell(sheet, "H27"));
+        Assert.Equal("123", ReadCell(sheet, "I37"));
+        Assert.DoesNotContain("Версаль", sheet.ToString());
+        var worksheetParts = sheet.Root!.Elements().Select(element => element.Name.LocalName).ToArray();
+        Assert.True(Array.IndexOf(worksheetParts, "pageMargins") < Array.IndexOf(worksheetParts, "pageSetup"));
+        Assert.True(Array.IndexOf(worksheetParts, "pageSetup") < Array.IndexOf(worksheetParts, "headerFooter"));
+        Assert.DoesNotContain(sheet.Descendants(), element => element.Name.LocalName == "conditionalFormatting");
+        var workbookXml = XDocument.Load(workbook.GetEntry("xl/workbook.xml")!.Open()).ToString();
+        Assert.DoesNotContain("Bad:/Name", workbookXml);
+        Assert.Contains("Requirements", workbookXml);
+        Assert.Contains("$A$1:$I$37", workbookXml);
+        Assert.Throws<ArgumentException>(() => store.BuildSmecProjectExport([], null));
+        Assert.Throws<ArgumentException>(() => store.BuildSmecProjectExport([first with { Supplier = "XIZI" }], null));
+    }
+
+    [Fact]
+    public void SmecProjectExport_EscalatorPreservesEveryParameterWithoutElevatorPlaceholders()
+    {
+        var request = CreateXiziSupplierRequest() with { Supplier = "SMEC", Series = "K-II", CapacityKg = 0, Speed = 0, Stops = 0, DoorWidthMm = 0, DoorCount = 0,
+            SpecificationFields = new Dictionary<string, string> { ["Quantity"] = "2", ["Other Requirements"] = string.Join("\n", Enumerable.Range(1, 50).Select(index => $"Parameter {index}: value {index}")) } };
+        var specification = new PricingSpecification("s1", "p1", null, "Escalators", "SMEC", "K-II", "drawing-only", 0, "CNY", 0, JsonSerializer.Serialize(request), "null", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        using var workbook = new ZipArchive(new MemoryStream(CreateSupplierCatalogStore().BuildSmecProjectExport([specification], null)), ZipArchiveMode.Read);
+        var sheet = XDocument.Load(workbook.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        Assert.Equal("ESCALATOR SPECIFICATION", ReadCell(sheet, "A1"));
+        Assert.Equal("2", ReadCell(sheet, "C7"));
+        Assert.Contains("Parameter 50: value 50", sheet.ToString());
+        Assert.DoesNotContain("Car Inter Size", sheet.ToString());
+        Assert.DoesNotContain("0kg", sheet.ToString());
+        var quotation = XDocument.Load(workbook.GetEntry("xl/worksheets/sheet2.xml")!.Open());
+        Assert.Equal("", ReadCell(quotation, "C2"));
+        Assert.Equal("", ReadCell(quotation, "G2"));
     }
 
     private static PricingCatalogStore CreateSupplierCatalogStore()

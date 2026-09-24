@@ -11,6 +11,19 @@ function readWebSource(fileName) {
   return fs.readFileSync(path.join(webRoot, fileName), "utf8");
 }
 
+test("account project cards open accessible viewport dialogs", () => {
+  const source = readWebSource("account.js");
+  const styles = readWebSource("styles.css");
+
+  assert.match(source, /dialog\.className = "project-dialog"/u);
+  assert.match(source, /dialog\.setAttribute\("aria-labelledby", titleId\)/u);
+  assert.match(source, /dialog\.showModal\(\)/u);
+  assert.match(source, /event\.target === dialog\) dialog\.close\(\)/u);
+  assert.match(source, /button\.closest\("dialog"\)\?\.close\(\)/u);
+  assert.match(source, /\[data-action="open-project"\][\s\S]*?\.focus\(\{ preventScroll: true \}\)/u);
+  assert.match(styles, /\.project-dialog \{[\s\S]*?max-height: calc\(100dvh - 32px\);[\s\S]*?overflow: auto;/u);
+});
+
 test("home cards keep link navigation and restore interruptible disclosure motion", () => {
   const html = readWebSource("index.html");
   const source = readWebSource("home.js");
@@ -122,7 +135,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260830-readable-validation-errors-1/u);
+  assert.match(html, /\/app\.js\?v=20260924-sidebar-collapse-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -210,6 +223,26 @@ test("account protects destructive and duplicate generation actions and recovers
   assert.doesNotMatch(source, /details\.open = configurations\.length/u);
 });
 
+test("project factory exports cover saved pricing and known drawing suppliers once", () => {
+  const account = readWebSource("account.js");
+  const pricing = readWebSource("pricing.js");
+  const styles = readWebSource("styles.css");
+
+  assert.match(account, /const XIZI_TEMPLATE_IDS = new Set\(\["un_victor_mrl", "un_victor_mrl_t"\]\);/u);
+  assert.match(account, /const SMEC_TEMPLATE_IDS = new Set\(\[/u);
+  assert.match(account, /"k_ii_type"/u);
+  assert.doesNotMatch(account.match(/const SMEC_TEMPLATE_IDS = new Set\(\[([\s\S]*?)\]\);/u)[1], /razvertki_lehy/u);
+  assert.match(account, /function getProjectFactorySuppliers\(project\)/u);
+  assert.match(account, /if \(XIZI_TEMPLATE_IDS\.has\(templateId\)\) suppliers\.add\("XIZI"\);/u);
+  assert.match(account, /if \(SMEC_TEMPLATE_IDS\.has\(templateId\)\) suppliers\.add\("SMEC"\);/u);
+  assert.match(account, /xizi-export\?includeDrawings=true/u);
+  assert.match(account, /\/smec-export/u);
+  assert.match(pricing, /link\.href = `\/api\/projects\/\$\{encodeURIComponent\(projectId\)\}\/xizi-export`;/u);
+  assert.match(pricing, /link\.href = `\/api\/projects\/\$\{encodeURIComponent\(projectId\)\}\/smec-export`;/u);
+  assert.match(pricing, /link\.className = "secondary secondary--compact button-link";/u);
+  assert.match(styles, /\.button-link \{[\s\S]*?display: inline-flex;[\s\S]*?border: 1px solid var\(--line\);/u);
+});
+
 test("responsive and user-preference contracts cover the audited breakpoints", () => {
   const source = readWebSource("styles.css");
   const shell = readWebSource("shell.js");
@@ -251,12 +284,12 @@ test("all frontend modules share one i18n instance", () => {
       .map(match => ({ fileName, version: match[1] })));
 
   assert.equal(imports.length, moduleNames.length);
-  assert.deepEqual([...new Set(imports.map(item => item.version))], ["20260826-design-fixes-1"]);
+  assert.deepEqual([...new Set(imports.map(item => item.version))], ["20260924-sidebar-collapse-1"]);
 
   for (const fileName of ["app.js", "account.js"]) {
     assert.match(
       readWebSource(fileName),
-      /\.\/file-preview\.js\?v=20260915-pdf-zoom-1/u,
+      /\.\/file-preview\.js\?v=20260924-sidebar-collapse-1/u,
       `${fileName} must invalidate the file-preview module graph`);
   }
 
@@ -293,7 +326,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260829-saved-pricing-cards-1/u,
+      /\/styles\.css\?v=20260924-sidebar-collapsed-spacing-1/u,
       `${pageName} must load the current stylesheet`);
   }
 });

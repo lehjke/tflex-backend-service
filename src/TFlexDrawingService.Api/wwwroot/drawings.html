@@ -6,7 +6,8 @@
   <meta name="theme-color" content="#101A38">
   <title>Создание чертежей — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=20260829-saved-pricing-cards-1">
+  <script src="/sidebar-init.js?v=20260924-sidebar-collapse-1"></script>
+  <link rel="stylesheet" href="/styles.css?v=20260924-sidebar-collapsed-spacing-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -17,22 +18,20 @@
         <img class="brand__logo--en" src="/assets/mlt-logo-en-wide-dark-bg.svg?v=20260728-mlt-logo-2" width="300" height="118" alt="MLT ELEVATORS">
       </a>
       <button class="sidebar__menu-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebarMenu" aria-expanded="false">
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
       </button>
       <div class="sidebar__subtitle">Engineering Center</div>
 
       <nav id="sidebarMenu" class="sidebar__nav" aria-label="Разделы">
-        <a class="is-active" href="/drawings" aria-current="page"><span>Создание чертежей</span><small>Drawings</small></a>
-        <a href="/account"><span>Личный кабинет</span><small>Account</small></a>
-        <a href="/pricing"><span>Базовая цена</span><small>Pricing</small></a>
+        <a class="is-active" href="/drawings" aria-current="page"><svg class="sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.75h8l4 4v12.5H6z M14 3.75v4h4 M9 12h6 M9 15.5h6"/></svg><span>Создание чертежей</span><small>Drawings</small></a>
+        <a href="/pricing"><svg class="sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="3.5" width="13" height="17" rx="2"/><rect x="8" y="6" width="8" height="4" rx="0.75"/><path d="M8.5 13h1 M12 13h1 M15.5 13h.01 M8.5 16.5h1 M12 16.5h1 M15.5 16.5h.01"/></svg><span>Базовая цена</span><small>Pricing</small></a>
+        <a href="/account"><svg class="sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z M5.5 20a6.5 6.5 0 0 1 13 0z"/></svg><span>Личный кабинет</span><small>Account</small></a>
       </nav>
 
       <div class="sidebar__help">
         <strong>Поддержка инженера</strong>
         <span>Нужна проверка нестандартной шахты?</span>
-        <a class="sidebar__help-button" href="mailto:DLtechsupport@meteor.ru">Запросить</a>
+        <a class="sidebar__help-button" href="mailto:lpd@mlt.pro"><svg class="sidebar__help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4.5 7 7.5 6 7.5-6"/></svg><span>Запросить</span></a>
       </div>
     </aside>
     <button class="mobile-menu-backdrop" type="button" aria-label="Закрыть меню" hidden></button>
@@ -322,7 +321,7 @@
     </div>
   </div>
 
-  <script type="module" src="/shell.js?v=20260826-design-fixes-1"></script>
-  <script type="module" src="/app.js?v=20260830-readable-validation-errors-1"></script>
+  <script type="module" src="/shell.js?v=20260924-sidebar-collapse-2"></script>
+  <script type="module" src="/app.js?v=20260924-sidebar-collapse-1"></script>
 </body>
 </html>
