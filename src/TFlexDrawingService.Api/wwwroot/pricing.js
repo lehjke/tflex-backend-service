@@ -1084,6 +1084,9 @@ function renderXiziControls() {
   fillSelect(xiziMirrorWallSelect, ["Нет", "Задняя стена", "Левая стена", "Правая стена"], "Нет");
   fillSelect(xiziMirrorHeightSelect, getXiziChoices("Mirror Height", ["Половина высоты", "Во всю высоту"]), "Половина высоты");
   fillSelect(xiziHandrailPositionSelect, ["Нет", ...getXiziChoices("Handrail Position", ["1 х Задняя стена"])], "Нет");
+  for (const option of xiziHandrailPositionSelect.options) {
+    option.textContent = option.value === "Нет" ? "0" : option.value.match(/^\d+/)?.[0] || option.value;
+  }
   fillSelect(xiziHandrailSelect, getXiziChoices("Handrail"), "U-HR001");
   fillSelect(xiziCopSelect, getXiziChoices("COP"), "U-CY100");
   fillSelect(xiziCopButtonSelect, getXiziChoices("COP Button"), "iBR34M(BL)");
