@@ -44,6 +44,10 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             catalog.Smec.Series.Where(series => !ExcludedSmecSeries.Contains(series)).ToArray(),
             catalog.Xizi.BasePrices.Select(item => item.Capacity).Distinct().Order().ToArray(),
             catalog.Xizi.BasePrices.Select(item => item.Speed).Distinct().Order().ToArray(),
+            catalog.Xizi.BasePrices
+                .Where(item => TryReadDecimal(item.Price, out var price) && price >= 0)
+                .Select(item => new XiziPricedModel(item.Series, item.Capacity, item.Speed))
+                .Distinct().ToArray(),
             catalog.Xizi.Doors.Select(item => item.Width).Distinct().Order().ToArray(),
             catalog.Xizi.Doors.Select(item => item.Manufacturer).Where(HasText).Select(item => item!).Distinct().Order().ToArray(),
             catalog.Xizi.Doors.Select(item => item.DoorType).Where(HasText).Select(item => item!).Distinct().Order().ToArray(),
@@ -270,7 +274,34 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         }
         var template = await templateCatalog.GetByIdOrCodeAsync(templateId, cancellationToken);
         if (template is null) { blockers.Add("Не найден шаблон для проверки геометрии XIZI."); return; }
-        // Price-only requests still verify that the selected template exists.
+        if (templateId is "un_victor_mrl" or "un_victor_mrl_t")
+        {
+            if (!template.LookupTables.TryGetValue("Speed", out var speedRows))
+            {
+                blockers.Add($"В шаблоне {template.Name} отсутствует таблица допустимых скоростей.");
+            }
+            else if (!speedRows.Any(row => row.TryGetValue("DL", out var load)
+                && row.TryGetValue("V", out var speed)
+                && int.TryParse(load.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var capacity)
+                && decimal.TryParse(speed.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var velocity)
+                && capacity == request.CapacityKg && velocity == request.Speed))
+            {
+                blockers.Add($"Грузоподъёмность {request.CapacityKg} кг и скорость {request.Speed} м/с недоступны в шаблоне {template.Name}.");
+            }
+
+            var missingGeometry = new[]
+            {
+                "Car Width", "Car Depth", "Car Height", "Shaft Width", "Shaft Depth",
+                "Overhead", "Pit", "Travel Height", "Door Height"
+            }.Where(field => GetSpecificationNumber(request, field) <= 0).ToList();
+            if (request.DoorWidthMm <= 0) missingGeometry.Add("Door Width");
+            if (missingGeometry.Count > 0)
+            {
+                blockers.Add($"Для проверки {template.Name} перед расчётом цены укажите геометрию: {string.Join(", ", missingGeometry)}.");
+                return;
+            }
+        }
+        // Other XIZI series retain the existing price-only estimation path.
         if (width <= 0 || depth <= 0) return;
         var counterweightLocation = GetSpecificationField(request, "Counterweight Location");
         var carTypeParameter = template.Parameters.FirstOrDefault(parameter => parameter.Name == "$CARTYPE_MENU");
@@ -295,6 +326,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             ["NBENT_MENU"] = IsXiziThroughCar(GetSpecificationField(request, "Car Type")) ? 2 : 1,
             ["$DOOR_MENU"] = request.DoorType == "CO" ? "CLD" : "TLD"
         };
+        if (templateId == "un_victor_mrl") parameters["NBENT"] = parameters["NBENT_MENU"];
         var cwtSafety = (request.Options ?? []).Contains("CWTSAFETY") ? "WSAFE" : "WOSAF";
         foreach (var name in new[] { "$CWT", "$CWT_MENU" })
             if (template.Parameters.Any(parameter => parameter.Name == name)) parameters[name] = cwtSafety;
@@ -2056,6 +2088,7 @@ public sealed record PricingCatalogSummary(
     IReadOnlyList<string> SmecSeries,
     IReadOnlyList<int> XiziCapacities,
     IReadOnlyList<decimal> XiziSpeeds,
+    IReadOnlyList<XiziPricedModel> XiziPricedModels,
     IReadOnlyList<int> DoorWidths,
     IReadOnlyList<string> DoorManufacturers,
     IReadOnlyList<string> DoorTypes,
@@ -2073,6 +2106,8 @@ public sealed record PricingCatalogSummary(
     IReadOnlyList<SmecSpecField> SmecSpecFields,
     IReadOnlyList<SpecificationChoiceGroup> SmecChoiceGroups,
     IReadOnlyList<SmecFloorPatternGroup> SmecFloorPatterns);
+
+public sealed record XiziPricedModel(string Series, int Capacity, decimal Speed);
 
 public sealed record PricingCalculationRequest(
     string Supplier,

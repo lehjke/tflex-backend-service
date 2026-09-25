@@ -42363,8 +42363,7 @@
             "1100",
             "1200",
             "1300"
-          ],
-          "levelExpression": "$CARTYPE==\"13X\"?-1:1"
+          ]
         },
         {
           "name": "OPH",
@@ -42584,11 +42583,14 @@
           "type": "integer",
           "isRequired": false,
           "defaultValue": 2,
-          "expression": "2",
+          "expression": "NBENT",
+          "submitWhenDisabled": true,
           "allowedValues": [
             "1",
             "2"
-          ]
+          ],
+          "isReadOnly": true,
+          "levelExpression": "-1"
         },
         {
           "name": "$PHONE",
@@ -44373,7 +44375,7 @@
             "$CARTYPE_MENU",
             "$DOOR_MENU",
             "OP",
-            "NBENT_MENU"
+            "NBENT"
           ]
         },
         {
@@ -44385,7 +44387,7 @@
             "$DOOR_MENU",
             "OP",
             "DOP",
-            "NBENT_MENU"
+            "NBENT"
           ]
         },
         {
@@ -46374,8 +46376,7 @@
             "1000",
             "1100",
             "1200"
-          ],
-          "levelExpression": "$CARTYPE==\"13X\"?-1:1"
+          ]
         },
         {
           "name": "OPH",
@@ -50265,6 +50266,7 @@
           "isRequired": false,
           "defaultValue": 1,
           "expression": "1",
+          "submitWhenDisabled": true,
           "allowedValues": [
             "1",
             "2"

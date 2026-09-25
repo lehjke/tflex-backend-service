@@ -1,5 +1,5 @@
 import { normalizeSmecRequirements, smecRequirementControls, smecRequirementFunctions } from "./smec-requirements.js?v=20260915-1";
-import { isXiziManualOption, xiziArdCode, xiziConfigurationInput, xiziModelForTemplateId, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } from "./xizi-option-rules.js?v=20260925-2";
+import { isXiziManualOption, xiziArdCode, xiziConfigurationInput, xiziModelForTemplateId, xiziNativeBaseChoices, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } from "./xizi-option-rules.js?v=20260925-3";
 import { getLanguage, t } from "./i18n.js?v=20260924-sidebar-collapse-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -569,6 +569,7 @@ function syncXiziPricingFields() {
   if ([...seriesSelect.options].some(option => option.value === mappedSeries)) {
     seriesSelect.value = mappedSeries;
   }
+  renderXiziNativeBaseChoices();
   renderXiziTemplateRestrictionControls();
 
   const opening = String(xiziDoorOpeningSelect?.value || "").toLowerCase();
@@ -594,6 +595,52 @@ function syncXiziPricingFields() {
   doorManufacturerSelect.disabled = true;
   xiziElevatorTypeSelect.value = mappedSeries === "UN-Victor R" ? "С МП" : "Без МП";
   renderOptions();
+}
+
+function renderXiziNativeBaseChoices() {
+  if (supplierSelect.value !== "XIZI") return;
+  const template = xiziTemplateForSeries(seriesSelect.value, state.templatesById);
+  const native = ["un_victor_mrl", "un_victor_mrl_t"].includes(template?.id);
+  const priced = (state.catalog?.xiziPricedModels || []).filter(item => item.series === seriesSelect.value);
+  const hasPrice = (capacity, speed) => priced.some(item => Number(item.capacity) === Number(capacity)
+    && Number(item.speed) === Number(speed));
+  const nativeChoices = native ? xiziNativeBaseChoices(template, capacitySelect.value) : null;
+  const capacities = native
+    ? nativeChoices.capacities.filter(capacity => xiziNativeBaseChoices(template, capacity).speeds.some(speed => hasPrice(capacity, speed)))
+    : state.catalog?.xiziCapacities || [];
+  if (!capacities.length) return;
+  const selectedCapacity = capacitySelect.value;
+  if (native) {
+    fillAvailableSelect(capacitySelect, capacities, selectedCapacity);
+  } else if (capacities.join("|") !== [...capacitySelect.options].map(option => option.value).join("|")) {
+    fillSelect(capacitySelect, capacities, selectedCapacity);
+  }
+  const speeds = native
+    ? xiziNativeBaseChoices(template, capacitySelect.value).speeds.filter(speed => hasPrice(capacitySelect.value, speed))
+    : state.catalog?.xiziSpeeds || [];
+  const selectedSpeed = speedSelect.value;
+  if (native) {
+    fillAvailableSelect(speedSelect, speeds, selectedSpeed);
+  } else if (speeds.join("|") !== [...speedSelect.options].map(option => option.value).join("|")) {
+    fillSelect(speedSelect, speeds, selectedSpeed);
+  }
+}
+
+function fillAvailableSelect(select, values, selectedValue) {
+  const available = values.map(String);
+  const unavailable = selectedValue && !available.includes(selectedValue) ? selectedValue : null;
+  const expected = unavailable ? [...available, unavailable] : available;
+  const current = [...select.options];
+  if (expected.join("|") === current.map(option => option.value).join("|")
+    && current.every((option, index) => option.disabled === (unavailable !== null && index === expected.length - 1))) return;
+  fillSelect(select, values, selectedValue);
+  if (unavailable) {
+    const option = new Option(`${unavailable} (${localized("недоступно", "unavailable")})`, unavailable);
+    option.disabled = true;
+    select.add(option);
+    select.value = unavailable;
+    syncVisualSelect(select);
+  }
 }
 
 function renderXiziTemplateRestrictionControls() {
@@ -1183,7 +1230,10 @@ async function loadTemplates() {
   const templates = await sessionRequests.readJson(response);
   if (templates === sessionRequests.stalePayload) return;
   state.templatesById = new Map(templates.map(template => [template.id, template]));
-  if (state.catalog) renderXiziTemplateRestrictionControls();
+  if (state.catalog) {
+    renderXiziNativeBaseChoices();
+    renderXiziTemplateRestrictionControls();
+  }
 }
 
 async function loadProjects() {
@@ -2428,6 +2478,7 @@ xiziCarDepthInput?.addEventListener("input", syncXiziPricingFields);
 decorationSelect.addEventListener("change", renderDecorationPreview);
 [seriesSelect, capacitySelect, speedSelect].forEach(select => {
   select?.addEventListener("change", updateSmecPower);
+  select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderXiziNativeBaseChoices(); });
   select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderXiziTemplateRestrictionControls(); });
   select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderOptions(); });
 });

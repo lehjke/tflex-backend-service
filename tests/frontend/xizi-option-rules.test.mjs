@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../../src/TFlexDrawingService.Api/wwwroot/xizi-option-rules.js', import.meta.url), 'utf8');
-const { xiziArdCode, isXiziManualOption, xiziConfigurationInput, xiziModelForTemplateId, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const { xiziArdCode, isXiziManualOption, xiziConfigurationInput, xiziModelForTemplateId, xiziNativeBaseChoices, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const { templates } = JSON.parse(await readFile(new URL('../../templates/templates.json', import.meta.url)));
 test('Only the matching ARD is selectable at load and speed boundaries', () => {
   for (const [q, v, expected] of [[1000, 1, 'ARD_15'], [1050, 2, 'ARD_22'], [1050, 2.5, 'ARD_37'], [1275, 1.75, 'ARD_22_2'], [1275, 2, 'ARD_37_2']]) {
@@ -36,6 +36,15 @@ test('Series resolves only to its explicit XIZI template', () => {
   assert.equal(xiziModelForTemplateId('un_victor_mrl_t'), 'MRL-T');
   assert.equal(xiziModelForTemplateId('unknown'), null);
 });
+test('MRL base choices follow each native Speed table and its cabin menu', () => {
+  const mrl = templates.find(item => item.id === 'un_victor_mrl');
+  const mrlT = templates.find(item => item.id === 'un_victor_mrl_t');
+  assert.deepEqual(xiziNativeBaseChoices(mrl, 450).speeds, [1, 1.75]);
+  assert.deepEqual(xiziNativeBaseChoices(mrl, 1000).speeds, [1, 1.75, 2, 2.5]);
+  assert.deepEqual(xiziNativeBaseChoices(mrlT, 1000).speeds, [1, 1.75]);
+  assert.ok(xiziNativeBaseChoices(mrlT, 1000).capacities.includes(1050));
+  assert.ok(!xiziNativeBaseChoices(mrl, 1000).capacities.includes(550));
+});
 test('MRL rules map form dimensions and retain rules for template defaults', () => {
   for (const id of ['un_victor_mrl', 'un_victor_mrl_t']) {
     const template = templates.find(item => item.id === id);
@@ -62,6 +71,7 @@ test('MRL rules map form dimensions and retain rules for template defaults', () 
     assert.equal(input.OPH, 2000);
     assert.equal(input.$CWT, 'WOSAF');
     assert.equal(input.$CWT_MENU, undefined);
+    assert.equal(input.NBENT, id === 'un_victor_mrl' ? 1 : undefined);
   }
 });
 test('Pricing form saves, restores and validates the exact template restriction fields', async () => {
@@ -78,7 +88,7 @@ test('Pricing form saves, restores and validates the exact template restriction 
   assert.match(pricing, /const counterweight = get\("\$CWTLOC_MENU", "\$CWTLOC"\)/u);
   assert.match(pricing, /\["HL6", xiziDoorAxisOffsetInput, "HL6"\]/u);
   assert.match(pricing, /\["DOP", xiziDoorOffsetSelect, "DOP"\]/u);
-  assert.match(pricing, /if \(state\.catalog\) renderXiziTemplateRestrictionControls\(\)/u);
+  assert.match(pricing, /if \(state\.catalog\) \{\s*renderXiziNativeBaseChoices\(\);\s*renderXiziTemplateRestrictionControls\(\);/u);
 });
 test('Absent technical parameters are not forced into a different XIZI model', () => {
   const mrl = templates.find(item => item.id === 'un_victor_mrl');

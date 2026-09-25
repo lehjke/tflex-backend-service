@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -77,6 +78,8 @@ public sealed class PricingCatalogStoreTests
             var store = new PricingCatalogStore(
                 new TestWebHostEnvironment(root),
                 new TestHttpClientFactory());
+            Assert.Contains(store.GetSummary().XiziPricedModels,
+                model => model.Series == "UN-Victor MRL" && model.Capacity == 1000 && model.Speed == 1m);
             var result = await store.CalculateAsync(
                 new PricingCalculationRequest(
                     "XIZI",
@@ -1105,7 +1108,7 @@ public sealed class PricingCatalogStoreTests
             DoorManufacturer = "FERMATOR"
         });
 
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
         Assert.Single(result.Warnings); // Only the preliminary XIZI calculation notice.
         Assert.All(result.Lines, line => Assert.Equal("ready", line.Status));
         // Supplied HTML project prices. Dimensions: R=13.4, K=4.6, S=1.5 m.
@@ -1193,7 +1196,7 @@ public sealed class PricingCatalogStoreTests
         });
 
         Assert.Equal(2708m, Assert.Single(result.Lines, line => line.Label == "Дверь кабины").AmountCny);
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1276,7 +1279,7 @@ public sealed class PricingCatalogStoreTests
             SpecificationFields = new Dictionary<string, string> { ["Travel Height"] = "16500" }
         });
 
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
         Assert.Single(result.Warnings);
         Assert.Equal(65704.325m, Assert.Single(result.Lines, line => line.Code == "base").AmountCny);
         Assert.DoesNotContain(result.Lines, line => line.Code == "extra-rise");
@@ -1297,7 +1300,7 @@ public sealed class PricingCatalogStoreTests
         var result = await CreateSupplierCatalogStore().CalculateAsync(CreateXiziSupplierRequest() with { Options = [option] });
 
         Assert.Equal((decimal)expected, Assert.Single(result.Lines, line => line.Label == $"Опция {option}").AmountCny);
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
         Assert.Single(result.Warnings);
     }
 
@@ -1315,7 +1318,7 @@ public sealed class PricingCatalogStoreTests
         var result = await CreateSupplierCatalogStore().CalculateAsync(request with { SpecificationFields = fields });
 
         Assert.Equal((decimal)expected, Assert.Single(result.Lines, line => line.Code == "CARDESIGN").AmountCny);
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
         Assert.Single(result.Warnings);
     }
 
@@ -1353,7 +1356,7 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(1000m, Assert.Single(result.Lines, line => line.Label == "LIP, основной этаж: U-HW100(7_TFT)").AmountCny);
         Assert.Equal(2640m, Assert.Single(result.Lines, line => line.Label == "LIP, остальные этажи: U-HW200(7_LED)").AmountCny);
         Assert.Equal(200m, Assert.Single(result.Lines, line => line.Label == "LMR: Ladder").AmountCny);
-        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
         Assert.Equal("ready", Assert.Single(result.Lines, line => line.Code == "BUTTON").Status);
         Assert.Equal(700m, Assert.Single(result.Lines, line => line.Code == "BUTTON").AmountCny);
     }
@@ -1374,6 +1377,15 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(240m, Assert.Single(result.Lines, line => line.Label.Contains("VOICE_ANNOUNCEMENT_IN")).AmountCny);
         Assert.Contains(store.GetSummary().XiziOptions, option => option.Code == "VOICE_ANNOUNCEMENT_IN");
         Assert.Single(result.Warnings);
+    }
+
+    [Fact]
+    public void XiziSupplierCatalog_SummaryExcludesUnpricedMrlTModel()
+    {
+        var models = CreateSupplierCatalogStore().GetSummary().XiziPricedModels;
+
+        Assert.Contains(models, model => model.Series == "UN-Victor MRL(T)" && model.Capacity == 1000 && model.Speed == 1m);
+        Assert.DoesNotContain(models, model => model.Series == "UN-Victor MRL(T)" && model.Capacity == 1050);
     }
 
     [Theory]
@@ -1528,6 +1540,46 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Theory]
+    [InlineData("UN-Victor MRL", 3850, 1400, 1835)]
+    [InlineData("UN-Victor MRL(T)", 3600, 1450, 1800)]
+    public async Task XiziReview_AcceptsCompleteNativeConfiguration(string series, int overhead, int pit, int doorAxis)
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["Car Width"] = "2100", ["Car Depth"] = "1100", ["Car Height"] = "2200",
+            ["Shaft Width"] = "2750", ["Shaft Depth"] = "1750", ["Door Height"] = "2000",
+            ["Travel Height"] = "13400", ["Overhead"] = overhead.ToString(CultureInfo.InvariantCulture),
+            ["Pit"] = pit.ToString(CultureInfo.InvariantCulture),
+            ["Door Axis Offset"] = doorAxis.ToString(CultureInfo.InvariantCulture),
+            ["Door Offset"] = "350", ["Counterweight Location"] = "13",
+            ["Main Shaft Door"] = "AISI443", ["Other Shaft Door"] = "AISI443", ["Fire Rating"] = "EI60"
+        };
+        var request = CreateXiziSupplierRequest() with
+        {
+            Series = series, DoorWidthMm = 1200, DoorType = "2S",
+            DoorManufacturer = "FERMATOR", SpecificationFields = fields
+        };
+
+        var result = await CreateSupplierCatalogStore().CalculateAsync(request);
+        Assert.Empty(result.Blockers);
+        Assert.Contains(result.Lines, line => line.Code == "base" && line.AmountCny > 0);
+    }
+
+    [Theory]
+    [InlineData("UN-Victor MRL", 450, 2)]
+    [InlineData("UN-Victor MRL(T)", 1000, 2)]
+    public async Task XiziReview_RejectsSpeedAbsentFromNativeTableEvenWithoutGeometry(string series, int capacity, int speed)
+    {
+        var result = await CreateSupplierCatalogStore().CalculateAsync(CreateXiziSupplierRequest() with
+        {
+            Series = series, CapacityKg = capacity, Speed = speed
+        });
+
+        Assert.Contains(result.Blockers, message => message.Contains("недоступны в шаблоне", StringComparison.Ordinal));
+        Assert.Contains(result.Blockers, message => message.Contains("укажите геометрию", StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData("UN-Victor MRL", "un_victor_mrl")]
     [InlineData("UN-Victor MRL(T)", "un_victor_mrl_t")]
     public async Task XiziReview_MapsCounterweightSafetyToModelInput(string series, string templateId)
@@ -1537,6 +1589,14 @@ public sealed class PricingCatalogStoreTests
         {
             Id = templateId,
             Name = series,
+            LookupTables = new()
+            {
+                ["Speed"] = [new()
+                {
+                    ["DL"] = JsonSerializer.SerializeToElement(1000),
+                    ["V"] = JsonSerializer.SerializeToElement("1.0")
+                }]
+            },
             Parameters =
             [
                 new() { Name = "$CARTYPE_MENU", AllowedValues = ["13D / 1000 / 1100×2100"] },
@@ -1551,9 +1611,12 @@ public sealed class PricingCatalogStoreTests
         var request = CreateXiziSupplierRequest() with
         {
             Series = series,
+            DoorWidthMm = 900,
             SpecificationFields = new Dictionary<string, string>
             {
-                ["Car Width"] = "1100", ["Car Depth"] = "2100"
+                ["Car Width"] = "1100", ["Car Depth"] = "2100", ["Car Height"] = "2200",
+                ["Shaft Width"] = "2400", ["Shaft Depth"] = "2800", ["Door Height"] = "2000",
+                ["Travel Height"] = "13400", ["Overhead"] = "4600", ["Pit"] = "1500"
             }
         };
 
