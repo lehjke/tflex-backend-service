@@ -463,6 +463,19 @@
                     <select id="xiziDoorOpeningSelect"></select>
                   </label>
                   <label class="field">
+                    <span class="field__label">Привязка оси проема, мм</span>
+                    <input id="xiziDoorAxisOffsetInput" type="number" step="1">
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Смещение дверного проема, мм</span>
+                    <input id="xiziDoorOffsetSelect" type="number" step="1" value="350">
+                  </label>
+                  <label class="field" id="xiziCounterweightLocationField">
+                    <span class="field__label">Расположение противовеса</span>
+                    <select id="xiziCounterweightLocationSelect"></select>
+                    <input id="xiziCounterweightLocationInput" type="text" hidden>
+                  </label>
+                  <label class="field">
                     <span class="field__label">Производитель дверей</span>
                     <select id="doorManufacturerSelect"></select>
                   </label>
@@ -812,6 +825,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260924-sidebar-collapse-2"></script>
-  <script type="module" src="/pricing.js?v=20260924-xizi-fields-1"></script>
+  <script type="module" src="/pricing.js?v=20260925-xizi-template-rules-2"></script>
 </body>
 </html>

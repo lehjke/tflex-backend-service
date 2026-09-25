@@ -1,9 +1,15 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using TFlexDrawingService.Api.Data;
+using TFlexDrawingService.Core.Models;
+using TFlexDrawingService.Infrastructure.Configuration;
+using TFlexDrawingService.Infrastructure.Storage;
 
 namespace TFlexDrawingService.Tests;
 
@@ -124,7 +130,8 @@ public sealed class PricingCatalogStoreTests
                     },
                     null));
 
-            Assert.Equal("warning", result.Status);
+            Assert.Equal("blocked", result.Status);
+            Assert.Contains(result.Blockers, message => message.Contains("Каталог шаблонов XIZI недоступен"));
             Assert.Equal(118004.34m, result.TotalCny);
             Assert.Contains(result.Lines, line => line.Label == "Вторая дверь проходной кабины" && line.AmountCny == 2000m);
             Assert.Contains(result.Lines, line => line.Label == "Превышение расчетной высоты, 1 м" && line.AmountCny == 500m);
@@ -1437,6 +1444,176 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
+    public async Task XiziReview_RequiresKnownSeriesAndTemplateButCustomConfigurationRemainsIndependent()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
+        var request = CreateXiziSupplierRequest() with
+        {
+            SpecificationFields = new Dictionary<string, string>
+            {
+                ["Car Width"] = "1100", ["Car Depth"] = "2100", ["Car Height"] = "2400", ["Door Height"] = "2100",
+                ["Shaft Width"] = "2400", ["Shaft Depth"] = "2800", ["Travel Height"] = "13400", ["Overhead"] = "4600", ["Pit"] = "1500"
+            }
+        };
+
+        var noTemplates = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory(), new Support.InMemoryTemplateCatalog());
+        var unknown = await noTemplates.CalculateAsync(request with { Series = "UN-Victor Unknown" });
+        Assert.Contains(unknown.Blockers, message => message.Contains("Неизвестная серия XIZI"));
+
+        var missing = await noTemplates.CalculateAsync(request with { Series = "UN-Victor R" });
+        Assert.Contains(missing.Blockers, message => message.Contains("Не найден шаблон"));
+
+        var dimensionless = await noTemplates.CalculateAsync(request with
+        {
+            Series = "UN-Victor R", SpecificationFields = new Dictionary<string, string>()
+        });
+        Assert.Contains(dimensionless.Blockers, message => message.Contains("Не найден шаблон"));
+
+        var unavailableCatalog = await new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory()).CalculateAsync(request with
+        {
+            Series = "UN-Victor R", SpecificationFields = new Dictionary<string, string>()
+        });
+        Assert.Contains(unavailableCatalog.Blockers, message => message.Contains("Каталог шаблонов XIZI недоступен"));
+
+        var unknownDimensionless = await noTemplates.CalculateAsync(request with
+        {
+            Series = "G3", SpecificationFields = new Dictionary<string, string>()
+        });
+        Assert.Contains(unknownDimensionless.Blockers, message => message.Contains("Неизвестная серия XIZI"));
+
+        var custom = await noTemplates.CalculateAsync(request with
+        {
+            SpecificationFields = new Dictionary<string, string>(request.SpecificationFields!) { ["Custom Configuration"] = "Yes" }
+        });
+        Assert.DoesNotContain(custom.Blockers, message => message.Contains("шаблон", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("серия XIZI", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task XiziReview_AppliesDoorAxisRuleAndChecksTemplateOptionValues()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var apiRoot = Path.Combine(repositoryRoot, "src", "TFlexDrawingService.Api");
+        var catalog = new JsonTemplateCatalog(
+            Options.Create(new TemplateCatalogOptions
+            {
+                ProjectRootPath = repositoryRoot,
+                ConfigPath = Path.Combine(repositoryRoot, "templates", "templates.json")
+            }),
+            NullLogger<JsonTemplateCatalog>.Instance);
+        var store = new PricingCatalogStore(new TestWebHostEnvironment(apiRoot), new TestHttpClientFactory(), catalog);
+        var fields = new Dictionary<string, string>
+        {
+            ["Car Width"] = "1100", ["Car Depth"] = "2100", ["Car Height"] = "2200",
+            ["Door Height"] = "2000", ["Shaft Width"] = "2400", ["Shaft Depth"] = "2800",
+            ["Travel Height"] = "13400", ["Overhead"] = "4600", ["Pit"] = "1500"
+        };
+        var request = CreateXiziSupplierRequest() with { DoorWidthMm = 700, DoorType = "CO", SpecificationFields = fields };
+
+        var defaultAxis = await store.CalculateAsync(request);
+        Assert.Contains(defaultAxis.Blockers, message => message.Contains("Привязка оси проема", StringComparison.Ordinal));
+
+        fields["Door Axis Offset"] = "1400";
+        var validAxis = await store.CalculateAsync(request);
+        Assert.DoesNotContain(validAxis.Blockers, message => message.Contains("Привязка оси проема", StringComparison.Ordinal));
+
+        fields["Door Offset"] = "999";
+        var invalidOffset = await store.CalculateAsync(request);
+        Assert.Contains(invalidOffset.Blockers, message => message.Contains("Door Offset", StringComparison.Ordinal));
+
+        fields["Door Offset"] = "0";
+        fields["Counterweight Location"] = "99";
+        var invalidLocation = await store.CalculateAsync(request);
+        Assert.Contains(invalidLocation.Blockers, message => message.Contains("Положение противовеса", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("UN-Victor MRL", "un_victor_mrl")]
+    [InlineData("UN-Victor MRL(T)", "un_victor_mrl_t")]
+    public async Task XiziReview_MapsCounterweightSafetyToModelInput(string series, string templateId)
+    {
+        var root = Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), "src", "TFlexDrawingService.Api");
+        var template = new DrawingTemplate
+        {
+            Id = templateId,
+            Name = series,
+            Parameters =
+            [
+                new() { Name = "$CARTYPE_MENU", AllowedValues = ["13D / 1000 / 1100×2100"] },
+                new() { Name = "$CWT" }
+            ],
+            ValidationRules =
+            [
+                new() { Name = "safety", FieldNames = ["$CWT"], Expression = "$CWT == \"WSAFE\"", Message = "Safety gear mapping failed." }
+            ]
+        };
+        var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory(), new Support.InMemoryTemplateCatalog(template));
+        var request = CreateXiziSupplierRequest() with
+        {
+            Series = series,
+            SpecificationFields = new Dictionary<string, string>
+            {
+                ["Car Width"] = "1100", ["Car Depth"] = "2100"
+            }
+        };
+
+        var withoutSafety = await store.CalculateAsync(request);
+        Assert.Contains("Safety gear mapping failed.", withoutSafety.Blockers);
+
+        var withSafety = await store.CalculateAsync(request with { Options = ["CWTSAFETY"] });
+        Assert.DoesNotContain("Safety gear mapping failed.", withSafety.Blockers);
+    }
+
+    [Theory]
+    [InlineData("12", "Сзади")]
+    [InlineData("13", "Сбоку")]
+    [InlineData("24", "Сбоку")]
+    public async Task XiziR_MapsInspectedStandardParametersAndSelectsCounterweightCabin(string location, string suffix)
+    {
+        var root = Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), "src", "TFlexDrawingService.Api");
+        var selectedCar = $"13W / 1000 / 1600×1400 / {suffix}";
+        var template = new DrawingTemplate
+        {
+            Id = "un_victor_r", Name = "UN-Victor R",
+            Parameters =
+            [
+                new() { Name = "$CARTYPE_MENU", AllowedValues = ["13W / 1000 / 1600×1400 / Сзади", "13W / 1000 / 1600×1400 / Сбоку"] },
+                new() { Name = "$CWT_MENU" }, new() { Name = "$CWTLOC_MENU", AllowedValues = ["12", "13", "24"] },
+                new() { Name = "$HAND" }, new() { Name = "$OPH_CH" },
+                new() { Name = "$V" }, new() { Name = "V_MENU" }, new() { Name = "HD" },
+                new() { Name = "HW" }, new() { Name = "K" }, new() { Name = "S" },
+                new() { Name = "$R" }, new() { Name = "$N" }, new() { Name = "NBENT_MENU" }
+            ],
+            ValidationRules =
+            [
+                new DrawingValidationRule
+                {
+                    Name = "mapping", FieldNames = ["$CARTYPE_MENU", "HD", "$HAND", "$OPH_CH", "$CWT_MENU", "$V", "V_MENU", "NBENT_MENU"],
+                    Expression = $"$CARTYPE_MENU == \"{selectedCar}\" && $CWTLOC_MENU == \"{location}\" && HD == 2800 && $HAND == \"LEFT\" && $OPH_CH == \"2000/2200\" && $CWT_MENU == \"WSAFE\" && $V == \"1.75\" && V_MENU == 1.75 && NBENT_MENU == 1",
+                    Message = "R input mapping failed."
+                }
+            ]
+        };
+        var store = new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory(), new Support.InMemoryTemplateCatalog(template));
+        var request = CreateXiziSupplierRequest() with
+        {
+            Series = "UN-Victor R", CapacityKg = 1000, Speed = 1.75m, Stops = 5, Options = ["CWTSAFETY"],
+            SpecificationFields = new Dictionary<string, string>
+            {
+                ["Car Width"] = "1600", ["Car Depth"] = "1400", ["Car Height"] = "2200",
+                ["Door Height"] = "2000", ["Shaft Width"] = "2500", ["Shaft Depth"] = "2800",
+                ["Travel Height"] = "13400", ["Overhead"] = "4600", ["Pit"] = "1500",
+                ["Counterweight Location"] = location, ["Door Opening"] = "Левое",
+                ["Door Opening Type"] = "Телескопического открывания"
+            }
+        };
+
+        var result = await store.CalculateAsync(request);
+        Assert.DoesNotContain(result.Blockers, message => message.Contains("Кабина 1100×2100"));
+        Assert.DoesNotContain(result.Blockers, message => message.Contains("R input mapping failed."));
+    }
+
+    [Fact]
     public async Task XiziReview_ProjectExportContainsTwoWorkbooksAndAllLifts()
     {
         var store = CreateSupplierCatalogStore();
@@ -1626,8 +1803,16 @@ public sealed class PricingCatalogStoreTests
 
     private static PricingCatalogStore CreateSupplierCatalogStore()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
-        return new PricingCatalogStore(new TestWebHostEnvironment(root), new TestHttpClientFactory());
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var apiRoot = Path.Combine(repositoryRoot, "src", "TFlexDrawingService.Api");
+        var catalog = new JsonTemplateCatalog(
+            Options.Create(new TemplateCatalogOptions
+            {
+                ProjectRootPath = repositoryRoot,
+                ConfigPath = Path.Combine(repositoryRoot, "templates", "templates.json")
+            }),
+            NullLogger<JsonTemplateCatalog>.Instance);
+        return new PricingCatalogStore(new TestWebHostEnvironment(apiRoot), new TestHttpClientFactory(), catalog);
     }
 
     private static PricingCalculationRequest CreateXiziSupplierRequest() => new(

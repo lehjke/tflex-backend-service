@@ -251,13 +251,37 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 blockers.Add("Высота дверей должна быть меньше высоты кабины.");
             return;
         }
-        if (width <= 0 || depth <= 0 || templateCatalog is null) return;
-        var templateId = request.Series switch { "UN-Victor MRL" => "un_victor_mrl", "UN-Victor MRL(T)" => "un_victor_mrl_t", _ => null };
-        if (templateId is null) return;
+        var templateId = request.Series switch
+        {
+            "UN-Victor MRL" => "un_victor_mrl",
+            "UN-Victor MRL(T)" => "un_victor_mrl_t",
+            "UN-Victor R" => "un_victor_r",
+            _ => null
+        };
+        if (templateId is null)
+        {
+            blockers.Add($"Неизвестная серия XIZI для проверки конфигурации: {request.Series}.");
+            return;
+        }
+        if (templateCatalog is null)
+        {
+            blockers.Add("Каталог шаблонов XIZI недоступен для проверки конфигурации.");
+            return;
+        }
         var template = await templateCatalog.GetByIdOrCodeAsync(templateId, cancellationToken);
         if (template is null) { blockers.Add("Не найден шаблон для проверки геометрии XIZI."); return; }
-        var car = template.Parameters.FirstOrDefault(p => p.Name == "$CARTYPE_MENU")?.AllowedValues
-            .FirstOrDefault(value => Regex.IsMatch(value, $@"/\s*{request.CapacityKg}\s*/\s*{width}×{depth}$"));
+        // Price-only requests still verify that the selected template exists.
+        if (width <= 0 || depth <= 0) return;
+        var counterweightLocation = GetSpecificationField(request, "Counterweight Location");
+        var carTypeParameter = template.Parameters.FirstOrDefault(parameter => parameter.Name == "$CARTYPE_MENU");
+        var car = carTypeParameter?.AllowedValues.FirstOrDefault(value =>
+        {
+            var matchesDimensions = Regex.IsMatch(value, $@"/\s*{request.CapacityKg}\s*/\s*{width}×{depth}(?:\s*/|$)");
+            if (!matchesDimensions) return false;
+            var rear = value.EndsWith("/ Сзади", StringComparison.OrdinalIgnoreCase);
+            var side = value.EndsWith("/ Сбоку", StringComparison.OrdinalIgnoreCase);
+            return !rear && !side || (rear && counterweightLocation == "12") || (side && counterweightLocation is "13" or "24");
+        });
         if (car is null)
         {
             blockers.Add($"Кабина {width}×{depth} мм при {request.CapacityKg} кг отсутствует в подтверждённых конфигурациях {request.Series}.");
@@ -269,17 +293,86 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             ["$N"] = request.Stops.ToString(CultureInfo.InvariantCulture),
             ["$R"] = (GetSpecificationNumber(request, "Travel Height") / 1000m).ToString(CultureInfo.InvariantCulture),
             ["NBENT_MENU"] = IsXiziThroughCar(GetSpecificationField(request, "Car Type")) ? 2 : 1,
-            ["$DOOR_MENU"] = request.DoorType == "CO" ? "CLD" : "TLD",
-            ["$CWT"] = (request.Options ?? []).Contains("CWTSAFETY") ? "WSAFE" : "WOSAF"
+            ["$DOOR_MENU"] = request.DoorType == "CO" ? "CLD" : "TLD"
         };
-        var fields = new HashSet<string> { "$R", "$N" };
-        foreach (var (key, field) in new[] { ("K", "Overhead"), ("S", "Pit"), ("HW", "Shaft Width"), ("WTW", "Shaft Depth"), ("CH", "Car Height"), ("OPH", "Door Height") })
+        var cwtSafety = (request.Options ?? []).Contains("CWTSAFETY") ? "WSAFE" : "WOSAF";
+        foreach (var name in new[] { "$CWT", "$CWT_MENU" })
+            if (template.Parameters.Any(parameter => parameter.Name == name)) parameters[name] = cwtSafety;
+        foreach (var (names, field) in new[]
+        {
+            (new[] { "K" }, "Overhead"), (new[] { "S" }, "Pit"), (new[] { "HW" }, "Shaft Width"),
+            (new[] { "HD", "WTW" }, "Shaft Depth"), (new[] { "CH" }, "Car Height")
+        })
         {
             var value = GetSpecificationNumber(request, field);
-            if (value > 0) { parameters[key] = value; fields.Add(key); }
+            var name = names.FirstOrDefault(candidate => template.Parameters.Any(parameter => parameter.Name == candidate));
+            if (name is not null && (value > 0 || HasText(GetSpecificationField(request, field)))) parameters[name] = value;
         }
+        var carHeight = GetSpecificationNumber(request, "Car Height");
+        var doorHeight = GetSpecificationNumber(request, "Door Height");
+        if (template.Parameters.Any(parameter => parameter.Name == "$OPH_CH"))
+            parameters["$OPH_CH"] = $"{doorHeight}/{carHeight}";
+        if (template.Parameters.Any(parameter => parameter.Name == "OPH") && (doorHeight > 0 || HasText(GetSpecificationField(request, "Door Height"))))
+            parameters["OPH"] = doorHeight;
+        var speedMenu = template.Parameters.FirstOrDefault(parameter => parameter.Name == "V_MENU");
+        if (speedMenu is not null && (speedMenu.AllowedValues.Count == 0 || speedMenu.AllowedValues.Any(value =>
+            decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var speed) && speed == request.Speed)))
+            parameters["V_MENU"] = request.Speed;
+        var opening = GetSpecificationField(request, "Door Opening");
+        var openingType = GetSpecificationField(request, "Door Opening Type");
+        var hand = ContainsAny(openingType ?? "", "Центрального", "Центральное", "централь")
+            || ContainsAny(opening ?? "", "Центрального", "Центральное", "централь") ? "CENTR"
+            : ContainsAny(opening ?? "", "Прав", "RIGHT") ? "RIGHT"
+            : ContainsAny(opening ?? "", "Лев", "LEFT") ? "LEFT"
+            : request.DoorType == "CO" ? "CENTR"
+            : counterweightLocation == "13" ? "RIGHT" : "LEFT";
+        if (hand is not null && template.Parameters.Any(parameter => parameter.Name == "$HAND")) parameters["$HAND"] = hand;
+        if (template.Parameters.Any(parameter => parameter.Name == "NBENT_MENU"))
+            parameters["NBENT_MENU"] = IsXiziThroughCar(GetSpecificationField(request, "Car Type")) ? 2 : 1;
         if (request.DoorWidthMm > 0) parameters["OP"] = request.DoorWidthMm;
-        blockers.AddRange(DrawingJobValidator.ValidateConfigurationRules(template, parameters, fields));
+        foreach (var (name, field) in new[] { ("HL6", "Door Axis Offset"), ("DOP", "Door Offset") })
+        {
+            var raw = GetSpecificationField(request, field);
+            if (!HasText(raw)) continue;
+            var definition = template.Parameters.FirstOrDefault(parameter => parameter.Name == name);
+            if (definition is null)
+            {
+                blockers.Add($"Параметр {name} отсутствует в шаблоне {template.Name}.");
+                continue;
+            }
+            if (!decimal.TryParse(raw!.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
+            {
+                blockers.Add($"{field}: укажите числовое значение.");
+                continue;
+            }
+            if ((definition.MinValue.HasValue && value < definition.MinValue.Value)
+                || (definition.MaxValue.HasValue && value > definition.MaxValue.Value)
+                || (definition.AllowedValues.Count > 0 && !definition.AllowedValues.Any(allowed =>
+                    decimal.TryParse(allowed, NumberStyles.Number, CultureInfo.InvariantCulture, out var option) && option == value)))
+            {
+                blockers.Add($"{field}: значение {value} недопустимо для шаблона {template.Name}.");
+                continue;
+            }
+            parameters[name] = value;
+        }
+        if (HasText(counterweightLocation))
+        {
+            var definition = template.Parameters.FirstOrDefault(parameter => parameter.Name == "$CWTLOC_MENU")
+                ?? template.Parameters.FirstOrDefault(parameter => parameter.Name == "$CWTLOC");
+            if (definition is null || (definition.AllowedValues.Count > 0
+                && !definition.AllowedValues.Contains(counterweightLocation!, StringComparer.Ordinal)))
+            {
+                blockers.Add("Положение противовеса недопустимо для выбранного шаблона XIZI.");
+            }
+            else
+            {
+                parameters[definition.Name] = counterweightLocation;
+            }
+        }
+        var ruleFields = template.ValidationRules
+            .SelectMany(rule => rule.FieldNames)
+            .ToHashSet(StringComparer.Ordinal);
+        blockers.AddRange(DrawingJobValidator.ValidateConfigurationRules(template, parameters, ruleFields));
     }
 
     private void CalculateXizi(

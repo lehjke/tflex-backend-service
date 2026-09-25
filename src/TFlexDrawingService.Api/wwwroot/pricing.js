@@ -1,5 +1,5 @@
 import { normalizeSmecRequirements, smecRequirementControls, smecRequirementFunctions } from "./smec-requirements.js?v=20260915-1";
-import { isXiziManualOption, xiziArdCode, xiziConfigurationInput } from "./xizi-option-rules.js?v=20260915";
+import { isXiziManualOption, xiziArdCode, xiziConfigurationInput, xiziModelForTemplateId, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } from "./xizi-option-rules.js?v=20260925-2";
 import { getLanguage, t } from "./i18n.js?v=20260924-sidebar-collapse-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import {
@@ -19,7 +19,9 @@ const state = {
   editingSpecificationId: null,
   lastCalculation: null,
   lastRequest: null,
-  xiziInitialized: false
+  xiziInitialized: false,
+  xiziRestrictionTemplateId: null,
+  xiziRestrictionTouched: { HL6: false, DOP: false, CWTLOC: false }
 };
 const sessionRequests = createSessionRequestGuard();
 
@@ -110,6 +112,11 @@ const xiziCarTypeSelect = document.querySelector("#xiziCarTypeSelect");
 const xiziDoorHeightSelect = document.querySelector("#xiziDoorHeightSelect");
 const xiziFireRatingSelect = document.querySelector("#xiziFireRatingSelect");
 const xiziDoorOpeningSelect = document.querySelector("#xiziDoorOpeningSelect");
+const xiziDoorAxisOffsetInput = document.querySelector("#xiziDoorAxisOffsetInput");
+const xiziDoorOffsetSelect = document.querySelector("#xiziDoorOffsetSelect");
+const xiziCounterweightLocationField = document.querySelector("#xiziCounterweightLocationField");
+const xiziCounterweightLocationSelect = document.querySelector("#xiziCounterweightLocationSelect");
+const xiziCounterweightLocationInput = document.querySelector("#xiziCounterweightLocationInput");
 const xiziCabinDesignSelect = document.querySelector("#xiziCabinDesignSelect");
 const xiziCarWallMaterialSelect = document.querySelector("#xiziCarWallMaterialSelect");
 const xiziCarDoorMaterialSelect = document.querySelector("#xiziCarDoorMaterialSelect");
@@ -562,6 +569,7 @@ function syncXiziPricingFields() {
   if ([...seriesSelect.options].some(option => option.value === mappedSeries)) {
     seriesSelect.value = mappedSeries;
   }
+  renderXiziTemplateRestrictionControls();
 
   const opening = String(xiziDoorOpeningSelect?.value || "").toLowerCase();
   const mappedDoorType = opening.includes("централь") ? "CO" : opening.includes("телескоп") ? "2S" : "";
@@ -586,6 +594,51 @@ function syncXiziPricingFields() {
   doorManufacturerSelect.disabled = true;
   xiziElevatorTypeSelect.value = mappedSeries === "UN-Victor R" ? "С МП" : "Без МП";
   renderOptions();
+}
+
+function renderXiziTemplateRestrictionControls() {
+  const template = xiziTemplateForSeries(seriesSelect.value, state.templatesById);
+  const fields = xiziTemplateRestrictionFields(template);
+  const templateChanged = (template?.id || null) !== state.xiziRestrictionTemplateId;
+  if (xiziDoorAxisOffsetInput && !state.xiziRestrictionTouched.HL6 && (templateChanged || xiziDoorAxisOffsetInput.value === "")) {
+    xiziDoorAxisOffsetInput.value = fields.doorAxisDefault;
+  }
+
+  const currentDoorOffset = xiziDoorOffsetSelect?.value;
+  if (fields.doorOffsetIsNumeric) {
+    xiziDoorOffsetSelect.value = currentDoorOffset !== "" && (!templateChanged || state.xiziRestrictionTouched.DOP)
+      ? currentDoorOffset : String(fields.doorOffsetDefault);
+  } else {
+    const doorOffsetOptions = fields.doorOffsetOptions.map(String);
+    fillSelect(xiziDoorOffsetSelect, doorOffsetOptions, doorOffsetOptions.includes(currentDoorOffset)
+      && (!templateChanged || state.xiziRestrictionTouched.DOP) ? currentDoorOffset
+      : fields.doorOffsetDefault);
+  }
+
+  const currentCounterweight = fields.counterweightIsMenu
+    ? xiziCounterweightLocationSelect?.value
+    : xiziCounterweightLocationInput?.value;
+  if (xiziCounterweightLocationField) xiziCounterweightLocationField.hidden = !template;
+  if (fields.counterweightIsMenu) {
+    const options = fields.counterweightOptions.map(String);
+    fillSelect(xiziCounterweightLocationSelect, options, options.includes(currentCounterweight)
+      && (!templateChanged || state.xiziRestrictionTouched.CWTLOC) ? currentCounterweight
+      : fields.counterweightDefault);
+    for (const option of xiziCounterweightLocationSelect.options) {
+      option.textContent = fields.counterweightLabels[option.value] || option.value;
+    }
+    xiziCounterweightLocationSelect.hidden = false;
+    xiziCounterweightLocationInput.hidden = true;
+  } else {
+    xiziCounterweightLocationInput.hidden = false;
+    xiziCounterweightLocationSelect.hidden = true;
+    if (xiziCounterweightLocationInput.value === "" || templateChanged && !state.xiziRestrictionTouched.CWTLOC) {
+      xiziCounterweightLocationInput.value = templateChanged && !state.xiziRestrictionTouched.CWTLOC
+        ? fields.counterweightDefault
+        : currentCounterweight || fields.counterweightDefault;
+    }
+  }
+  state.xiziRestrictionTemplateId = template?.id || null;
 }
 
 function byCodePrefix(prefixes) {
@@ -1083,9 +1136,9 @@ function renderXiziControls() {
   fillSelect(xiziFloorSelect, getXiziChoices("Floor"), "U-FL033");
   fillSelect(xiziMirrorWallSelect, ["Нет", "Задняя стена", "Левая стена", "Правая стена"], "Нет");
   fillSelect(xiziMirrorHeightSelect, getXiziChoices("Mirror Height", ["Половина высоты", "Во всю высоту"]), "Половина высоты");
-  fillSelect(xiziHandrailPositionSelect, ["Нет", ...getXiziChoices("Handrail Position", ["1 х Задняя стена"])], "Нет");
+  fillSelect(xiziHandrailPositionSelect, ["Нет", ...getXiziChoices("Handrail Position", ["1 х Задняя стена", "2 х Боковые стены", "3 х Все стены"])], "Нет");
   for (const option of xiziHandrailPositionSelect.options) {
-    option.textContent = option.value === "Нет" ? "0" : option.value.match(/^\d+/)?.[0] || option.value;
+    option.textContent = option.value === "Нет" ? "0" : option.value.match(/^\s*[1-3]/)?.[0] || option.value;
   }
   fillSelect(xiziHandrailSelect, getXiziChoices("Handrail"), "U-HR001");
   fillSelect(xiziCopSelect, getXiziChoices("COP"), "U-CY100");
@@ -1130,6 +1183,7 @@ async function loadTemplates() {
   const templates = await sessionRequests.readJson(response);
   if (templates === sessionRequests.stalePayload) return;
   state.templatesById = new Map(templates.map(template => [template.id, template]));
+  if (state.catalog) renderXiziTemplateRestrictionControls();
 }
 
 async function loadProjects() {
@@ -1292,6 +1346,8 @@ function renderCatalogControls() {
 
   toggleSupplierFields("[data-xizi-only]", isXizi);
   toggleSupplierFields("[data-smec-only]", !isXizi);
+  const doorTypeField = doorTypeSelect?.closest(".field");
+  if (doorTypeField) doorTypeField.hidden = isXizi;
   const smecFlags = document.querySelector(".smec-flags");
   if (smecFlags) smecFlags.hidden = isXizi;
   if (!isXizi) {
@@ -1479,6 +1535,8 @@ function readJsonValue(value) {
 
 function applyConfiguration(configuration) {
   xiziCustomConfigurationInput.checked = false;
+  state.xiziRestrictionTouched = { HL6: false, DOP: false, CWTLOC: false };
+  state.xiziRestrictionTemplateId = null;
   smecLegacyRequirements = "";
   const template = state.templatesById.get(configuration?.templateId);
   const parameters = template
@@ -1535,9 +1593,8 @@ function applyConfiguration(configuration) {
   };
 
   if (isXiziTemplate) {
-    const xiziModel = templateKey.includes("mrl-t") ? "MRL-T" : "UN-Victor MRL";
-    setSelectValue(xiziModelSelect, xiziModel);
-    syncXiziPricingFields();
+    const xiziModel = xiziModelForTemplateId(templateId);
+    if (xiziModel && setSelectValue(xiziModelSelect, xiziModel)) syncXiziPricingFields();
   } else {
     const model = templateKey.includes("lehy-l-pro") ? "LEHY-L-Pro"
       : templateKey.includes("lehy-pro") ? "LEHY-Pro"
@@ -1579,6 +1636,23 @@ function applyConfiguration(configuration) {
   if (carDepth && carDepthInput) carDepthInput.value = String(Number(carDepth));
   if (carHeight && carHeightInput) carHeightInput.value = String(Number(carHeight));
   if (doorHeight && doorHeightInput) doorHeightInput.value = String(Number(doorHeight));
+  if (isXiziTemplate) {
+    for (const [name, control, touchedKey] of [
+      ["HL6", xiziDoorAxisOffsetInput, "HL6"], ["DOP", xiziDoorOffsetSelect, "DOP"]
+    ]) {
+      const value = get(name);
+      if (value !== null) {
+        setStoredControlValue(control, value);
+        state.xiziRestrictionTouched[touchedKey] = true;
+      }
+    }
+    const counterweight = get("$CWTLOC_MENU", "$CWTLOC");
+    if (counterweight !== null) {
+      setStoredControlValue(xiziCounterweightLocationSelect.hidden
+        ? xiziCounterweightLocationInput : xiziCounterweightLocationSelect, counterweight);
+      state.xiziRestrictionTouched.CWTLOC = true;
+    }
+  }
   setCwtSafetyGearEnabled(cwtSafetyGear);
   setSelectValue(shaftDoorTypeInput, entranceCount > 1 ? "1D2G" : "1D1G");
   if (name) pricingNameInput.value = String(name);
@@ -1618,7 +1692,8 @@ function applyStoredSpecificationFields(fields = {}) {
     ["Car Width", xiziCarWidthInput], ["Car Depth", xiziCarDepthInput],
     ["Car Height", xiziCarHeightSelect], ["Car Type", xiziCarTypeSelect],
     ["Door Height", xiziDoorHeightSelect], ["Fire Rating", xiziFireRatingSelect],
-    ["Door Opening", xiziDoorOpeningSelect], ["Cabin Design", xiziCabinDesignSelect],
+    ["Door Opening", xiziDoorOpeningSelect], ["Door Axis Offset", xiziDoorAxisOffsetInput],
+    ["Door Offset", xiziDoorOffsetSelect], ["Cabin Design", xiziCabinDesignSelect],
     ["Car Wall Material", xiziCarWallMaterialSelect], ["Car Door Material", xiziCarDoorMaterialSelect],
     ["Ceiling", xiziCeilingSelect], ["Floor", xiziFloorSelect],
     ["Mirror Wall", xiziMirrorWallSelect], ["Mirror Height", xiziMirrorHeightSelect],
@@ -1664,6 +1739,17 @@ function applyStoredSpecificationFields(fields = {}) {
     const stored = name === "Model" ? fields[name]?.replace("UN-Victior", "UN-Victor") : fields[name];
     setStoredControlValue(control, name === "Travel Height" && stored ? Number(String(stored).replace(",", ".")) / 1000 : stored);
   }
+  if (supplierSelect.value === "XIZI" && fields["Counterweight Location"] !== undefined) {
+    const counterweightControl = xiziCounterweightLocationSelect.hidden
+      ? xiziCounterweightLocationInput
+      : xiziCounterweightLocationSelect;
+    setStoredControlValue(counterweightControl, fields["Counterweight Location"]);
+    state.xiziRestrictionTouched.CWTLOC = true;
+  }
+  if (supplierSelect.value === "XIZI") {
+    if (fields["Door Axis Offset"] !== undefined) state.xiziRestrictionTouched.HL6 = true;
+    if (fields["Door Offset"] !== undefined) state.xiziRestrictionTouched.DOP = true;
+  }
 
   if (supplierSelect.value === "SMEC") {
     updateSmecFloorPatterns(fields["Floor Pattern"] || null);
@@ -1675,6 +1761,7 @@ function applyStoredSpecificationFields(fields = {}) {
 
 async function applyPricingSpecification(specification) {
   if (!specification?.request) return;
+  state.xiziRestrictionTouched = { HL6: false, DOP: false, CWTLOC: false };
   const request = normalizeSmecRequirements(specification.request);
   smecLegacyRequirements = request.supplier === "SMEC" ? request.specificationFields?.["Other Requirements"] || "" : "";
 
@@ -1693,6 +1780,7 @@ async function applyPricingSpecification(specification) {
   } else {
     setStoredControlValue(seriesSelect, request.series);
     setStoredControlValue(xiziModelSelect, request.series === "UN-Victor MRL(T)" ? "MRL-T" : request.series);
+    renderXiziTemplateRestrictionControls();
   }
   setStoredControlValue(capacitySelect, request.capacityKg);
   setStoredControlValue(speedSelect, request.speed);
@@ -1770,6 +1858,11 @@ function collectSpecificationFields() {
       "Door Height": xiziDoorHeightSelect?.value || "",
       "Fire Rating": xiziFireRatingSelect?.value || "",
       "Door Opening": xiziDoorOpeningSelect?.value || "",
+      "Door Axis Offset": xiziDoorAxisOffsetInput?.value || "",
+      "Door Offset": xiziDoorOffsetSelect?.value || "",
+      "Counterweight Location": (xiziCounterweightLocationSelect?.hidden
+        ? xiziCounterweightLocationInput?.value
+        : xiziCounterweightLocationSelect?.value) || "",
       "Cabin Design": xiziCabinDesignSelect?.value || "",
       "Car Wall Material": xiziCarWallMaterialSelect?.value || "",
       "Car Door Material": xiziCarDoorMaterialSelect?.value || "",
@@ -1943,15 +2036,19 @@ function collectPricingValidationIssues() {
   ]));
   if (supplierSelect.value === "XIZI") {
     if (values.TR !== null) values.TR *= 1000;
-    const templateId = seriesSelect.value === "UN-Victor MRL" ? "un_victor_mrl" : seriesSelect.value === "UN-Victor MRL(T)" ? "un_victor_mrl_t" : null;
-    const xiziTemplate = state.templatesById.get(templateId);
-    if (!xiziCustomConfigurationInput.checked && xiziTemplate && values.AA && values.BB) {
+    const xiziTemplate = xiziTemplateForSeries(seriesSelect.value, state.templatesById);
+    if (!xiziCustomConfigurationInput.checked && !xiziTemplate) {
+      addIssue("xizi_template", "Для выбранной серии XIZI отсутствует подтверждённый шаблон ограничений.", []);
+    } else if (!xiziCustomConfigurationInput.checked && xiziTemplate && values.AA && values.BB) {
       const overrides = xiziConfigurationInput(xiziTemplate, seriesSelect.value, capacitySelect.value, speedSelect.value,
-        { ...values, stops: numberValue(stopsInput) }, xiziCarTypeSelect.value === "Проходная", doorTypeSelect.value, isCwtSafetyGearEnabled());
+        { ...values, stops: numberValue(stopsInput) }, xiziCarTypeSelect.value === "Проходная", doorTypeSelect.value, isCwtSafetyGearEnabled(), {
+          HL6: xiziDoorAxisOffsetInput.value.trim() === "" ? undefined : numberValue(xiziDoorAxisOffsetInput, NaN),
+          DOP: xiziDoorOffsetSelect.value === "" ? undefined : numberValue(xiziDoorOffsetSelect, NaN),
+          $CWTLOC: xiziCounterweightLocationSelect.hidden ? xiziCounterweightLocationInput.value : xiziCounterweightLocationSelect.value
+        });
       if (!overrides) addIssue("xizi_car", "Размеры кабины и грузоподъёмность отсутствуют в подтверждённых конфигурациях модели.", ["AA", "BB"]);
       else {
-        const mapping = { K: "OH", S: "PD", HW: "AH", WTW: "BH", $R: "TR", $N: "stops" };
-        const rules = Object.fromEntries(xiziTemplate.validationRules.filter(r => r.fieldNames?.some(f => mapping[f])).map(r => [r.name, r.fieldNames.map(f => mapping[f] || f)]));
+        const rules = xiziValidationRuleFields(xiziTemplate);
         issues.push(...evaluateDrawingConfigurationValidation(null, xiziTemplate, overrides, rules));
       }
     }
@@ -2319,6 +2416,10 @@ async function logout() {
 supplierSelect.addEventListener("change", renderCatalogControls);
 smecEleSeriesInput?.addEventListener("change", () => updateSmecModels());
 xiziModelSelect?.addEventListener("change", syncXiziPricingFields);
+xiziDoorAxisOffsetInput?.addEventListener("input", () => { state.xiziRestrictionTouched.HL6 = true; });
+xiziDoorOffsetSelect?.addEventListener("change", () => { state.xiziRestrictionTouched.DOP = true; });
+xiziCounterweightLocationSelect?.addEventListener("change", () => { state.xiziRestrictionTouched.CWTLOC = true; });
+xiziCounterweightLocationInput?.addEventListener("input", () => { state.xiziRestrictionTouched.CWTLOC = true; });
 xiziCarWallMaterialSelect?.addEventListener("change", () => { xiziCabinDesignSelect.value = "U-CR126-BASE"; syncVisualSelect(xiziCabinDesignSelect); });
 xiziDoorOpeningSelect?.addEventListener("change", syncXiziPricingFields);
 xiziCarTypeSelect?.addEventListener("change", syncXiziPricingFields);
@@ -2327,6 +2428,7 @@ xiziCarDepthInput?.addEventListener("input", syncXiziPricingFields);
 decorationSelect.addEventListener("change", renderDecorationPreview);
 [seriesSelect, capacitySelect, speedSelect].forEach(select => {
   select?.addEventListener("change", updateSmecPower);
+  select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderXiziTemplateRestrictionControls(); });
   select?.addEventListener("change", () => { if (supplierSelect.value === "XIZI") renderOptions(); });
 });
 document.querySelectorAll("[data-visual-select]").forEach(select => {

@@ -99,17 +99,17 @@ public sealed class JsonTemplateCatalogTests
                     parameter => parameter.Name,
                     parameter => ToObject(parameter.DefaultValue!.Value),
                     StringComparer.OrdinalIgnoreCase);
-            var context = TemplateExpressionContextBuilder.Build(template, parameters);
+            var context = TemplateExpressionContextBuilder.BuildRuntimeContext(template, parameters);
             foreach (var rule in template.ValidationRules)
             {
-                if (!SafeTFlexExpressionEvaluator.TryEvaluateRule(rule.Expression, context, out _))
+                if (!context.TryEvaluateRule(rule.Expression, out _))
                 {
                     var missing = System.Text.RegularExpressions.Regex.Matches(
                             rule.Expression,
                             @"\$?[\p{L}_][\p{L}\p{N}_]*")
                         .Select(match => match.Value)
-                        .Where(name => !context.ContainsKey(name)
-                            && !context.ContainsKey(name.StartsWith('$') ? name[1..] : $"${name}"))
+                        .Where(name => !context.Values.ContainsKey(name)
+                            && !context.Values.ContainsKey(name.StartsWith('$') ? name[1..] : $"${name}"))
                         .Distinct(StringComparer.OrdinalIgnoreCase);
                     failures.Add(
                         $"{template.Id}/{rule.Name}: missing [{string.Join(", ", missing)}]; {rule.Expression}");
@@ -118,6 +118,24 @@ public sealed class JsonTemplateCatalogTests
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Theory]
+    [InlineData("un_victor_mrl")]
+    [InlineData("un_victor_mrl_t")]
+    [InlineData("un_victor_r")]
+    public async Task ProductionCatalog_XiziNativeDefaultsPassLookupRules(string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var context = TemplateExpressionContextBuilder.BuildRuntimeContext(
+            template, BuildDefaultParameterValues(template));
+        var failures = template.ValidationRules
+            .Where(rule => rule.Name.StartsWith("xizi_", StringComparison.Ordinal))
+            .Where(rule => !context.TryEvaluateRule(rule.Expression, out var passed) || !passed)
+            .Select(rule => rule.Name)
+            .ToArray();
+
+        Assert.Empty(failures);
     }
 
     [Fact]
@@ -175,11 +193,11 @@ public sealed class JsonTemplateCatalogTests
             foreach (var scenario in scenarios)
             {
                 scenarioCount++;
-                var context = TemplateExpressionContextBuilder.Build(template, scenario.Values);
+                var context = TemplateExpressionContextBuilder.BuildRuntimeContext(template, scenario.Values);
                 foreach (var rule in template.ValidationRules)
                 {
                     ruleEvaluationCount++;
-                    if (!SafeTFlexExpressionEvaluator.TryEvaluateRule(rule.Expression, context, out _))
+                    if (!context.TryEvaluateRule(rule.Expression, out _))
                     {
                         failures.Add($"{template.Id}/{scenario.Name}/{rule.Name}");
                     }

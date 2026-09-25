@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -220,6 +221,7 @@ namespace TFlexAutomationRunner
                     ["variables"] = ReadVariables(document),
                     ["controls"] = ReadControls(document),
                     ["dependencies"] = ReadDocumentDependencies(document),
+                    ["databases"] = ReadDatabases(document),
                     ["rebuildWarnings"] = rebuildWarnings
                 };
 
@@ -467,6 +469,188 @@ namespace TFlexAutomationRunner
             }
 
             return dependencies;
+        }
+
+        private static List<Dictionary<string, object>> ReadDatabases(Document document)
+        {
+            const int maxTables = 256;
+            const int maxColumns = 256;
+            const int maxRecords = 5000;
+            var databases = new List<Dictionary<string, object>>();
+            var source = document.GetType().GetMethod("GetDatabases", BindingFlags.Instance | BindingFlags.Public);
+            if (source == null || source.GetParameters().Length != 0)
+            {
+                return databases;
+            }
+
+            IEnumerable items;
+            try
+            {
+                items = source.Invoke(document, null) as IEnumerable;
+            }
+            catch (Exception exception)
+            {
+                databases.Add(new Dictionary<string, object> { ["error"] = exception.GetBaseException().Message });
+                return databases;
+            }
+
+            if (items == null)
+            {
+                return databases;
+            }
+
+            var tableIndex = 0;
+            foreach (var database in items)
+            {
+                if (database == null || tableIndex++ >= maxTables)
+                {
+                    break;
+                }
+
+                var table = new Dictionary<string, object>
+                {
+                    ["name"] = ReadMember(database, "Name"),
+                    ["type"] = database.GetType().FullName,
+                    ["columns"] = new List<Dictionary<string, object>>(),
+                    ["rows"] = new List<List<object>>()
+                };
+                databases.Add(table);
+
+                try
+                {
+                    var columnCount = Math.Max(0, Math.Min(maxColumns, Convert.ToInt32(InvokeNoArgs(database, "GetColumnCount"), CultureInfo.InvariantCulture)));
+                    var recordCount = Math.Max(0, Math.Min(maxRecords, Convert.ToInt32(InvokeNoArgs(database, "GetRecordCount"), CultureInfo.InvariantCulture)));
+                    var columns = (List<Dictionary<string, object>>)table["columns"];
+                    var rows = (List<List<object>>)table["rows"];
+                    for (var column = 0; column < columnCount; column++)
+                    {
+                        columns.Add(new Dictionary<string, object>
+                        {
+                            ["index"] = column,
+                            ["name"] = InvokeIndexed(database, "GetColumnName", column),
+                            ["type"] = SafeInvokeIndexed(database, "GetColumnType", column)
+                        });
+                    }
+
+                    for (var record = 0; record < recordCount; record++)
+                    {
+                        var row = new List<object>();
+                        for (var column = 0; column < columnCount; column++)
+                        {
+                            row.Add(ReadDatabaseCell(database, record, column));
+                        }
+
+                        rows.Add(row);
+                    }
+                    table["truncated"] = recordCount == maxRecords || columnCount == maxColumns;
+                }
+                catch (Exception exception)
+                {
+                    table["error"] = exception.GetBaseException().GetType().Name + ": " + exception.GetBaseException().Message;
+                }
+            }
+
+            return databases;
+        }
+
+        private static object ReadDatabaseCell(object database, int record, int column)
+        {
+            foreach (var methodName in new[] { "GetTextValue", "GetRealValue", "GetIntValue", "GetReference", "GetValue", "GetRecordValue", "GetCellValue" })
+            {
+                var method = database.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(int), typeof(int) }, null);
+                if (method == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var value = method.Invoke(database, new object[] { column, record });
+                    if (value != null)
+                    {
+                        return NormalizeDatabaseValue(value);
+                    }
+                }
+                catch
+                {
+                    // Try another API getter shape.
+                }
+            }
+
+            var recordObject = SafeInvokeIndexed(database, "GetRecord", record);
+            if (recordObject != null && !(recordObject is string))
+            {
+                foreach (var methodName in new[] { "GetValue", "GetString", "GetCell", "GetItem" })
+                {
+                    var value = SafeInvokeIndexed(recordObject, methodName, column);
+                    if (value != null)
+                    {
+                        return NormalizeDatabaseValue(value);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static object NormalizeDatabaseValue(object value)
+        {
+            if (value == null || value is string || value is bool || value is decimal || value is int || value is long || value is double)
+            {
+                return value;
+            }
+
+            return Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+
+        private static object ReadMember(object instance, string name)
+        {
+            try
+            {
+                var property = instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+                return property == null || property.GetIndexParameters().Length != 0
+                    ? null
+                    : NormalizeDatabaseValue(property.GetValue(instance, null));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static object InvokeNoArgs(object instance, string name)
+        {
+            var method = instance.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+            if (method == null)
+            {
+                throw new MissingMethodException(instance.GetType().FullName, name);
+            }
+
+            return method.Invoke(instance, null);
+        }
+
+        private static object InvokeIndexed(object instance, string name, int index)
+        {
+            var value = SafeInvokeIndexed(instance, name, index);
+            if (value == null)
+            {
+                throw new MissingMethodException(instance.GetType().FullName, name);
+            }
+
+            return NormalizeDatabaseValue(value);
+        }
+
+        private static object SafeInvokeIndexed(object instance, string name, int index)
+        {
+            try
+            {
+                var method = instance.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(int) }, null);
+                return method == null ? null : method.Invoke(instance, new object[] { index });
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static bool IsDependencyProperty(string name)
