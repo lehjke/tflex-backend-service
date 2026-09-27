@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { evaluateDrawingConfigurationValidation } from '../../src/TFlexDrawingService.Api/wwwroot/drawing-configuration-values.js';
 const source = await readFile(new URL('../../src/TFlexDrawingService.Api/wwwroot/xizi-option-rules.js', import.meta.url), 'utf8');
 const { xiziArdCode, isXiziManualOption, xiziConfigurationInput, xiziModelForTemplateId, xiziTemplateForSeries, xiziTemplateRestrictionFields, xiziValidationRuleFields } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const { templates } = JSON.parse(await readFile(new URL('../../templates/templates.json', import.meta.url)));
@@ -63,6 +64,16 @@ test('MRL rules map form dimensions and retain rules for template defaults', () 
     assert.equal(input.$CWT, 'WOSAF');
     assert.equal(input.$CWT_MENU, undefined);
   }
+});
+test('Impossible XIZI door-axis geometry reports no valid offset instead of reversed bounds', () => {
+  const template = templates.find(item => item.id === 'un_victor_mrl');
+  const values = { AA: 1100, BB: 2100, HL: 2200, JJ: 700, HH: 2000, AH: 2000, BH: 2800,
+    TR: 13400, OH: 4600, PD: 1500, stops: 5 };
+  const input = xiziConfigurationInput(template, 'UN-Victor MRL', 1000, 1, values, false, 'CO', false);
+  const messages = evaluateDrawingConfigurationValidation(null, template, input,
+    xiziValidationRuleFields(template)).map(issue => issue.message);
+  assert.ok(messages.some(message => message.includes('нет допустимого значения привязки оси проема')));
+  assert.ok(messages.every(message => !message.includes('Привязка оси проема должна быть в пределах от')));
 });
 test('Pricing form saves, restores and validates the exact template restriction fields', async () => {
   const pricing = await readFile(new URL('../../src/TFlexDrawingService.Api/wwwroot/pricing.js', import.meta.url), 'utf8');

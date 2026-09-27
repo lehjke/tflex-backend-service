@@ -1513,6 +1513,12 @@ public sealed class PricingCatalogStoreTests
         var defaultAxis = await store.CalculateAsync(request);
         Assert.Contains(defaultAxis.Blockers, message => message.Contains("Привязка оси проема", StringComparison.Ordinal));
 
+        fields["Shaft Width"] = "2000";
+        var impossibleAxis = await store.CalculateAsync(request);
+        Assert.Contains(impossibleAxis.Blockers, message => message.Contains("нет допустимого значения привязки оси проема", StringComparison.Ordinal));
+        Assert.DoesNotContain(impossibleAxis.Blockers, message => message.Contains("Привязка оси проема должна быть в пределах от", StringComparison.Ordinal));
+        fields["Shaft Width"] = "2400";
+
         fields["Door Axis Offset"] = "1400";
         var validAxis = await store.CalculateAsync(request);
         Assert.DoesNotContain(validAxis.Blockers, message => message.Contains("Привязка оси проема", StringComparison.Ordinal));
