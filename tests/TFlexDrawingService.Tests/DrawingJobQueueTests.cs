@@ -231,6 +231,29 @@ public sealed class DrawingJobQueueTests
         Assert.True(File.Exists(staleGeneratedFile));
     }
 
+    [Fact]
+    public async Task LocalFileStorage_CopiesSiblingFragmentsAndTemplateNamedDirectory()
+    {
+        var (_, _, storageOptions) = await CreateQueueAsync();
+        var sourceDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var templatePath = Path.Combine(sourceDirectory, "template.grb");
+        var siblingFile = Path.Combine(sourceDirectory, "Фрагменты", "nested", "part.grb");
+        var sameNameFile = Path.Combine(sourceDirectory, "template", "same-name.grb");
+        Directory.CreateDirectory(Path.GetDirectoryName(siblingFile)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(sameNameFile)!);
+        await File.WriteAllTextAsync(templatePath, "template");
+        await File.WriteAllTextAsync(siblingFile, "sibling fragment");
+        await File.WriteAllTextAsync(sameNameFile, "same-name fragment");
+
+        var workingDirectory = Path.Combine(sourceDirectory, "working");
+        await new LocalFileStorage(storageOptions).CopyTemplateToWorkingDirectoryAsync(
+            new DrawingTemplate { TemplateFilePath = templatePath },
+            workingDirectory);
+
+        Assert.Equal("sibling fragment", await File.ReadAllTextAsync(Path.Combine(workingDirectory, "Фрагменты", "nested", "part.grb")));
+        Assert.Equal("same-name fragment", await File.ReadAllTextAsync(Path.Combine(workingDirectory, "template", "same-name.grb")));
+    }
+
     private static async Task<(
         SqliteDrawingJobRepository Repository,
         SqliteDrawingJobQueue Queue,

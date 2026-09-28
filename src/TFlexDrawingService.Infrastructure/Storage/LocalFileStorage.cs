@@ -34,14 +34,20 @@ public sealed class LocalFileStorage(IOptions<DrawingStorageOptions> options) : 
         var destination = Path.Combine(workingDirectory, Path.GetFileName(template.TemplateFilePath));
         File.Copy(template.TemplateFilePath, destination, overwrite: true);
 
-        var templateFragmentsDirectory = Path.Combine(
-            Path.GetDirectoryName(template.TemplateFilePath) ?? string.Empty,
-            Path.GetFileNameWithoutExtension(template.TemplateFilePath));
-
-        if (Directory.Exists(templateFragmentsDirectory))
+        var templateDirectory = Path.GetDirectoryName(template.TemplateFilePath) ?? string.Empty;
+        var templateFragmentsDirectories = new[]
         {
-            var fragmentsDestination = Path.Combine(workingDirectory, Path.GetFileName(templateFragmentsDirectory));
-            CopyDirectory(templateFragmentsDirectory, fragmentsDestination, cancellationToken);
+            Path.Combine(templateDirectory, Path.GetFileNameWithoutExtension(template.TemplateFilePath)),
+            Path.Combine(templateDirectory, "Фрагменты")
+        };
+
+        foreach (var templateFragmentsDirectory in templateFragmentsDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (Directory.Exists(templateFragmentsDirectory))
+            {
+                var fragmentsDestination = Path.Combine(workingDirectory, Path.GetFileName(templateFragmentsDirectory));
+                CopyDirectory(templateFragmentsDirectory, fragmentsDestination, cancellationToken);
+            }
         }
 
         return Task.FromResult(destination);
