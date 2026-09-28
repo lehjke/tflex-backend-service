@@ -42422,7 +42422,7 @@
           "name": "$R",
           "displayName": "Характеристики / Высота подъема лифта",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
           "unit": "м"
@@ -42504,12 +42504,13 @@
         },
         {
           "name": "$NAME_MLT",
-          "displayName": "Фамилия И. сотрудника OTIS",
+          "displayName": "Фамилия И. сотрудника MLT",
           "type": "enum",
           "isRequired": true,
-          "defaultValue": "",
-          "expression": "\"\"",
+          "defaultValue": "Алипов Н.",
+          "expression": "\"Алипов Н.\"",
           "allowedValues": [
+            "Алипов Н.",
             "Белов А.",
             "Беседин В.",
             "Бобров В.",
@@ -42554,7 +42555,7 @@
           "name": "$N",
           "displayName": "Характеристики / Количество остановок",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\""
         },
@@ -46432,7 +46433,7 @@
           "name": "$R",
           "displayName": "Характеристики / Высота подъема лифта",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
           "unit": "м"
@@ -46514,12 +46515,13 @@
         },
         {
           "name": "$NAME_MLT",
-          "displayName": "Фамилия И. сотрудника OTIS",
+          "displayName": "Фамилия И. сотрудника MLT",
           "type": "enum",
           "isRequired": true,
-          "defaultValue": "",
-          "expression": "\"\"",
+          "defaultValue": "Алипов Н.",
+          "expression": "\"Алипов Н.\"",
           "allowedValues": [
+            "Алипов Н.",
             "Белов А.",
             "Беседин В.",
             "Бобров В.",
@@ -46565,7 +46567,7 @@
           "name": "$N",
           "displayName": "Характеристики / Количество остановок",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\""
         },
@@ -50330,7 +50332,7 @@
           "name": "$R",
           "displayName": "Характеристики / Высота подъема лифта",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
           "unit": "м"
@@ -50455,12 +50457,13 @@
         },
         {
           "name": "$NAME_MLT",
-          "displayName": "Фамилия И. сотрудника OTIS",
+          "displayName": "Фамилия И. сотрудника MLT",
           "type": "enum",
           "isRequired": true,
-          "defaultValue": "",
-          "expression": "\"\"",
+          "defaultValue": "Алипов Н.",
+          "expression": "\"Алипов Н.\"",
           "allowedValues": [
+            "Алипов Н.",
             "Белов А.",
             "Беседин В.",
             "Бобров В.",
@@ -50519,7 +50522,7 @@
           "name": "$N",
           "displayName": "Характеристики / Количество остановок",
           "type": "string",
-          "isRequired": false,
+          "isRequired": true,
           "defaultValue": "",
           "expression": "\"\""
         },

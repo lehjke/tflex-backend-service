@@ -24,6 +24,8 @@ const state = {
 const sessionRequests = createSessionRequestGuard();
 let bootPromise = null;
 let pageLoadErrorContext = "load";
+let savedConfigurationsQuery = null;
+let savedConfigurationsVisibleCount = 4;
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
@@ -916,6 +918,10 @@ function renderSavedConfigurations() {
 
   savedConfigurationsList.replaceChildren();
   const query = getAccountSearchQuery();
+  if (query !== savedConfigurationsQuery) {
+    savedConfigurationsQuery = query;
+    savedConfigurationsVisibleCount = 4;
+  }
   const entries = getAllProjectAssetGroups()
     .filter(({ project, group }) => matchesProjectAssetGroupSearch(project, group, query))
     .sort((left, right) => new Date(right.group.updatedAt || 0) - new Date(left.group.updatedAt || 0));
@@ -930,7 +936,7 @@ function renderSavedConfigurations() {
     return;
   }
 
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, savedConfigurationsVisibleCount)) {
     const { project, group } = entry;
     const displayTitle = getProjectAssetTitle(project, group);
     const item = document.createElement("article");
@@ -952,6 +958,15 @@ function renderSavedConfigurations() {
       </div>
     `;
     savedConfigurationsList.append(item);
+  }
+
+  if (entries.length > savedConfigurationsVisibleCount) {
+    const showMore = document.createElement("button");
+    showMore.className = "secondary saved-configurations-more";
+    showMore.type = "button";
+    showMore.dataset.action = "show-more";
+    showMore.textContent = "Показать ещё";
+    savedConfigurationsList.append(showMore);
   }
 }
 
@@ -2019,7 +2034,10 @@ savedConfigurationsList?.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
-  if (button.dataset.action === "delete-pricing") {
+  if (button.dataset.action === "show-more") {
+    savedConfigurationsVisibleCount += 4;
+    renderSavedConfigurations();
+  } else if (button.dataset.action === "delete-pricing") {
     deletePricingSpecification(button.dataset.projectId, button.dataset.id);
   } else if (button.dataset.action === "download") {
     const select = findConfigurationFormatSelect(button.dataset.id, findConfigurationActionScope(button));

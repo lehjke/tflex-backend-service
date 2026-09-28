@@ -5,6 +5,7 @@ using TFlexDrawingService.Core.Requests;
 using TFlexDrawingService.Core.Services;
 using TFlexDrawingService.Infrastructure.Configuration;
 using TFlexDrawingService.Infrastructure.Storage;
+using TFlexDrawingService.Tests.Support;
 
 namespace TFlexDrawingService.Tests;
 
@@ -28,6 +29,35 @@ public sealed class JsonTemplateCatalogTests
             .ToArray();
 
         Assert.Empty(missing);
+    }
+
+    [Fact]
+    public async Task ProductionCatalogUsesRequestedTemplateOrder()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var catalog = new JsonTemplateCatalog(
+            Options.Create(new TemplateCatalogOptions
+            {
+                ProjectRootPath = repositoryRoot,
+                ConfigPath = Path.Combine(repositoryRoot, "templates", "templates.json")
+            }),
+            NullLogger<JsonTemplateCatalog>.Instance);
+
+        var ids = (await catalog.ListAsync()).Select(template => template.Id).ToArray();
+
+        Assert.Equal(
+            [
+                "lehy_l_pro_320_1050",
+                "lehy_l_pro_1050_2500",
+                "lehy_pro_rear_cwt",
+                "lehy_pro_side_cwt",
+                "razvertki_lehy",
+                "k_ii_type",
+                "un_victor_mrl",
+                "un_victor_mrl_t",
+                "un_victor_r"
+            ],
+            ids);
     }
 
     [Fact]
@@ -158,6 +188,37 @@ public sealed class JsonTemplateCatalogTests
         values["NBENT"] = 2;
         var context = TemplateExpressionContextBuilder.Build(template, values);
         Assert.Equal(2m, context["NBENT_MENU"]);
+    }
+
+    [Fact]
+    public async Task ProductionCatalog_VictorMltEmployeeDefaultsToAlipov()
+    {
+        foreach (var templateId in new[] { "un_victor_mrl", "un_victor_mrl_t", "un_victor_r" })
+        {
+            var template = await GetProductionTemplateAsync(templateId);
+            var employee = Assert.Single(template.Parameters, parameter => parameter.Name == "$NAME_MLT");
+
+            Assert.Equal("Фамилия И. сотрудника MLT", employee.DisplayName);
+            Assert.Equal("Алипов Н.", employee.DefaultValue?.GetString());
+            Assert.Equal("\"Алипов Н.\"", employee.Expression);
+            Assert.Contains("Алипов Н.", employee.AllowedValues);
+        }
+    }
+
+    [Theory]
+    [InlineData("un_victor_mrl")]
+    [InlineData("un_victor_mrl_t")]
+    [InlineData("un_victor_r")]
+    public async Task ProductionCatalog_VictorRequiresRiseAndStopsBeforeDrawing(string templateId)
+    {
+        var template = await GetProductionTemplateAsync(templateId);
+        var catalog = new InMemoryTemplateCatalog(template);
+        var result = await new DrawingJobValidator(catalog).ValidateAsync(
+            new CreateDrawingJobRequest { TemplateId = templateId });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("Parameter '$R' is required.", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("Parameter '$N' is required.", StringComparison.Ordinal));
     }
 
     [Fact]

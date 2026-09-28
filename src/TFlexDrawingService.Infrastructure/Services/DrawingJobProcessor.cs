@@ -72,7 +72,7 @@ public sealed class DrawingJobProcessor(
                     job.OutputFormat),
                 processingToken);
 
-            var namedFiles = RenameGeneratedFiles(job.Id, generatedFiles, parameters);
+            var namedFiles = RenameGeneratedFiles(job.Id, generatedFiles, template, parameters);
             foreach (var file in namedFiles)
             {
                 EnsureLeaseOwned(await repository.AddGeneratedFileAsync(
@@ -258,10 +258,11 @@ public sealed class DrawingJobProcessor(
     private static IReadOnlyList<GeneratedFile> RenameGeneratedFiles(
         string jobId,
         IReadOnlyList<GeneratedFile> files,
+        DrawingTemplate template,
         IReadOnlyDictionary<string, object?> parameters)
     {
         var result = new List<GeneratedFile>(files.Count);
-        var baseName = BuildResultFileBaseName(parameters);
+        var baseName = BuildResultFileBaseName(template, parameters);
 
         for (var index = 0; index < files.Count; index++)
         {
@@ -287,13 +288,17 @@ public sealed class DrawingJobProcessor(
         return result;
     }
 
-    private static string BuildResultFileBaseName(IReadOnlyDictionary<string, object?> parameters)
+    private static string BuildResultFileBaseName(
+        DrawingTemplate template,
+        IReadOnlyDictionary<string, object?> parameters)
     {
-        var liftNumber = GetParameterText(parameters, "$Oboznach", "№ лифта");
-        var height = GetParameterText(parameters, "TR", "Высота");
-        var address = GetParameterText(parameters, "$Address", "Адрес");
+        var liftNumber = GetParameterText(parameters, "$Oboznach",
+            string.IsNullOrWhiteSpace(template.Name) ? template.Code : template.Name);
+        var height = GetParameterText(parameters, "TR", GetParameterText(parameters, "$R", ""));
+        var address = GetParameterText(parameters, "$Address", GetParameterText(parameters, "$ADDRESS", ""));
 
-        return $"{liftNumber} ({height}) - {address}";
+        var title = string.IsNullOrWhiteSpace(height) ? liftNumber : $"{liftNumber} ({height})";
+        return string.IsNullOrWhiteSpace(address) ? title : $"{title} - {address}";
     }
 
     private static string GetParameterText(

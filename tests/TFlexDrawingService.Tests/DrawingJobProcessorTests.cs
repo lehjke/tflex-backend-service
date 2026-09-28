@@ -15,8 +15,16 @@ namespace TFlexDrawingService.Tests;
 
 public sealed class DrawingJobProcessorTests
 {
-    [Fact]
-    public async Task ProcessAsync_CopiesTemplateAndKeepsOriginalUnchanged()
+    [Theory]
+    [InlineData("sample", "Sample", "$Oboznach", "TR", "$Address", "L1 (30) - г. Москва, ул. Мира 21 (Корпус 1).pdf")]
+    [InlineData("un_victor_mrl_t", "UN-Victor MRL T", null, "$R", "$ADDRESS", "UN-Victor MRL T (30) - г. Москва, ул. Мира 21 (Корпус 1).pdf")]
+    public async Task ProcessAsync_CopiesTemplateAndKeepsOriginalUnchanged(
+        string templateId,
+        string templateName,
+        string? liftNumberParameter,
+        string riseParameter,
+        string addressParameter,
+        string expectedFileName)
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
         var templateDirectory = Path.Combine(root, "templates");
@@ -52,25 +60,27 @@ public sealed class DrawingJobProcessorTests
 
         var template = new DrawingTemplate
         {
-            Id = "sample",
-            Code = "sample",
-            Name = "Sample",
+            Id = templateId,
+            Code = templateId,
+            Name = templateName,
             TemplateFilePath = templatePath,
             OutputFormats = ["pdf"],
             Parameters = []
         };
 
+        var inputParameters = new Dictionary<string, object?>
+        {
+            ["WIDTH"] = 1000,
+            [riseParameter] = 30,
+            [addressParameter] = "г. Москва, ул. Мира 21\r\n(Корпус 1)"
+        };
+        if (liftNumberParameter is not null) inputParameters[liftNumberParameter] = "L1";
+
         var job = new DrawingJob
         {
             TemplateId = template.Id,
             OutputFormat = "pdf",
-            InputParametersJson = JsonSerializer.Serialize(new Dictionary<string, object?>
-            {
-                ["WIDTH"] = 1000,
-                ["$Oboznach"] = "L1",
-                ["TR"] = 30,
-                ["$Address"] = "г. Москва, ул. Мира 21\r\n(Корпус 1)"
-            })
+            InputParametersJson = JsonSerializer.Serialize(inputParameters)
         };
 
         await queue.EnqueueAsync(job);
@@ -97,7 +107,7 @@ public sealed class DrawingJobProcessorTests
         Assert.Equal(DrawingJobStatus.Completed, savedJob.Status);
         Assert.Single(savedJob.ResultFiles);
         Assert.True(File.Exists(savedJob.ResultFiles[0].Path));
-        Assert.Equal("L1 (30) - г. Москва, ул. Мира 21 (Корпус 1).pdf", savedJob.ResultFiles[0].FileName);
+        Assert.Equal(expectedFileName, savedJob.ResultFiles[0].FileName);
         Assert.EndsWith(savedJob.ResultFiles[0].FileName, savedJob.ResultFiles[0].Path);
         Assert.Equal(originalTemplateContent, await File.ReadAllTextAsync(templatePath));
         Assert.True(File.Exists(Path.Combine(savedJob.WorkingDirectory!, "template.grb")));

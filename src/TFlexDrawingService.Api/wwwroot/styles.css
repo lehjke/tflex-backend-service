@@ -4117,6 +4117,10 @@ td {
   margin-top: 18px;
 }
 
+.saved-configurations-more {
+  justify-self: center;
+}
+
 .saved-configuration-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(92px, 150px) minmax(148px, 0.8fr);

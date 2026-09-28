@@ -11,6 +11,19 @@ public sealed class JsonTemplateCatalog(
     IOptions<TemplateCatalogOptions> options,
     ILogger<JsonTemplateCatalog> logger) : ITemplateCatalog
 {
+    private static readonly string[] PreferredTemplateOrder =
+    [
+        "lehy_l_pro_320_1050",
+        "lehy_l_pro_1050_2500",
+        "lehy_pro_rear_cwt",
+        "lehy_pro_side_cwt",
+        "razvertki_lehy",
+        "k_ii_type",
+        "un_victor_mrl",
+        "un_victor_mrl_t",
+        "un_victor_r"
+    ];
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -48,6 +61,8 @@ public sealed class JsonTemplateCatalog(
 
             _templates = catalog.Templates
                 .Select(NormalizeTemplate)
+                .OrderBy(GetTemplateOrder)
+                .ThenBy(template => template.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             _loadedWriteTimeUtc = writeTimeUtc;
 
@@ -57,6 +72,19 @@ public sealed class JsonTemplateCatalog(
         {
             _lock.Release();
         }
+    }
+
+    private static int GetTemplateOrder(DrawingTemplate template)
+    {
+        for (var index = 0; index < PreferredTemplateOrder.Length; index++)
+        {
+            if (string.Equals(template.Id, PreferredTemplateOrder[index], StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        return int.MaxValue;
     }
 
     public async Task<DrawingTemplate?> GetByIdOrCodeAsync(
