@@ -799,6 +799,30 @@ function getDisplayParameterValue(parameter, context) {
 }
 
 function getAllowedValues(parameter, context) {
+  if (["un_victor_mrl", "un_victor_mrl_t"].includes(state.selectedTemplate?.id)) {
+    const tableByParameter = { $V: "Speed", OP: "Doorwidth", DOP: "Dop", CH: "Carheight", OPH: "Doorheight" };
+    const tableName = tableByParameter[parameter.name];
+    const rows = state.selectedTemplate.lookupTables?.[tableName];
+    if (rows?.length) {
+      const conditions = {
+        $V: { DL: context?.DL },
+        OP: {
+          CARTYPE: context?.$CARTYPE ?? String(context?.$CARTYPE_MENU || "").split("/")[0].trim(),
+          DOOR: context?.$DOOR,
+          NBENT: context?.NBENT
+        },
+        DOP: { DOOR: context?.$DOOR, CW: context?.CW, OP: context?.OP, NBENT: context?.NBENT },
+        CH: { CEIL: context?.$CEIL },
+        OPH: { CEIL: context?.$CEIL, CH: context?.CH }
+      }[parameter.name];
+      const filteredRows = rows.filter(row => Object.entries(conditions).every(([key, value]) =>
+        !hasValue(value) || isLookupMatch(row[key], value)));
+      const resultName = parameter.name === "$V" ? "V" : parameter.name;
+      const values = [...new Set(filteredRows.map(row => String(row[resultName])).filter(value => value !== "undefined"))];
+      return values;
+    }
+  }
+
   if (parameter.name.startsWith("$car_type_") && context) {
     const aa = getParameterDefinition("AA");
     const values = aa?.lookupValues
@@ -2918,6 +2942,10 @@ function scrollParameterTabs(direction) {
 }
 
 function getCurrentParameterInputValue(parameter, context) {
+  if (["un_victor_mrl", "un_victor_mrl_t"].includes(state.selectedTemplate?.id)
+    && ["$V", "OP", "DOP", "CH", "OPH"].includes(parameter.name)) {
+    return getDisplayParameterValue(parameter, context);
+  }
   return normalizeValueForAllowedList(
     parameter,
     getDisplayParameterValue(parameter, context),
@@ -2987,8 +3015,22 @@ function createParameterInput(parameter, context) {
   } else if (isMultiline || isAddressMultiline) {
     input = document.createElement("textarea");
     input.rows = parameter.rows || 3;
-  } else if (allowedValues.length) {
+  } else if (allowedValues.length || (["un_victor_mrl", "un_victor_mrl_t"].includes(state.selectedTemplate?.id)
+    && ["$V", "OP", "DOP", "CH", "OPH"].includes(parameter.name))) {
     input = document.createElement("select");
+    if (!allowedValues.length && !hasValue(currentValue)) {
+      const unavailable = document.createElement("option");
+      unavailable.value = "";
+      unavailable.textContent = "Нет допустимых значений";
+      unavailable.disabled = true;
+      input.append(unavailable);
+    }
+    if (hasValue(currentValue) && !allowedValues.includes(String(currentValue))) {
+      const unavailable = document.createElement("option");
+      unavailable.value = String(currentValue);
+      unavailable.textContent = `${currentValue} (недоступно для текущих параметров)`;
+      input.append(unavailable);
+    }
     for (const value of allowedValues) {
       const option = document.createElement("option");
       option.value = value;

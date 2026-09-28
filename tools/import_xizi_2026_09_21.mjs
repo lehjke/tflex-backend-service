@@ -151,6 +151,18 @@ function createTemplate(source, inspection) {
     if (!calculated && levels.length > 1 && levels.includes(previous.levelExpression)) {
       result.levelExpression = previous.levelExpression;
     }
+    if (!isR && variable.name === 'OP') {
+      // Several native controls edit OP in complementary contexts; one web field covers all of them.
+      delete result.levelExpression;
+    }
+    if (source.id === 'un_victor_mrl' && variable.name === 'NBENT_MENU') {
+      // The native menu is not referenced by the drawing formulas; NBENT is the authoritative input.
+      result.expression = 'NBENT';
+      result.isRequired = false;
+      result.isReadOnly = true;
+      result.submitWhenDisabled = true;
+      result.levelExpression = '-1';
+    }
     if (variable.name === 'DOP') {
       result.description = 'Допустимое сочетание двери, кабины и смещения определяется таблицей Dop этого шаблона.';
     } else if (previous.description && !isR) {
@@ -193,9 +205,9 @@ function createTemplate(source, inspection) {
     ['Speed', 'DL', `Speed.DL == DL && Speed.V == V${isR ? ' && Speed.NBENT == NBENT' : ''}`,
       ['$CARTYPE_MENU', '$V', ...(isR ? ['NBENT_MENU'] : [])], 'Скорость недоступна для выбранной кабины'],
     ['Doorwidth', 'OP', `Doorwidth.CARTYPE == $CARTYPE && Doorwidth.DOOR == $DOOR && Doorwidth.OP == OP${isR ? '' : ' && Doorwidth.NBENT == NBENT'}`,
-      ['$CARTYPE_MENU', isR ? '$HAND' : '$DOOR_MENU', 'OP', ...(!isR ? ['NBENT_MENU'] : [])], 'Ширина двери недоступна для выбранной кабины'],
+      ['$CARTYPE_MENU', isR ? '$HAND' : '$DOOR_MENU', 'OP', ...(!isR ? [source.id === 'un_victor_mrl' ? 'NBENT' : 'NBENT_MENU'] : [])], 'Ширина двери недоступна для выбранной кабины'],
     ['Dop', 'OP', `Dop.DOOR == $DOOR && Dop.CW == CW && Dop.OP == OP && Dop.DOP == DOP${isR ? '' : ' && Dop.NBENT == NBENT'}`,
-      ['$CARTYPE_MENU', isR ? '$HAND' : '$DOOR_MENU', 'OP', 'DOP', ...(!isR ? ['NBENT_MENU'] : [])], 'Смещение дверного проема недоступно для данной конфигурации'],
+      ['$CARTYPE_MENU', isR ? '$HAND' : '$DOOR_MENU', 'OP', 'DOP', ...(!isR ? [source.id === 'un_victor_mrl' ? 'NBENT' : 'NBENT_MENU'] : [])], 'Смещение дверного проема недоступно для данной конфигурации'],
     ['Carheight', 'CH', 'Carheight.CEIL == $CEIL && Carheight.CH == CH',
       ['$CEILTYPE', 'CH'], 'Высота кабины недоступна для выбранного потолка'],
     ['Doorheight', 'CH', 'Doorheight.CEIL == $CEIL && Doorheight.CH == CH && Doorheight.OPH == OPH',

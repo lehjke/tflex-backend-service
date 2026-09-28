@@ -18,8 +18,18 @@ export function xiziModelForTemplateId(templateId) {
   return ({ un_victor_mrl: "UN-Victor MRL", un_victor_mrl_t: "MRL-T", un_victor_r: "UN-Victor R" })[templateId] || null;
 }
 
+export function xiziNativeBaseChoices(template, capacity) {
+  const cars = template?.parameters?.find(parameter => parameter.name === "$CARTYPE_MENU")?.allowedValues || [];
+  const carLoads = new Set(cars.map(label => Number(String(label).match(/\/\s*(\d+)\s*\//u)?.[1])).filter(Number.isFinite));
+  const rows = template?.lookupTables?.Speed || [];
+  const capacities = [...new Set(rows.map(row => Number(row.DL)).filter(load => carLoads.has(load)))].sort((a, b) => a - b);
+  const speeds = [...new Set(rows.filter(row => Number(row.DL) === Number(capacity))
+    .map(row => Number(row.V)).filter(Number.isFinite))].sort((a, b) => a - b);
+  return { capacities, speeds };
+}
+
 export function xiziValidationRuleFields(template) {
-  const mapping = { K: "OH", S: "PD", HW: "AH", WTW: "BH", HD: "BH", $R: "TR", $N: "stops", CH: "HL", OP: "JJ", OPH: "HH", $OPH_CH: "HH", $CARTYPE_MENU: ["AA", "BB"], DOP: "Door Offset", $CWTLOC_MENU: "Counterweight Location", $CWTLOC: "Counterweight Location", $CWT_MENU: "CWT Safety Gear", $HAND: "Door Opening", NBENT_MENU: "Doors", V_MENU: "Speed" };
+  const mapping = { K: "OH", S: "PD", HW: "AH", WTW: "BH", HD: "BH", $R: "TR", $N: "stops", CH: "HL", OP: "JJ", OPH: "HH", $OPH_CH: "HH", $CARTYPE_MENU: ["AA", "BB"], DOP: "Door Offset", $CWTLOC_MENU: "Counterweight Location", $CWTLOC: "Counterweight Location", $CWT_MENU: "CWT Safety Gear", $HAND: "Door Opening", NBENT: "Doors", NBENT_MENU: "Doors", V_MENU: "Speed" };
   return Object.fromEntries((template?.validationRules || [])
     .map(rule => [rule.name, (rule.fieldNames || []).flatMap(field => mapping[field] || field)]));
 }
@@ -70,6 +80,7 @@ export function xiziConfigurationInput(template, series, capacity, speed, values
   for (const name of ["$CWT", "$CWT_MENU"]) if (get(name)) input[name] = cwtSafety ? "WSAFE" : "WOSAF";
   if (get("V_MENU") && (!get("V_MENU").allowedValues?.length
     || get("V_MENU").allowedValues.some(value => Number(value) === Number(speed)))) input.V_MENU = Number(speed);
+  if (get("NBENT") && !get("NBENT").isReadOnly) input.NBENT = through ? 2 : 1;
   if (get("$OPH_CH")) {
     const choices = get("$OPH_CH").allowedValues || [];
     const height = Number(values.HH);

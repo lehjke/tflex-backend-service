@@ -139,6 +139,28 @@ public sealed class JsonTemplateCatalogTests
     }
 
     [Fact]
+    public async Task ProductionCatalog_MrlUsesOneEntranceInputAndKeepsDoorWidthEditable()
+    {
+        var template = await GetProductionTemplateAsync("un_victor_mrl");
+        var entrances = Assert.Single(template.Parameters, parameter => parameter.Name == "NBENT");
+        var menu = Assert.Single(template.Parameters, parameter => parameter.Name == "NBENT_MENU");
+        var doorWidth = Assert.Single(template.Parameters, parameter => parameter.Name == "OP");
+
+        Assert.False(entrances.IsReadOnly);
+        Assert.True(menu.IsReadOnly);
+        Assert.True(menu.SubmitWhenDisabled);
+        Assert.Equal("NBENT", menu.Expression);
+        Assert.Equal("-1", menu.LevelExpression);
+        Assert.Null(doorWidth.LevelExpression);
+        Assert.Contains("NBENT", Assert.Single(template.ValidationRules, rule => rule.Name == "xizi_doorwidth").FieldNames);
+
+        var values = BuildDefaultParameterValues(template);
+        values["NBENT"] = 2;
+        var context = TemplateExpressionContextBuilder.Build(template, values);
+        Assert.Equal(2m, context["NBENT_MENU"]);
+    }
+
+    [Fact]
     public async Task ProductionCatalog_BoundaryContextsHaveEvaluableValidationRules()
     {
         var repositoryRoot = FindRepositoryRoot();
