@@ -56,6 +56,61 @@ public sealed class ProjectFactoryExportSpecificationsTests
     }
 
     [Fact]
+    public async Task BuildAsync_AddsFeOnlyWhenDrawingPppIsTruthy()
+    {
+        var template = Template("lehy_l_pro_320_1050", "cap", "stops", "JJ", "$PPP");
+        template.Parameters.Add(new DrawingParameterDefinition { Name = "speed", Type = "number", IsReadOnly = true, SubmitWhenDisabled = true, Expression = "1" });
+        var catalog = new InMemoryTemplateCatalog(template);
+        var now = DateTimeOffset.UtcNow;
+        var enabled = Configuration("enabled", "L1", template.Id, new Dictionary<string, object> { ["cap"] = 1000, ["stops"] = 3, ["JJ"] = 900, ["$PPP"] = "Да" }, now);
+        var disabled = Configuration("disabled", "L2", template.Id, new { cap = 1000, stops = 3, JJ = 900 }, now);
+
+        var specs = await ProjectFactoryExportSpecifications.BuildAsync([enabled, disabled], [], catalog, new DrawingJobValidator(catalog), "SMEC");
+        var requests = specs.Select(spec => JsonSerializer.Deserialize<PricingCalculationRequest>(spec.RequestJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!).ToArray();
+
+        Assert.Contains("FE", requests[0].Options!);
+        Assert.DoesNotContain("FE", requests[1].Options!);
+    }
+
+    [Fact]
+    public async Task BuildAsync_UsesOmittedSmecTemplateDefaultsForExportFields()
+    {
+        var template = Template("lehy_l_pro_320_1050", "cap", "stops", "JJ", "AH_1", "BH_1", "OH_1", "PD_1", "AA_1", "BB_1", "main_floor");
+        void SetDefault(string name, string value) => template.Parameters.Single(parameter => parameter.Name == name).DefaultValue = JsonDocument.Parse(value).RootElement.Clone();
+        SetDefault("AH_1", "1800"); SetDefault("BH_1", "2700"); SetDefault("OH_1", "5300"); SetDefault("PD_1", "1900");
+        SetDefault("AA_1", "1100"); SetDefault("BB_1", "2100"); SetDefault("main_floor", "2");
+        template.Parameters.Add(new DrawingParameterDefinition { Name = "speed", Type = "number", IsReadOnly = true, SubmitWhenDisabled = true, Expression = "1" });
+        var catalog = new InMemoryTemplateCatalog(template);
+        var configuration = Configuration("drawing", "L1", template.Id, new { cap = 1000, stops = 3, JJ = 900 }, DateTimeOffset.UtcNow);
+
+        var specification = (await ProjectFactoryExportSpecifications.BuildAsync([configuration], [], catalog, new DrawingJobValidator(catalog), "SMEC")).Single();
+        var request = JsonSerializer.Deserialize<PricingCalculationRequest>(specification.RequestJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        Assert.Equal("1800", request.SpecificationFields!["AH"]);
+        Assert.Equal("2700", request.SpecificationFields["BH"]);
+        Assert.Equal("5300", request.SpecificationFields["OH"]);
+        Assert.Equal("1900", request.SpecificationFields["PD"]);
+        Assert.Equal("1100", request.SpecificationFields["AA"]);
+        Assert.Equal("2100", request.SpecificationFields["BB"]);
+        Assert.Equal("2", request.SpecificationFields["Main Floor"]);
+
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
+        var store = new PricingCatalogStore(new TestEnvironment(root), new TestHttpClientFactory());
+        using var workbook = new ZipArchive(new MemoryStream(store.BuildSmecProjectExport([specification], null)), ZipArchiveMode.Read);
+        var sheet = XDocument.Load(workbook.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        static string Cell(XDocument xml, string reference) => xml.Descendants().Single(cell =>
+            cell.Name.LocalName == "c" && cell.Attribute("r")?.Value == reference).Descendants()
+            .Single(value => value.Name.LocalName is "v" or "t").Value;
+        Assert.Equal("2", Cell(sheet, "D10"));
+        Assert.Equal("1800", Cell(sheet, "D12"));
+        Assert.Equal("2700", Cell(sheet, "F12"));
+        Assert.Equal("5300", Cell(sheet, "F13"));
+        Assert.Equal("1900", Cell(sheet, "H13"));
+        Assert.Equal("1100", Cell(sheet, "D15"));
+        Assert.Equal("2100", Cell(sheet, "F15"));
+    }
+
+    [Fact]
     public async Task BuildAsync_DeduplicatesLinkedAndLegacySpecificationsWithoutPunctuationCollisions()
     {
         var template = Template("lehy_l_pro_320_1050", "cap", "stops", "JJ");
@@ -108,6 +163,38 @@ public sealed class ProjectFactoryExportSpecificationsTests
         var sheet = XDocument.Load(prices.GetEntry("xl/worksheets/sheet1.xml")!.Open());
         Assert.DoesNotContain(sheet.Descendants(), cell => (string?)cell.Attribute("r") is "I2" or "J2" && cell.Descendants().Any(element => element.Name.LocalName == "v"));
         Assert.Contains("Incomplete: drawing-only units require pricing confirmation.", sheet.ToString());
+    }
+
+    [Fact]
+    public void SmecExport_UsesDrawingDefaultsFireRatingAndPreservesEscalatorNotes()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/TFlexDrawingService.Api"));
+        var store = new PricingCatalogStore(new TestEnvironment(root), new TestHttpClientFactory());
+        static PricingSpecification Spec(string id, string series, Dictionary<string, string> fields, string[] options) => new(
+            id, "project", null, id, "SMEC", series, "ready", 1, "CNY", 1,
+            JsonSerializer.Serialize(new PricingCalculationRequest("SMEC", series, 1000, 1, 3, 900, "CO", null, 3, 0, null, options, false, false, "CNY", "project", id, fields, id)),
+            "null", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var options = new[] { "ABP", "OLHL", "BA", "ITV", "MELD", "MBS", "AAN-S", "AECC", "ACB", "AHC", "FER", "FERC" };
+        var specs = new[]
+        {
+            Spec("L1", "LEHY-L-Pro", new Dictionary<string, string>(), options.Append("CWTSAFETY").ToArray()),
+            Spec("L2", "LEHY-Pro", new Dictionary<string, string> { ["Fire Rating"] = "EI30" }, options),
+            Spec("E1", "K-II", new Dictionary<string, string> { ["Other Requirements"] = "Step width: 1000\nFactory note: retain" }, [])
+        };
+
+        using var archive = new ZipArchive(new MemoryStream(store.BuildSmecProjectExport(specs, null)), ZipArchiveMode.Read);
+        static string Cell(ZipArchive archive, int sheetNumber, string address)
+        {
+            var sheet = XDocument.Load(archive.GetEntry($"xl/worksheets/sheet{sheetNumber}.xml")!.Open());
+            return sheet.Descendants().Single(cell => cell.Name.LocalName == "c" && cell.Attribute("r")?.Value == address)
+                .Descendants().FirstOrDefault(value => value.Name.LocalName is "v" or "t")?.Value ?? "";
+        }
+        Assert.Equal(string.Join(", ", options), Cell(archive, 1, "B30"));
+        Assert.Equal("EI60", Cell(archive, 1, "B31"));
+        Assert.Equal("CWT Safety Gear", Cell(archive, 1, "B32"));
+        Assert.Equal("EI30", Cell(archive, 2, "B31"));
+        Assert.Equal("Step width: 1000", Cell(archive, 3, "A9"));
+        Assert.Equal("Factory note: retain", Cell(archive, 3, "A10"));
     }
 
     private static DrawingTemplate Template(string id, params string[] names) => new()

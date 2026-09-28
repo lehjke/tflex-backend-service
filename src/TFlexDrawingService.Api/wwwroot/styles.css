@@ -4973,6 +4973,25 @@ summary:focus-visible,
 
 }
 
+@media (min-width: 901px) {
+  .workspace > .layout:not(.layout--auth),
+  .workspace > .page-skeleton {
+    width: min(70vw, calc(100% - 48px));
+    margin-inline: auto;
+  }
+
+  :is(body.sidebar-collapsed, html.sidebar-collapsed) .workspace > .layout:not(.layout--auth) {
+    margin-inline: auto;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1320px) {
+  .layout--editor,
+  .page-skeleton--editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;

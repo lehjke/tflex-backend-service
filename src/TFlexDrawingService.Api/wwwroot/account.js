@@ -851,7 +851,7 @@ function renderProjects() {
     dialog.setAttribute("aria-labelledby", titleId);
     const heading = document.createElement("div");
     heading.className = "project-dialog__header";
-    heading.innerHTML = `<h2 id="${titleId}" tabindex="-1">${escapeHtml(project.name)}</h2><button class="secondary project-dialog__close" type="button" data-action="close-project" aria-label="Закрыть">×</button>`;
+    heading.innerHTML = `<h2 id="${titleId}">${escapeHtml(project.name)}</h2><button class="secondary project-dialog__close" type="button" data-action="close-project" aria-label="Закрыть">×</button>`;
     dialog.append(heading);
     const body = document.createElement("div");
     body.className = "project-item__body";
@@ -880,7 +880,6 @@ function renderProjects() {
     projectsList.append(card);
     if (project.id === openProjectId) {
       dialog.showModal();
-      heading.querySelector("h2")?.focus({ preventScroll: true });
     }
   }
 }
@@ -1994,7 +1993,6 @@ projectsList.addEventListener("click", event => {
   if (button.dataset.action === "open-project") {
     const dialog = projectsList.querySelector(`dialog[data-project-id="${CSS.escape(button.dataset.projectId)}"]`);
     dialog?.showModal();
-    dialog?.querySelector("h2")?.focus({ preventScroll: true });
   } else if (button.dataset.action === "close-project") {
     button.closest("dialog")?.close();
   } else if (button.dataset.action === "delete-pricing") {

@@ -87,8 +87,8 @@ public static class ProjectFactoryExportSpecifications
         var doors = ResolveDoorCount(parameters, values, validation.Template);
         if (supplierModel.Supplier == "XIZI" && doors <= 0) throw new InvalidDataException($"Drawing configuration '{configuration.Name}' has no landing doors for factory export.");
         var travel = TravelHeightMillimeters(Get(values, "TR", "$R"));
-        var fields = Fields(configuration.Name, values, validation.Template, supplierModel.Supplier, travel, doors, rawDoorType);
-        var options = DrawingOptions(values);
+        var fields = Fields(configuration.Name, values, validation.Template, supplierModel.Supplier, supplierModel.Series, travel, doors, rawDoorType);
+        var options = DrawingOptions(values, supplierModel.Supplier);
         var request = new PricingCalculationRequest(
             supplierModel.Supplier, supplierModel.Series, capacity, speed, stops, doorWidth,
             DoorType(rawDoorType), null, doors, 0, null, options, HasEfs(values), false, "CNY",
@@ -99,20 +99,33 @@ public static class ProjectFactoryExportSpecifications
             JsonSerializer.Serialize(request, Json), "null", configuration.CreatedAt, configuration.UpdatedAt);
     }
 
-    private static IReadOnlyDictionary<string, string> Fields(string name, IReadOnlyDictionary<string, object?> values, DrawingTemplate template, string supplier, decimal? travel, int doors, string rawDoorType)
+    private static IReadOnlyDictionary<string, string> Fields(string name, IReadOnlyDictionary<string, object?> values, DrawingTemplate template, string supplier, string series, decimal? travel, int doors, string rawDoorType)
     {
+        object? SmecValue(params string[] names)
+        {
+            var value = Get(values, names);
+            if (value is not null || supplier != "SMEC") return value;
+            foreach (var parameter in template.Parameters.Where(parameter => names.Contains(parameter.Name, StringComparer.OrdinalIgnoreCase) && !parameter.IsReadOnly))
+                if (parameter.DefaultValue is { } defaultValue && HasValue(defaultValue)) return defaultValue;
+            return null;
+        }
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Lift No"] = name,
             ["Quantity"] = Text(Get(values, "Quantity", "N"), "1"), ["Floors"] = Text(Get(values, "stops", "NBLD", "Stops", "$N", "Floors_num", "Остановки")),
-            ["AH"] = Text(Get(values, "AH", "AH_1", "HW")), ["BH"] = Text(Get(values, "BH", "BH_1", "WTW")),
-            ["TR"] = travel?.ToString("0.###", CultureInfo.InvariantCulture) ?? "", ["OH"] = Text(Get(values, "OH", "OH_1", "K")),
-            ["PD"] = Text(Get(values, "PD", "PD_1", "S")), ["JJ"] = Text(Get(values, "JJ", "OP")),
+            ["AH"] = Text(SmecValue("AH", "AH_1", "HW")), ["BH"] = Text(SmecValue("BH", "BH_1", "WTW")),
+            ["TR"] = travel?.ToString("0.###", CultureInfo.InvariantCulture) ?? "", ["OH"] = Text(SmecValue("OH", "OH_1", "K")),
+            ["PD"] = Text(SmecValue("PD", "PD_1", "S")), ["JJ"] = Text(Get(values, "JJ", "OP")),
             ["HH"] = Text(Get(values, "HH", "OPH")), ["AA"] = Text(Get(values, "AA", "CW")),
-            ["BB"] = Text(Get(values, "BB", "CD")), ["HL"] = Text(Get(values, "HL", "CH")),
+            ["BB"] = Text(SmecValue("BB", "BB_1", "CD")), ["HL"] = Text(Get(values, "HL", "CH")),
             ["Door mode"] = DoorMode(rawDoorType),
-            ["Other Requirements"] = KnownRequirements(template, values)
+            ["Other Requirements"] = supplier == "SMEC" && series != "K-II" ? KnownRequirements(values) : KnownRequirements(template, values)
         };
+        if (supplier == "SMEC")
+        {
+            fields["AA"] = Text(SmecValue("AA", "AA_1", "CW"));
+            fields["Main Floor"] = Text(SmecValue("main_floor"));
+        }
         var car = CarDimensions(Text(Get(values, "$CARTYPE_MENU")));
         if (string.IsNullOrWhiteSpace(fields["AA"])) fields["AA"] = car.Width;
         if (string.IsNullOrWhiteSpace(fields["BB"])) fields["BB"] = car.Depth;
@@ -209,6 +222,10 @@ public static class ProjectFactoryExportSpecifications
         "1D1G" or "1D2G" or "2D2G" => value.Replace("-", "", StringComparison.Ordinal),
         _ => entrances > 1 ? "1D2G" : "1D1G"
     };
+    private static string KnownRequirements(IReadOnlyDictionary<string, object?> values)
+    {
+        return HasCwtSafetyGear(values) ? "CWT Safety Gear" : "";
+    }
     private static string KnownRequirements(DrawingTemplate template, IReadOnlyDictionary<string, object?> values)
     {
         var known = template.Parameters.Where(parameter => !parameter.IsReadOnly)
@@ -218,13 +235,19 @@ public static class ProjectFactoryExportSpecifications
             .Select(item => $"{item.Label}: {item.Value}");
         return string.Join("\n", known.Append("Any finishes and functions not present in the drawing require factory confirmation."));
     }
-    private static IReadOnlyList<string> DrawingOptions(IReadOnlyDictionary<string, object?> values)
+    private static IReadOnlyList<string> DrawingOptions(IReadOnlyDictionary<string, object?> values, string supplier)
     {
-        var options = new List<string> { "Finishes and optional functions not specified in the drawing require confirmation." };
-        var ceiling = Text(Get(values, "$CEILTYPE", "Ceiling"));
-        if (!string.IsNullOrWhiteSpace(ceiling)) options.Add($"Ceiling from drawing: {ceiling}");
-        if (HasEfs(values)) options.Add("EFS2");
-        if (HasCwtSafetyGear(values)) options.Add("CWTSAFETY");
+        if (supplier != "SMEC")
+        {
+            var existing = new List<string> { "Finishes and optional functions not specified in the drawing require confirmation." };
+            var ceiling = Text(Get(values, "$CEILTYPE", "Ceiling"));
+            if (!string.IsNullOrWhiteSpace(ceiling)) existing.Add($"Ceiling from drawing: {ceiling}");
+            if (HasEfs(values)) existing.Add("EFS2");
+            if (HasCwtSafetyGear(values)) existing.Add("CWTSAFETY");
+            return existing;
+        }
+        var options = new List<string> { "ABP", "OLHL", "BA", "ITV", "MELD", "MBS", "AAN-S", "AECC", "ACB", "AHC", "FER", "FERC" };
+        if (FlagText(Text(Get(values, "$PPP", "PPP")))) options.Add("FE");
         return options;
     }
     private static bool HasEfs(IReadOnlyDictionary<string, object?> values) => Text(Get(values, "$EFS", "EFS")).Equals("EFS2", StringComparison.OrdinalIgnoreCase);

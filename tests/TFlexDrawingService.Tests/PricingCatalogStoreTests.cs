@@ -1787,6 +1787,46 @@ public sealed class PricingCatalogStoreTests
         Assert.Contains("$A$1:$I$37", workbookXml);
         Assert.Throws<ArgumentException>(() => store.BuildSmecProjectExport([], null));
         Assert.Throws<ArgumentException>(() => store.BuildSmecProjectExport([first with { Supplier = "XIZI" }], null));
+
+        var longName = new string('L', 31);
+        using var namedWorkbook = new ZipArchive(new MemoryStream(store.BuildSmecProjectExport([
+            first with { Name = longName },
+            second with { Name = longName, RequestJson = JsonSerializer.Serialize(request with { CapacityKg = 1200 }, json) }
+        ], null)), ZipArchiveMode.Read);
+        var namedWorkbookXml = XDocument.Load(namedWorkbook.GetEntry("xl/workbook.xml")!.Open()).ToString();
+        Assert.Contains(" (1050kg)", namedWorkbookXml);
+        Assert.Contains(" (1200kg)", namedWorkbookXml);
+    }
+
+    [Fact]
+    public void SmecProjectExport_FillsCabinAndLandingDefaultsUnlessExplicitlySet()
+    {
+        var request = CreateXiziSupplierRequest() with
+        {
+            Supplier = "SMEC", Series = "LEHY-L-Pro",
+            SpecificationFields = new Dictionary<string, string> { ["Car Design"] = "Custom cabin", ["Car Design Wall"] = "Custom design", ["Wall"] = "SUS-H", ["Car Design Door"] = "Custom design", ["Car Door"] = "SUS-H", ["COP"] = "Custom COP", ["Main LOP"] = "Custom LOP" }
+        };
+        var specification = new PricingSpecification("s1", "p1", null, "L1", "SMEC", request.Series, "ready", 0, "CNY", 0,
+            JsonSerializer.Serialize(request), "", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        using var workbook = new ZipArchive(new MemoryStream(CreateSupplierCatalogStore().BuildSmecProjectExport([specification], null)), ZipArchiveMode.Read);
+        var sheet = XDocument.Load(workbook.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+
+        Assert.Equal("Custom cabin", ReadCell(sheet, "C16"));
+        Assert.Equal("ZCL-DN02", ReadCell(sheet, "C17"));
+        Assert.Equal("concave-down", ReadCell(sheet, "F17"));
+        Assert.Equal("depth 25mm", ReadCell(sheet, "H17"));
+        Assert.Equal("SUS-H", ReadCell(sheet, "C18"));
+        Assert.Equal("SUS-H", ReadCell(sheet, "F18"));
+        Assert.Equal("None", ReadCell(sheet, "C19"));
+        Assert.Equal("ZYH-FH10", ReadCell(sheet, "F19"));
+        Assert.Equal("Custom COP", ReadCell(sheet, "C20"));
+        Assert.Equal("A14", ReadCell(sheet, "H20"));
+        Assert.Equal("E-102", ReadCell(sheet, "C23"));
+        Assert.Equal("SUS-H", ReadCell(sheet, "E23"));
+        Assert.Equal("Steel sill bracket by seller", ReadCell(sheet, "C24"));
+        Assert.Equal("SUS-H", ReadCell(sheet, "C25"));
+        Assert.Equal("Custom LOP", ReadCell(sheet, "C26"));
+        Assert.Equal("A14", ReadCell(sheet, "E26"));
     }
 
     [Fact]

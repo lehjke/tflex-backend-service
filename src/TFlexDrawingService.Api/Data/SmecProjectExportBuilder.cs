@@ -28,7 +28,9 @@ internal static class SmecProjectExportBuilder
             foreach (var entry in archive.Entries.Where(e => e.FullName.StartsWith("xl/printerSettings/", StringComparison.Ordinal)).ToArray()) entry.Delete();
 
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var exported = specifications.Select((specification, index) => Exported(specification, project, names, index)).ToArray();
+            var duplicateNames = specifications.GroupBy(specification => specification.Name, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var exported = specifications.Select((specification, index) => Exported(specification, project, names, index, duplicateNames.Contains(specification.Name))).ToArray();
             var wrapStyle = AddWrapStyle(archive);
             var printAreas = new List<string>();
             for (var index = 0; index < exported.Length; index++)
@@ -39,7 +41,7 @@ internal static class SmecProjectExportBuilder
                 Write(archive, $"xl/worksheets/sheet{index + 1}.xml", sheet);
             }
             FillQuotation(quotation, exported, project, wrapStyle);
-            var requirements = exported.Where(item => item.Request.Series != "K-II" && (Requirements(new Fields(item.Request.SpecificationFields)).Skip(6).Any() || Requirements(new Fields(item.Request.SpecificationFields)).Any(value => value.Length > 90))).ToArray();
+            var requirements = exported.Where(item => item.Request.Series != "K-II" && (Requirements(item).Skip(6).Any() || Requirements(item).Any(value => value.Length > 90))).ToArray();
             var sheetNames = exported.Select(e => e.SheetName).Append("Quotation").ToList();
             if (requirements.Length > 0)
             {
@@ -48,17 +50,23 @@ internal static class SmecProjectExportBuilder
             }
             var quotationFile = exported.Length + 1;
             Write(archive, $"xl/worksheets/sheet{quotationFile}.xml", quotation);
-            WriteWorkbook(archive, sheetNames, printAreas.Append($"A1:H{exported.Length + 3}").Concat(requirements.Length > 0 ? [$"A1:B{requirements.Sum(item => Requirements(new Fields(item.Request.SpecificationFields)).Count())}"] : []).ToArray());
+            WriteWorkbook(archive, sheetNames, printAreas.Append($"A1:H{exported.Length + 3}").Concat(requirements.Length > 0 ? [$"A1:B{requirements.Sum(item => Requirements(item).Count())}"] : []).ToArray());
         }
         return output.ToArray();
     }
 
-    private static ExportedSpecification Exported(PricingSpecification specification, UserProject? project, HashSet<string> names, int index)
+    private static ExportedSpecification Exported(PricingSpecification specification, UserProject? project, HashSet<string> names, int index, bool duplicateName)
     {
         var request = JsonSerializer.Deserialize<PricingCalculationRequest>(specification.RequestJson, Json);
         if (request is null) throw new InvalidDataException($"Saved SMEC request '{specification.Name}' cannot be read.");
         var calculation = string.IsNullOrWhiteSpace(specification.CalculationJson) ? null : JsonSerializer.Deserialize<PricingCalculationResult>(specification.CalculationJson, Json);
-        return new(specification, SmecRequirements.Normalize(request), calculation, project, UniqueSheetName(First(specification.Name, $"SMEC {index + 1}"), names));
+        var sheetName = First(specification.Name, $"SMEC {index + 1}");
+        if (duplicateName && request.CapacityKg > 0)
+        {
+            var suffix = $" ({request.CapacityKg}kg)";
+            sheetName = sheetName[..Math.Min(sheetName.Length, 31 - suffix.Length)] + suffix;
+        }
+        return new(specification, SmecRequirements.Normalize(request), calculation, project, UniqueSheetName(sheetName, names));
     }
 
     private static XDocument KeepLayout(XDocument document)
@@ -114,15 +122,15 @@ internal static class SmecProjectExportBuilder
         SetNumber(sheet, "D13", Number(f.Get("TR", "Travel Height"))); SetNumber(sheet, "F13", Number(f.Get("OH", "Overhead"))); SetNumber(sheet, "H13", Number(f.Get("PD", "Pit")));
         SetNumber(sheet, "D14", Number(f.Get("JJ", "Door Width")) ?? (item.Request.DoorWidthMm > 0 ? item.Request.DoorWidthMm : null)); Set(sheet, "F14", f.Get("Door mode", "Door Opening")); SetNumber(sheet, "H14", Number(f.Get("HH", "Door Height")));
         SetNumber(sheet, "D15", Number(f.Get("AA", "Car Width"))); SetNumber(sheet, "F15", Number(f.Get("BB", "Car Depth"))); SetNumber(sheet, "H15", Number(f.Get("HL", "Car Height")));
-        Set(sheet, "C16", f.Get("Car Design")); Set(sheet, "C17", f.Get("Ceiling")); Set(sheet, "F17", f.Get("Floor Type", "Floor")); Set(sheet, "H17", f.Get("Floor Pattern")); Set(sheet, "C18", f.Get("Car Design Wall", "Wall")); Set(sheet, "F18", f.Get("Car Design Door", "Car Door"));
-        Set(sheet, "C19", Join(f.Get("Mirror"), f.Get("Mirror Position"))); Set(sheet, "F19", f.Get("Handrail")); Set(sheet, "G19", f.Get("Handrail Position"));
-        Set(sheet, "C20", f.Get("COP")); Set(sheet, "F20", f.Get("COP 2")); Set(sheet, "H20", f.Get("COP Button")); Set(sheet, "C21", f.Get("Wheelchair COP")); Set(sheet, "F21", f.Get("Wheelchair COP 2")); Set(sheet, "H21", f.Get("Wheelchair COP Button"));
-        Set(sheet, "C23", f.Get("Main Jamb", "Jamb")); Set(sheet, "E23", f.Get("Main Landing Material", "Main Jamb Material", "Jamb Material")); Set(sheet, "F23", f.Get("Other Jamb")); Set(sheet, "H23", f.Get("Other Landing Material", "Other Jamb Material"));
-        Set(sheet, "C24", f.Get("Main Sill Bracket", "Main Sill", "Sill")); Set(sheet, "F24", f.Get("Other Sill Bracket", "Other Sill")); Set(sheet, "C25", f.Get("Main Landing Door", "Main Door", "Door")); Set(sheet, "F25", f.Get("Other Landing Door", "Other Door"));
-        Set(sheet, "C26", f.Get("Main LOP")); Set(sheet, "E26", f.Get("LOP Button")); Set(sheet, "F26", f.Get("Other LOP")); Set(sheet, "H26", f.Get("Other LOP Button", "LOP Button"));
+        Set(sheet, "C16", First(f.Get("Car Design"), "Customized")); Set(sheet, "C17", First(f.Get("Ceiling"), "ZCL-DN02")); Set(sheet, "F17", First(f.Get("Floor Type", "Floor"), "concave-down")); Set(sheet, "H17", First(f.Get("Floor Pattern"), "depth 25mm")); Set(sheet, "C18", First(f.Get("Wall", "Car Design Wall"), "SUS-H")); Set(sheet, "F18", First(f.Get("Car Door", "Car Design Door"), "SUS-H"));
+        Set(sheet, "C19", First(Join(f.Get("Mirror"), f.Get("Mirror Position")), "None")); Set(sheet, "F19", First(f.Get("Handrail"), "ZYH-FH10")); Set(sheet, "G19", First(f.Get("Handrail Position"), "rear wall"));
+        Set(sheet, "C20", First(f.Get("COP"), "ZCB■-ND10")); Set(sheet, "F20", f.Get("COP 2")); Set(sheet, "H20", First(f.Get("COP Button"), "A14")); Set(sheet, "C21", f.Get("Wheelchair COP")); Set(sheet, "F21", f.Get("Wheelchair COP 2")); Set(sheet, "H21", f.Get("Wheelchair COP Button"));
+        Set(sheet, "C23", First(f.Get("Main Jamb", "Jamb"), "E-102")); Set(sheet, "E23", First(f.Get("Main Landing Material", "Main Jamb Material", "Jamb Material"), "SUS-H")); Set(sheet, "F23", First(f.Get("Other Jamb"), "E-102")); Set(sheet, "H23", First(f.Get("Other Landing Material", "Other Jamb Material"), "SUS-H"));
+        Set(sheet, "C24", First(f.Get("Main Sill Bracket", "Main Sill", "Sill"), "Steel sill bracket by seller")); Set(sheet, "F24", First(f.Get("Other Sill Bracket", "Other Sill"), "Steel sill bracket by seller")); Set(sheet, "C25", First(f.Get("Main Landing Door", "Main Door", "Door"), "SUS-H")); Set(sheet, "F25", First(f.Get("Other Landing Door", "Other Door"), "SUS-H"));
+        Set(sheet, "C26", First(f.Get("Main LOP"), "ZPI■-GD10")); Set(sheet, "E26", First(f.Get("LOP Button"), "A14")); Set(sheet, "F26", First(f.Get("Other LOP"), "ZPI■-GD10")); Set(sheet, "H26", First(f.Get("Other LOP Button", "LOP Button"), "A14"));
         Set(sheet, "C27", f.Get("Main Auxiliary LOP", "Auxiliary LOP")); Set(sheet, "E27", f.Get("Auxiliary LOP Button")); Set(sheet, "F27", f.Get("Other Auxiliary LOP", "Auxiliary LOP 2")); Set(sheet, "H27", f.Get("Other Auxiliary LOP Button", "Auxiliary LOP 2 Button")); Set(sheet, "C28", f.Get("Hall Indicator", "Main Hall Indicator")); Set(sheet, "F28", f.Get("Other Hall Indicator", "Hall Indicator 2")); Set(sheet, "C29", f.Get("Hall Lantern", "Main Hall Lantern")); Set(sheet, "F29", f.Get("Other Hall Lantern", "Hall Lantern 2"));
-        Set(sheet, "B30", string.Join(", ", item.Request.Options ?? []));
-        var requirements = Requirements(f).ToArray();
+        Set(sheet, "B30", string.Join(", ", (item.Request.Options ?? []).Where(option => !IsCwtOption(option))));
+        var requirements = Requirements(item).ToArray();
         for (var index = 0; index < Math.Min(6, requirements.Length); index++)
         {
             var row = 31 + index;
@@ -181,16 +189,36 @@ internal static class SmecProjectExportBuilder
     private static XDocument RequirementsSheet(IReadOnlyList<ExportedSpecification> items, string wrapStyle)
     {
         var data = new XElement(Main + "sheetData"); var row = 1;
-        foreach (var item in items) foreach (var requirement in Requirements(new Fields(item.Request.SpecificationFields)))
+        foreach (var item in items) foreach (var requirement in Requirements(item))
         {
             data.Add(new XElement(Main + "row", new XAttribute("r", row), new XAttribute("ht", Math.Max(18, Math.Min(90, 18 * (int)Math.Ceiling(requirement.Length / 90d)))), new XAttribute("customHeight", 1), Cell($"A{row}", item.SheetName, wrapStyle), Cell($"B{row}", requirement, wrapStyle))); row++;
         }
         return new XDocument(new XElement(Main + "worksheet", new XElement(Main + "cols", new XElement(Main + "col", new XAttribute("min", 1), new XAttribute("max", 1), new XAttribute("width", 28), new XAttribute("customWidth", 1)), new XElement(Main + "col", new XAttribute("min", 2), new XAttribute("max", 2), new XAttribute("width", 90), new XAttribute("customWidth", 1))), data));
     }
 
-    private static IEnumerable<string> Requirements(Fields fields) => SmecRequirements.Fields.Select(key => (Key: key, Value: fields.Get(key))).Where(x => !string.IsNullOrWhiteSpace(x.Value)).Select(x => $"{x.Key}: {x.Value}").Append(fields.Get("Other Requirements"))
-        .SelectMany(value => value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        .SelectMany(line => Enumerable.Range(0, (line.Length + 449) / 450).Select(index => line.Substring(index * 450, Math.Min(450, line.Length - index * 450))));
+    private static IEnumerable<string> Requirements(ExportedSpecification item)
+    {
+        var fields = new Fields(item.Request.SpecificationFields);
+        var values = new List<string>();
+        var fireRating = fields.Get("Fire Rating");
+        if (item.Request.Series == "K-II")
+        {
+            if (!string.IsNullOrWhiteSpace(fireRating)) values.Add($"Fire Rating: {fireRating}");
+        }
+        else values.Add(string.IsNullOrWhiteSpace(fireRating) ? "EI60" : fireRating);
+        if ((item.Request.Options ?? []).Any(IsCwtOption) && !fields.Get("Other Requirements").Contains("CWT", StringComparison.OrdinalIgnoreCase))
+            values.Add("CWT Safety Gear");
+        values.AddRange(SmecRequirements.Fields.Where(key => key != "Fire Rating")
+            .Select(key => (Key: key, Value: fields.Get(key)))
+            .Where(field => !string.IsNullOrWhiteSpace(field.Value))
+            .Select(field => $"{field.Key}: {field.Value}"));
+        values.Add(fields.Get("Other Requirements"));
+        return values.SelectMany(value => value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .SelectMany(line => Enumerable.Range(0, (line.Length + 449) / 450).Select(index => line.Substring(index * 450, Math.Min(450, line.Length - index * 450))));
+    }
+
+    private static bool IsCwtOption(string option) => option.Equals("CWT Safety Gear", StringComparison.OrdinalIgnoreCase)
+        || option.Equals("CWTSAFETY", StringComparison.OrdinalIgnoreCase);
     private static void WriteWorkbook(ZipArchive archive, IReadOnlyList<string> names, IReadOnlyList<string> printAreas)
     {
         var sheets = new XElement(Main + "sheets", names.Select((name, i) => new XElement(Main + "sheet", new XAttribute("name", name), new XAttribute("sheetId", i + 1), new XAttribute(Rel + "id", $"rId{i + 1}"))));
