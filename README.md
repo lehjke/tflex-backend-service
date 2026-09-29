@@ -74,8 +74,8 @@ docker run --detach \
 скриптом `scripts/Deploy-TFlexHybridServer2022.ps1`.
 
 После успешного production-развертывания тот же скрипт регистрирует задачу
-Windows `TFlexDrawingService.AutoUpdate`: ежедневно в `00:00` она проверяет
-`origin/main` и запускает транзакционное обновление только при появлении нового
+Windows `TFlexDrawingService.AutoUpdate`: каждые 5 минут она проверяет
+`origin/main` и запускает транзакционное обновление после успешного CI для нового
 commit. Журнал, статус, проверки fast-forward и команда диагностики описаны в
 `docs/server-bootstrap.md`.
 

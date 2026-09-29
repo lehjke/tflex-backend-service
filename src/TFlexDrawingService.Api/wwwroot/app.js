@@ -39,6 +39,7 @@ const state = {
   lastRenderedJobFingerprint: "",
   latestJob: null,
   jobs: [],
+  jobsVisibleCount: 5,
   pendingRenderFrame: null,
   pendingFocusTarget: null,
   activeParameterCategory: null,
@@ -87,6 +88,7 @@ const previewResultButton = document.querySelector("#previewResultButton");
 const downloadResultButton = document.querySelector("#downloadResultButton");
 const statusPanel = document.querySelector("#statusPanel");
 const jobsTableBody = document.querySelector("#jobsTableBody");
+const showMoreJobsButton = document.querySelector("#showMoreJobsButton");
 const validationPanel = document.querySelector("#validationPanel");
 const parameterTabs = document.querySelector("#parameterTabs");
 const parameterTabsPrevious = document.querySelector("#parameterTabsPrevious");
@@ -453,6 +455,7 @@ function clearEditorSessionState() {
   state.lastRenderedJobFingerprint = "";
   state.latestJob = null;
   state.jobs = [];
+  state.jobsVisibleCount = 5;
   state.pendingRenderFrame = null;
   state.pendingFocusTarget = null;
   state.activeParameterCategory = null;
@@ -3474,7 +3477,7 @@ function handleJobPollingFailure(jobId) {
 }
 
 async function refreshJobs({ required = false } = {}) {
-  const response = await apiFetch("/api/jobs?take=20");
+  const response = await apiFetch("/api/jobs?take=200");
   if (!response.ok) {
     if (required && sessionRequests.isCurrent(response)) {
       throw new Error("Jobs could not be loaded");
@@ -3497,10 +3500,11 @@ function renderJobs() {
     const row = document.createElement("tr");
     row.innerHTML = `<td colspan="6">По этому запросу задания не найдены.</td>`;
     jobsTableBody.append(row);
+    showMoreJobsButton.hidden = true;
     return;
   }
 
-  for (const job of jobs) {
+  for (const job of jobs.slice(0, state.jobsVisibleCount)) {
     const row = document.createElement("tr");
     const files = job.resultFiles || [];
     row.innerHTML = `
@@ -3513,7 +3517,13 @@ function renderJobs() {
     `;
     jobsTableBody.append(row);
   }
+  showMoreJobsButton.hidden = jobs.length <= state.jobsVisibleCount;
 }
+
+showMoreJobsButton.addEventListener("click", () => {
+  state.jobsVisibleCount += 5;
+  renderJobs();
+});
 
 async function submitJob(event) {
   event.preventDefault();

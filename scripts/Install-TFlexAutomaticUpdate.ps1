@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Registers the daily TFlexDrawingService automatic update task.
+Registers the periodic TFlexDrawingService automatic update task.
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass `
@@ -38,6 +38,8 @@ param(
     [string]$TaskName = "TFlexDrawingService.AutoUpdate",
     [ValidatePattern("^(?:[01]\d|2[0-3]):[0-5]\d$")]
     [string]$DailyAt = "00:00",
+    [ValidateRange(0, 1440)]
+    [int]$AutomaticUpdateIntervalMinutes = 5,
     [switch]$SkipFirewall
 )
 
@@ -121,6 +123,7 @@ $config = [ordered]@{
     acmeEmail = $AcmeEmail
     taskName = $TaskName
     dailyAt = $DailyAt
+    automaticUpdateIntervalMinutes = $AutomaticUpdateIntervalMinutes
     skipFirewall = [bool]$SkipFirewall
 }
 $configTemporaryPath = "$configPath.tmp"
@@ -142,12 +145,19 @@ Invoke-Native -FilePath "icacls.exe" -Arguments @(
 $powershellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $actionArguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runnerPath`" -ConfigPath `"$configPath`""
 $action = New-ScheduledTaskAction -Execute $powershellPath -Argument $actionArguments -WorkingDirectory $autoUpdateRoot
-$dailyTime = [DateTime]::ParseExact(
-    $DailyAt,
-    "HH:mm",
-    [Globalization.CultureInfo]::InvariantCulture,
-    [Globalization.DateTimeStyles]::None)
-$trigger = New-ScheduledTaskTrigger -Daily -At $dailyTime
+if ($AutomaticUpdateIntervalMinutes -gt 0) {
+    $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes $AutomaticUpdateIntervalMinutes)
+    $scheduleDescription = "every $AutomaticUpdateIntervalMinutes minutes"
+}
+else {
+    $dailyTime = [DateTime]::ParseExact(
+        $DailyAt,
+        "HH:mm",
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::None)
+    $trigger = New-ScheduledTaskTrigger -Daily -At $dailyTime
+    $scheduleDescription = "daily at $DailyAt"
+}
 $principal = New-ScheduledTaskPrincipal `
     -UserId "SYSTEM" `
     -LogonType ServiceAccount `
@@ -163,7 +173,7 @@ $task = New-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Checks origin/$Branch daily and transactionally updates TFlexDrawingService when a new revision is available."
+    -Description "Checks origin/$Branch $scheduleDescription and transactionally updates TFlexDrawingService when a new revision is available."
 
 Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
 $registeredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
@@ -173,7 +183,7 @@ if ($registeredTask.State -eq "Disabled") {
 }
 
 Write-Host "Automatic update task '$TaskName' is installed." -ForegroundColor Green
-Write-Host "Schedule: daily at $DailyAt (server local time)." -ForegroundColor Green
+Write-Host "Schedule: $scheduleDescription (server local time)." -ForegroundColor Green
 Write-Host "Next run: $($taskInfo.NextRunTime)" -ForegroundColor Green
 Write-Host "Configuration: $configPath" -ForegroundColor Green
 Write-Host "Successful revision marker: $successMarkerPath" -ForegroundColor Green

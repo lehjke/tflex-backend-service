@@ -59,6 +59,8 @@ param(
     [switch]$SkipAutomaticUpdates,
     [ValidatePattern("^(?:[01]\d|2[0-3]):[0-5]\d$")]
     [string]$AutomaticUpdateTime = "00:00",
+    [ValidateRange(0, 1440)]
+    [int]$AutomaticUpdateIntervalMinutes = 5,
     [string]$AutomaticUpdateTaskName = "TFlexDrawingService.AutoUpdate",
     [switch]$SkipDockerPull,
     [switch]$AllowDirtySource,
@@ -782,7 +784,7 @@ if (-not $SkipAutomaticUpdates) {
         Write-Warning "Automatic updates were not installed because SourceRoot '$effectiveSourceRoot' is not a Git checkout."
     }
     else {
-        Write-Step "Installing the daily automatic update task"
+        Write-Step "Installing the periodic automatic update task"
         $automaticUpdateInstaller = Join-Path $effectiveSourceRoot "scripts\Install-TFlexAutomaticUpdate.ps1"
         if (-not (Test-Path -LiteralPath $automaticUpdateInstaller -PathType Leaf)) {
             throw "Automatic update installer was not found at '$automaticUpdateInstaller'."
@@ -809,6 +811,7 @@ if (-not $SkipAutomaticUpdates) {
             AcmeEmail = $AcmeEmail
             TaskName = $AutomaticUpdateTaskName
             DailyAt = $AutomaticUpdateTime
+            AutomaticUpdateIntervalMinutes = $AutomaticUpdateIntervalMinutes
         }
         if ($SkipFirewall) { $automaticUpdateParameters.SkipFirewall = $true }
         & $automaticUpdateInstaller @automaticUpdateParameters
@@ -825,7 +828,8 @@ if (-not $SkipAutomaticUpdates) {
         $temporaryMarkerPath = "$successMarkerPath.tmp"
         Set-Content -LiteralPath $temporaryMarkerPath -Value $successfulRevision -Encoding ASCII -NoNewline
         Move-Item -LiteralPath $temporaryMarkerPath -Destination $successMarkerPath -Force
-        Write-Host "Automatic update task: $AutomaticUpdateTaskName (daily at $AutomaticUpdateTime)." -ForegroundColor Green
+        $automaticUpdateSchedule = if ($AutomaticUpdateIntervalMinutes -gt 0) { "every $AutomaticUpdateIntervalMinutes minutes" } else { "daily at $AutomaticUpdateTime" }
+        Write-Host "Automatic update task: $AutomaticUpdateTaskName ($automaticUpdateSchedule)." -ForegroundColor Green
     }
 }
 

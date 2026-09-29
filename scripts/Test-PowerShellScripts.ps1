@@ -238,6 +238,7 @@ $requiredHybridContracts = @(
     'Retrying once without cached layers.',
     '"--no-cache"',
     '[string]$AutomaticUpdateTime = "00:00"',
+    '[int]$AutomaticUpdateIntervalMinutes = 5',
     'Install-TFlexAutomaticUpdate.ps1',
     'last-successful-revision.txt'
 )
@@ -272,6 +273,8 @@ if ($hybridServiceUpdateIndex -lt 0 -or
 
 $requiredAutomaticUpdateInstallerContracts = @(
     'New-ScheduledTaskTrigger -Daily -At $dailyTime',
+    'New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes $AutomaticUpdateIntervalMinutes)',
+    'Schedule: $scheduleDescription',
     '-UserId "SYSTEM"',
     '-LogonType ServiceAccount',
     '-RunLevel Highest',
@@ -280,7 +283,8 @@ $requiredAutomaticUpdateInstallerContracts = @(
     'Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force',
     '"*S-1-5-18:(OI)(CI)F"',
     '"*S-1-5-32-544:(OI)(CI)F"',
-    'dailyAt = $DailyAt'
+    'dailyAt = $DailyAt',
+    'automaticUpdateIntervalMinutes = $AutomaticUpdateIntervalMinutes'
 )
 foreach ($contract in $requiredAutomaticUpdateInstallerContracts) {
     if (-not $automaticUpdateInstallerText.Contains($contract)) {
@@ -298,12 +302,44 @@ $requiredAutomaticUpdateRunnerContracts = @(
     '"reset", "--hard", $currentRevision',
     'last-successful-revision.txt',
     '[IO.FileShare]::None',
-    'Get-ConfigValue $config "repositoryUrl" -Required'
+    'Get-ConfigValue $config "repositoryUrl" -Required',
+    'Get-ConfigValue $config "automaticUpdateIntervalMinutes" 0',
+    'AutomaticUpdateIntervalMinutes = $updateIntervalMinutes',
+    '$deployedRevision -eq $targetRevision -and $currentRevision -eq $targetRevision',
+    'actions/workflows/ci.yml/runs?$query',
+    'Invoke-RestMethod -Method Get -Uri $workflowRunsUrl -TimeoutSec 20 -Headers @{',
+    'head_sha=$([Uri]::EscapeDataString($targetRevision))',
+    '&branch=$([Uri]::EscapeDataString($branch))&event=push&per_page=100',
+    '$_.head_sha -eq $targetRevision -and $_.head_branch -eq $branch -and $_.event -eq "push"',
+    'Write-UpdateState $statusPath "waiting-for-ci"',
+    'Write-UpdateState $statusPath "ci-failed"',
+    '$latestRun.status -ne "completed"',
+    '$latestRun.conclusion -ne "success"',
+    '$deploymentStarted = $false',
+    '$deploymentStarted = $true',
+    '$sourceAdvanced -and -not $deploymentStarted',
+    'Failed to write automatic update failure status:',
+    '"maintenance.auto=false", "-c", "gc.auto=0"',
+    'SetEnvironmentVariable("GIT_TERMINAL_PROMPT", "0", "Process")',
+    'SetEnvironmentVariable("GIT_TERMINAL_PROMPT", $previousGitTerminalPrompt, "Process")'
 )
 foreach ($contract in $requiredAutomaticUpdateRunnerContracts) {
     if (-not $automaticUpdateRunnerText.Contains($contract)) {
         throw "The automatic update runner is missing required contract '$contract'."
     }
+}
+$sourceAdvanceGuardIndex = $automaticUpdateRunnerText.IndexOf('$sourceAdvanced = $true')
+$ciGateIndex = $automaticUpdateRunnerText.IndexOf('Invoke-RestMethod -Method Get -Uri $workflowRunsUrl')
+$checkoutIndex = $automaticUpdateRunnerText.IndexOf('"checkout", $branch')
+$deploymentStartIndex = $automaticUpdateRunnerText.IndexOf('$deploymentStarted = $true')
+$deploymentInvokeIndex = $automaticUpdateRunnerText.IndexOf('& $deployScript @deployParameters')
+$failureStatusIndex = $automaticUpdateRunnerText.IndexOf('Write-UpdateState $statusPath "failed"')
+$failureStatusCatchIndex = $automaticUpdateRunnerText.IndexOf('Failed to write automatic update failure status:')
+if ($ciGateIndex -lt 0 -or $ciGateIndex -ge $sourceAdvanceGuardIndex -or
+    $sourceAdvanceGuardIndex -lt 0 -or $sourceAdvanceGuardIndex -ge $checkoutIndex -or
+    $deploymentStartIndex -lt 0 -or $deploymentStartIndex -ge $deploymentInvokeIndex -or
+    $failureStatusCatchIndex -le $failureStatusIndex) {
+    throw "Automatic update must guard source mutation, mark deployment start before invocation, and contain failure-status write errors."
 }
 if ($automaticUpdateRunnerText.Contains('AdminPassword') -or
     $automaticUpdateRunnerText.Contains('ServicePassword')) {

@@ -128,6 +128,7 @@ $repositoryUrl = [string](Get-ConfigValue $config "repositoryUrl" -Required)
 $branch = [string](Get-ConfigValue $config "branch" -Required)
 $taskName = [string](Get-ConfigValue $config "taskName" "TFlexDrawingService.AutoUpdate")
 $updateTime = [string](Get-ConfigValue $config "dailyAt" "00:00")
+$updateIntervalMinutes = [int](Get-ConfigValue $config "automaticUpdateIntervalMinutes" 0)
 $autoUpdateRoot = Split-Path $ConfigPath -Parent
 $logDirectory = Join-Path $installRoot "logs\auto-update"
 $statusPath = Join-Path $autoUpdateRoot "status.json"
@@ -145,6 +146,8 @@ $transcriptStarted = $false
 $currentRevision = ""
 $targetRevision = ""
 $sourceAdvanced = $false
+$deploymentStarted = $false
+$previousGitTerminalPrompt = [Environment]::GetEnvironmentVariable("GIT_TERMINAL_PROMPT", "Process")
 
 try {
     try {
@@ -180,6 +183,7 @@ try {
         throw "git.exe was not found."
     }
 
+    [Environment]::SetEnvironmentVariable("GIT_TERMINAL_PROMPT", "0", "Process")
     $originUrl = Get-GitScalar $git.Source $sourceRoot @("remote", "get-url", "origin")
     $normalizeRemote = {
         param([string]$Value)
@@ -198,7 +202,8 @@ try {
 
     $currentRevision = Get-GitScalar $git.Source $sourceRoot @("rev-parse", "HEAD")
     Invoke-Native -FilePath $git.Source -Arguments @(
-        "-C", $sourceRoot, "fetch", "--prune", "origin", $branch) | Out-Null
+        "-C", $sourceRoot, "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+        "fetch", "--prune", "origin", $branch) | Out-Null
     $remoteReference = "refs/remotes/origin/$branch"
     $targetRevision = Get-GitScalar $git.Source $sourceRoot @("rev-parse", $remoteReference)
     $deployedRevision = if (Test-Path -LiteralPath $successMarkerPath -PathType Leaf) {
@@ -208,10 +213,45 @@ try {
         ""
     }
 
-    if ($deployedRevision -eq $targetRevision) {
+    if ($deployedRevision -eq $targetRevision -and $currentRevision -eq $targetRevision) {
         $message = "No update is available. Deployed revision is $targetRevision."
         Write-Host $message -ForegroundColor Green
         Write-UpdateState $statusPath "up-to-date" $currentRevision $targetRevision $message
+        return
+    }
+
+    if ($repositoryUrl -notmatch '^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$') {
+        throw "Automatic deployment requires a public GitHub repository URL: '$repositoryUrl'."
+    }
+    $owner = $Matches[1]
+    $repository = $Matches[2]
+    $query = "head_sha=$([Uri]::EscapeDataString($targetRevision))&branch=$([Uri]::EscapeDataString($branch))&event=push&per_page=100"
+    $workflowRunsUrl = "https://api.github.com/repos/$owner/$repository/actions/workflows/ci.yml/runs?$query"
+    $workflowRuns = Invoke-RestMethod -Method Get -Uri $workflowRunsUrl -TimeoutSec 20 -Headers @{
+        Accept = "application/vnd.github+json"
+        "User-Agent" = "TFlexDrawingService-AutoUpdate"
+    }
+    $matchingRuns = @($workflowRuns.workflow_runs | Where-Object {
+        $_.head_sha -eq $targetRevision -and $_.head_branch -eq $branch -and $_.event -eq "push"
+    } | Sort-Object run_number -Descending)
+    if ($matchingRuns.Count -eq 0) {
+        $message = "Waiting for a successful CI run for revision $targetRevision on $branch."
+        Write-Host $message -ForegroundColor Yellow
+        Write-UpdateState $statusPath "waiting-for-ci" $currentRevision $targetRevision $message
+        return
+    }
+
+    $latestRun = $matchingRuns[0]
+    if ($latestRun.status -ne "completed") {
+        $message = "Waiting for CI run $($latestRun.run_number) to complete for revision $targetRevision."
+        Write-Host $message -ForegroundColor Yellow
+        Write-UpdateState $statusPath "waiting-for-ci" $currentRevision $targetRevision $message
+        return
+    }
+    if ($latestRun.conclusion -ne "success") {
+        $message = "CI run $($latestRun.run_number) concluded '$($latestRun.conclusion)' for revision $targetRevision."
+        Write-Host $message -ForegroundColor Red
+        Write-UpdateState $statusPath "ci-failed" $currentRevision $targetRevision $message
         return
     }
 
@@ -222,10 +262,10 @@ try {
     }
 
     if ($currentRevision -ne $targetRevision) {
+        $sourceAdvanced = $true
         Invoke-Native -FilePath $git.Source -Arguments @("-C", $sourceRoot, "checkout", $branch) | Out-Null
         Invoke-Native -FilePath $git.Source -Arguments @(
             "-C", $sourceRoot, "merge", "--ff-only", $remoteReference) | Out-Null
-        $sourceAdvanced = $true
     }
 
     $deployParameters = @{
@@ -250,6 +290,7 @@ try {
         AcmeEmail = [string](Get-ConfigValue $config "acmeEmail" "")
         AutomaticUpdateTaskName = $taskName
         AutomaticUpdateTime = $updateTime
+        AutomaticUpdateIntervalMinutes = $updateIntervalMinutes
         SkipCaddy = $true
     }
     if ([bool](Get-ConfigValue $config "skipFirewall" $false)) {
@@ -257,6 +298,7 @@ try {
     }
 
     Write-Host "Deploying revision $targetRevision." -ForegroundColor Cyan
+    $deploymentStarted = $true
     & $deployScript @deployParameters
     if (-not $?) {
         throw "Hybrid deployment returned an unsuccessful result."
@@ -277,11 +319,17 @@ try {
     Write-UpdateState $statusPath "updated" $currentRevision $targetRevision $message
 }
 catch {
-    $message = $_.Exception.Message
+    $failureRecord = $_
+    $message = $failureRecord.Exception.Message
     Write-Host $message -ForegroundColor Red
-    Write-UpdateState $statusPath "failed" $currentRevision $targetRevision $message
+    try {
+        Write-UpdateState $statusPath "failed" $currentRevision $targetRevision $message
+    }
+    catch {
+        Write-Warning "Failed to write automatic update failure status: $($_.Exception.Message)"
+    }
 
-    if ($sourceAdvanced -and -not [string]::IsNullOrWhiteSpace($currentRevision)) {
+    if ($sourceAdvanced -and -not $deploymentStarted -and -not [string]::IsNullOrWhiteSpace($currentRevision)) {
         try {
             $gitForRollback = Get-Command git.exe -ErrorAction SilentlyContinue
             if ($null -eq $gitForRollback) {
@@ -296,9 +344,10 @@ catch {
         }
     }
 
-    throw
+    throw $failureRecord
 }
 finally {
+    [Environment]::SetEnvironmentVariable("GIT_TERMINAL_PROMPT", $previousGitTerminalPrompt, "Process")
     if ($transcriptStarted) {
         try { Stop-Transcript | Out-Null } catch { }
     }
