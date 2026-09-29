@@ -224,9 +224,10 @@ public sealed class ExternalProcessTFlexAutomationClientTests
                 """
                 param([string] $ChildPidPath)
                 $ErrorActionPreference = 'Stop'
+                $childCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('Start-Sleep -Seconds 60'))
                 $child = Start-Process `
-                    -FilePath $env:ComSpec `
-                    -ArgumentList '/d /c ping -n 61 127.0.0.1 ^> nul' `
+                    -FilePath (Join-Path $PSHOME 'powershell.exe') `
+                    -ArgumentList "-NoProfile -NonInteractive -EncodedCommand $childCommand" `
                     -PassThru `
                     -WindowStyle Hidden
                 [IO.File]::WriteAllText($ChildPidPath, $child.Id.ToString([Globalization.CultureInfo]::InvariantCulture))
@@ -246,7 +247,7 @@ public sealed class ExternalProcessTFlexAutomationClientTests
                 {
                     CommandPath = command.FileName,
                     Arguments = command.Arguments,
-                    TimeoutSeconds = cancelRequest ? 10 : (OperatingSystem.IsWindows() ? 3 : 1)
+                    TimeoutSeconds = cancelRequest ? 10 : (OperatingSystem.IsWindows() ? 10 : 1)
                 }),
                 new TFlexAutomationExecutionGate(),
                 CreateReadyAutomationState(),

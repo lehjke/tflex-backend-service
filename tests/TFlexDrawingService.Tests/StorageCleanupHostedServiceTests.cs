@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Core.Models;
@@ -65,6 +66,7 @@ public sealed class StorageCleanupHostedServiceTests
         finally
         {
             await service.StopAsync(CancellationToken.None);
+            SqliteConnection.ClearAllPools();
             if (Directory.Exists(root))
             {
                 Directory.Delete(root, recursive: true);

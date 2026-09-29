@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Core.Models;
 using TFlexDrawingService.Infrastructure.Configuration;
@@ -37,6 +38,7 @@ public sealed class TemplateAnalysisStoreTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -64,6 +66,7 @@ public sealed class TemplateAnalysisStoreTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }
     }
@@ -82,6 +85,7 @@ public sealed class TemplateAnalysisStoreTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }
     }
