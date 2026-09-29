@@ -228,6 +228,7 @@ public sealed class ExternalProcessTFlexAutomationClientTests
                 $child = Start-Process `
                     -FilePath (Join-Path $PSHOME 'powershell.exe') `
                     -ArgumentList "-NoProfile -NonInteractive -EncodedCommand $childCommand" `
+                    -WorkingDirectory $env:TEMP `
                     -PassThru `
                     -WindowStyle Hidden
                 [IO.File]::WriteAllText($ChildPidPath, $child.Id.ToString([Globalization.CultureInfo]::InvariantCulture))
