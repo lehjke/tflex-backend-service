@@ -43,7 +43,7 @@ test("account exposes request lifecycle actions, role choices, and unread count"
   assert.match(account, /card\.append\(engineerRequestDetail\)/u);
   assert.doesNotMatch(accountPage, /id="engineerRequestDetail"/u);
   assert.match(account, /function updateEngineerRequestOpenControls\(\)[\s\S]*?for \(const button of engineerRequestsList\.querySelectorAll\('[^']*open-request[^']*'\)\)[\s\S]*?button\.setAttribute\("aria-expanded", String\(expanded\)\)[\s\S]*?button\.textContent = expanded \? localized\("Закрыть", "Close"\)/u);
-  assert.match(account, /card\?\.append\(engineerRequestDetail\);\n  updateEngineerRequestOpenControls\(\)/u);
+  assert.match(account, /card\?\.append\(engineerRequestDetail\);\r?\n  updateEngineerRequestOpenControls\(\)/u);
   assert.match(account, /if \(!refresh && state\.activeEngineerRequest\?\.id === id && !engineerRequestDetail\.hidden\)/u);
   assert.match(account, /openEngineerRequest\(item\.id, true\)/u);
   const openRequest = account.slice(account.indexOf("async function openEngineerRequest("), account.indexOf("async function openEngineerRequestFromUrl("));
@@ -63,7 +63,7 @@ test("Engineer and Admin can browse seller projects and saved configurations rea
   assert.match(account, /api\/sellers\/\$\{encodeURIComponent\(sellerName\)\}\/projects/u);
   assert.match(account, /projects\/\$\{encodeURIComponent\(projectId\)\}\/configurations/u);
   assert.match(account, /values\.append\(summary, list\)/u);
-  assert.doesNotMatch(account.match(/async function loadSellerProjectConfigurations[\s\S]*?\n\}/u)?.[0] || "", /data-action|apiFetch\([^\n]*method:/u);
+  assert.doesNotMatch(account.match(/async function loadSellerProjectConfigurations[\s\S]*?\r?\n\}/u)?.[0] || "", /data-action|apiFetch\([^\n]*method:/u);
 });
 
 test("only Admin or the assigned Engineer can process a request or review its completed drawing", () => {
@@ -86,7 +86,7 @@ test("engineer opens request in the existing editor and saves only its working c
   assert.match(app, /state\.engineerRequest = \{ \...request/u);
   assert.match(app, /api\/engineer-requests\/\$\{encodeURIComponent\(request\.id\)\}\/parameters/u);
   assert.match(app, /if \(state\.engineerRequest\) return saveEngineerRequestParameters\(\)/u);
-  assert.match(app, /if \(state\.engineerRequest\) return;\n  if \(!state\.selectedTemplate\) return;/u);
+  assert.match(app, /if \(state\.engineerRequest\) return;\r?\n  if \(!state\.selectedTemplate\) return;/u);
   assert.match(app, /templateSelect\.disabled = true;/u);
   assert.match(app, /formatSelect\.disabled = true;/u);
   assert.match(app, /\/account\?requestId=/u);

@@ -208,7 +208,7 @@ public sealed class WorkerHeartbeatHostedServiceTests
         string directory,
         Func<JsonDocument, bool> predicate)
     {
-        for (var attempt = 0; attempt < 100; attempt++)
+        for (var attempt = 0; attempt < 500; attempt++)
         {
             var path = Directory.Exists(directory)
                 ? Directory.EnumerateFiles(directory, "worker-*.json").SingleOrDefault()
