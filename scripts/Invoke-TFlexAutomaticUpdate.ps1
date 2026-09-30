@@ -193,9 +193,11 @@ try {
         throw "Git origin '$originUrl' does not match configured repository '$repositoryUrl'."
     }
 
-    $dirtyEntries = @(Invoke-Native -FilePath $git.Source -Arguments @(
-        "-C", $sourceRoot, "status", "--porcelain=v1", "--untracked-files=all")) |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $dirtyEntries = @(
+        Invoke-Native -FilePath $git.Source -Arguments @(
+            "-C", $sourceRoot, "status", "--porcelain=v1", "--untracked-files=all") |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
     if ($dirtyEntries.Count -gt 0) {
         throw "Automatic update refused because SourceRoot contains uncommitted files."
     }
