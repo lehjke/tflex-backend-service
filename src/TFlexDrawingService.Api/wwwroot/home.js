@@ -30,8 +30,8 @@ function isAuthenticated() {
 function getRoleLabel() {
   const roles = state.currentUser?.roles || [];
   if (roles.includes("Admin")) return "Admin";
-  if (roles.includes("Operator")) return "Operator";
-  if (roles.includes("Viewer")) return "Viewer";
+  if (roles.includes("Engineer")) return "Engineer";
+  if (roles.includes("Seller")) return "Seller";
   return "User";
 }
 
@@ -312,6 +312,7 @@ function setupHomeSearch() {
 
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
+loginForm?.addEventListener("input", () => loginPassword.setCustomValidity(""));
 logoutButton?.addEventListener("click", logout);
 
 setupHomeCards();

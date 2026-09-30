@@ -34,6 +34,8 @@ public interface IDrawingJobRepository
 
     Task DeleteAsync(string id, CancellationToken cancellationToken = default);
 
+    Task<bool> TryCancelPendingAsync(string id, CancellationToken cancellationToken = default);
+
     Task<DrawingJob?> TryClaimNextPendingAsync(
         string leaseToken,
         DateTimeOffset leaseExpiresAt,

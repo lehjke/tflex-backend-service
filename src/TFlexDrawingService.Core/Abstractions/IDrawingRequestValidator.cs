@@ -6,4 +6,6 @@ namespace TFlexDrawingService.Core.Abstractions;
 public interface IDrawingRequestValidator
 {
     Task<DrawingJobValidationResult> ValidateAsync(CreateDrawingJobRequest request, CancellationToken cancellationToken = default);
+
+    Task<DrawingValidationClassification> ClassifyAsync(CreateDrawingJobRequest request, CancellationToken cancellationToken = default);
 }

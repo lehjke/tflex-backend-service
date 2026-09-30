@@ -47,10 +47,14 @@ const state = {
   currentUser: null,
   projects: [],
   configurations: [],
-  editingConfigurationId: null
+  editingConfigurationId: null,
+  sellerRequestHasDeviations: false,
+  engineerRequest: null
 };
 const sessionRequests = createSessionRequestGuard();
 let pageLoadErrorContext = "load";
+let sellerRequestCheckTimer = null;
+let sellerRequestCheckSequence = 0;
 
 const guestMain = document.querySelector("#guestMain");
 const appMain = document.querySelector("#appMain");
@@ -84,6 +88,10 @@ const formatSelect = document.querySelector("#formatSelect");
 const globalSearchInput = document.querySelector(".global-search input");
 const parametersForm = document.querySelector("#parametersForm");
 const submitButton = document.querySelector("#submitButton");
+const requestEngineerButton = document.querySelector("#requestEngineerButton");
+const engineerRequestDescriptionField = document.querySelector("#engineerRequestDescriptionField");
+const engineerRequestDescription = document.querySelector("#engineerRequestDescription");
+const engineerRequestStatus = document.querySelector("#engineerRequestStatus");
 const previewResultButton = document.querySelector("#previewResultButton");
 const downloadResultButton = document.querySelector("#downloadResultButton");
 const statusPanel = document.querySelector("#statusPanel");
@@ -279,7 +287,11 @@ function isAuthenticated() {
 
 function canCreateJobs() {
   const roles = state.currentUser?.roles || [];
-  return roles.includes("Admin") || roles.includes("Operator");
+  return roles.includes("Admin") || roles.includes("Engineer");
+}
+
+function isSeller() {
+  return (state.currentUser?.roles || []).includes("Seller");
 }
 
 function canAdmin() {
@@ -395,17 +407,20 @@ function updateAuthView() {
   const roles = state.currentUser?.roles || [];
   const visibleRole = roles.includes("Admin")
     ? "Admin"
-    : roles.includes("Operator")
-      ? "Operator"
-      : roles.includes("Viewer")
-        ? "Viewer"
+    : roles.includes("Engineer")
+      ? "Engineer"
+      : roles.includes("Seller")
+        ? "Seller"
         : "";
   guestMain.hidden = authenticated;
   loginForm.hidden = true;
   userPanel.hidden = !authenticated;
   appMain.hidden = !authenticated;
-  submitButton.hidden = authenticated && !canCreateJobs();
-  saveConfigurationButton.hidden = !authenticated || !canCreateJobs();
+  const requestMode = Boolean(state.engineerRequest);
+  submitButton.hidden = requestMode || authenticated && (!canCreateJobs() || isSeller() && state.sellerRequestHasDeviations);
+  if (requestEngineerButton) requestEngineerButton.hidden = requestMode || !authenticated || !isSeller() || !state.sellerRequestHasDeviations;
+  saveConfigurationButton.hidden = requestMode ? false : !authenticated || !canCreateJobs();
+  saveConfigurationButton.textContent = requestMode ? "Сохранить параметры заявки" : "Сохранить конфигурацию";
   adminNavLinks.forEach(link => {
     link.hidden = !isAdmin;
   });
@@ -417,10 +432,10 @@ function updateAuthView() {
       currentUserRoleLabel.textContent = visibleRole;
     }
     if (roleAccessNote) {
-      const readOnly = visibleRole === "Viewer";
+      const readOnly = visibleRole === "Seller";
       roleAccessNote.hidden = !readOnly;
       roleAccessNote.textContent = readOnly
-        ? t("Режим просмотра: создание и сохранение чертежей доступно ролям Operator и Admin.")
+        ? t("Режим продавца: отправьте параметры инженеру на проверку.")
         : "";
     }
   } else {
@@ -438,6 +453,9 @@ function updateAuthView() {
 
 function clearEditorSessionState() {
   sessionRequests.invalidate();
+  clearTimeout(sellerRequestCheckTimer);
+  sellerRequestCheckSequence++;
+  state.sellerRequestHasDeviations = false;
   if (state.pendingRenderFrame !== null) {
     cancelAnimationFrame(state.pendingRenderFrame);
   }
@@ -462,6 +480,15 @@ function clearEditorSessionState() {
   state.projects = [];
   state.configurations = [];
   state.editingConfigurationId = null;
+  state.engineerRequest = null;
+  document.querySelector("#projectField").hidden = false;
+  document.querySelector("#configurationField").hidden = false;
+  document.querySelector(".reset-job-button").hidden = false;
+  previewResultButton.hidden = false;
+  downloadResultButton.hidden = false;
+  templateSelect.disabled = false;
+  formatSelect.disabled = false;
+  editorHeading.textContent = "Конфигуратор чертежей";
 
   loginForm?.reset();
   guestLoginForm?.reset();
@@ -538,7 +565,8 @@ async function readProblem(response, fallback) {
   try {
     const problem = await sessionRequests.readJson(response);
     if (problem === sessionRequests.stalePayload) return [];
-    return problem.errors?.request || [problem.detail || problem.title || fallback];
+    const errors = Object.values(problem.errors || {}).flatMap(value => Array.isArray(value) ? value : [value]);
+    return errors.length ? errors : [problem.detail || problem.message || problem.title || fallback];
   } catch {
     return [fallback];
   }
@@ -3257,6 +3285,7 @@ function renderSelectedTemplate() {
 
   if (!state.selectedTemplate) {
     updateShaftPreview(null);
+    scheduleSellerRequestAvailability();
     return;
   }
 
@@ -3269,6 +3298,7 @@ function renderSelectedTemplate() {
 
   renderParameters();
   updateDownloadResultButton();
+  scheduleSellerRequestAvailability();
 }
 
 function collectParameters() {
@@ -3527,6 +3557,7 @@ showMoreJobsButton.addEventListener("click", () => {
 
 async function submitJob(event) {
   event.preventDefault();
+  if (state.engineerRequest) return;
   if (!state.selectedTemplate) return;
   if (!canCreateJobs()) {
     renderStatusError([t("Недостаточно прав для создания задания.")]);
@@ -3534,11 +3565,40 @@ async function submitJob(event) {
   }
 
   rememberCurrentValues();
+  const drawingRequest = {
+    templateId: state.selectedTemplate.id,
+    outputFormat: formatSelect.value,
+    parameters: collectParameters()
+  };
+  let classification;
+  try {
+    const classificationResponse = await apiFetch("/api/drawings/classify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(drawingRequest)
+    });
+    if (!classificationResponse.ok) {
+      renderStatusError(await readProblem(classificationResponse, t("Не удалось проверить параметры.")));
+      return;
+    }
+    classification = await sessionRequests.readJson(classificationResponse);
+    if (classification === sessionRequests.stalePayload) return;
+  } catch {
+    renderStatusError([t("Не удалось проверить параметры. Проверьте соединение с API.")]);
+    return;
+  }
+
+  const hardErrors = classification.hardErrors || classification.HardErrors || [];
+  const deviations = classification.overridableDeviations || classification.OverridableDeviations || [];
+  if (hardErrors.length > 0) {
+    renderStatusError(hardErrors);
+    return;
+  }
   const validationIssues = getCurrentValidationIssues();
   const validationErrors = validationIssues.filter(isBlockingValidationIssue);
   applyValidationHighlights(validationErrors);
   updateValidationPanel(validationIssues, { announceErrors: true });
-  if (validationErrors.length > 0) {
+  if (validationErrors.length > 0 && deviations.length === 0) {
     renderStatusError([t("Исправьте параметры перед созданием задания.")]);
     const firstInvalidInput = parametersForm.querySelector('[aria-invalid="true"]');
     const invalidGroup = firstInvalidInput?.closest(".parameter-group");
@@ -3553,6 +3613,10 @@ async function submitJob(event) {
     });
     return;
   }
+
+  const confirmationFingerprint = classification.fingerprint || classification.Fingerprint;
+  if (deviations.length > 0 && (!confirmationFingerprint || !window.confirm(
+    `${t("Параметры выходят за типовой диапазон:")}\n\n${deviations.map(item => `• ${item}`).join("\n")}\n\n${t("Подтвердить создание чертежа?")}`))) return;
 
   setJobSubmitDisabled(true);
   state.latestJob = null;
@@ -3570,9 +3634,8 @@ async function submitJob(event) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        templateId: state.selectedTemplate.id,
-        outputFormat: formatSelect.value,
-        parameters: collectParameters()
+        ...drawingRequest,
+        ...(deviations.length > 0 ? { confirmationFingerprint } : {})
       })
     });
 
@@ -3597,6 +3660,100 @@ async function submitJob(event) {
   } finally {
     setJobSubmitDisabled(false);
   }
+}
+
+async function submitEngineerRequest() {
+  if (state.engineerRequest) return;
+  if (!isSeller() || !state.sellerRequestHasDeviations || !state.selectedTemplate || !projectSelect.value) return;
+  if (engineerRequestDescriptionField.hidden) {
+    engineerRequestDescriptionField.hidden = false;
+    engineerRequestDescription.focus();
+    return;
+  }
+  const description = engineerRequestDescription.value.trim();
+  if (!description) {
+    engineerRequestDescription.setCustomValidity(t("Опишите задачу для инженера."));
+    engineerRequestDescription.reportValidity();
+    engineerRequestDescription.setCustomValidity("");
+    return;
+  }
+  requestEngineerButton.disabled = true;
+  engineerRequestStatus.hidden = false;
+  engineerRequestStatus.className = "empty";
+  engineerRequestStatus.textContent = t("Отправляем запрос…");
+  try {
+    const response = await apiFetch("/api/engineer-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: projectSelect.value,
+        description,
+        templateId: state.selectedTemplate.id,
+        outputFormat: formatSelect.value,
+        parameters: collectParameters()
+      })
+    });
+    if (!response.ok) {
+      engineerRequestStatus.className = "error";
+      engineerRequestStatus.textContent = (await readProblem(response, t("Не удалось отправить запрос."))).join(" ");
+      return;
+    }
+    engineerRequestDescription.value = "";
+    engineerRequestDescriptionField.hidden = true;
+    engineerRequestStatus.className = "success";
+    engineerRequestStatus.textContent = t("Запрос отправлен инженеру. Статус можно отслеживать в личном кабинете.");
+  } catch {
+    engineerRequestStatus.className = "error";
+    engineerRequestStatus.textContent = t("Не удалось отправить запрос. Проверьте соединение с API.");
+  } finally {
+    requestEngineerButton.disabled = false;
+  }
+}
+
+function scheduleSellerRequestAvailability() {
+  if (state.engineerRequest) {
+    clearTimeout(sellerRequestCheckTimer);
+    state.sellerRequestHasDeviations = false;
+    if (requestEngineerButton) requestEngineerButton.hidden = true;
+    if (engineerRequestDescriptionField) engineerRequestDescriptionField.hidden = true;
+    if (submitButton) submitButton.hidden = true;
+    return;
+  }
+  if (!isSeller() || !state.selectedTemplate) {
+    state.sellerRequestHasDeviations = false;
+    if (requestEngineerButton) requestEngineerButton.hidden = true;
+    if (submitButton) submitButton.hidden = isAuthenticated() && !canCreateJobs();
+    if (engineerRequestDescriptionField) engineerRequestDescriptionField.hidden = true;
+    return;
+  }
+  state.sellerRequestHasDeviations = false;
+  requestEngineerButton.hidden = true;
+  submitButton.hidden = false;
+  engineerRequestDescriptionField.hidden = true;
+  const sequence = ++sellerRequestCheckSequence;
+  clearTimeout(sellerRequestCheckTimer);
+  sellerRequestCheckTimer = setTimeout(async () => {
+    try {
+      const response = await apiFetch("/api/drawings/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateId: state.selectedTemplate.id,
+          outputFormat: formatSelect.value,
+          parameters: collectParameters()
+        })
+      });
+      if (!response.ok || sequence !== sellerRequestCheckSequence || !isSeller()) return;
+      const result = await sessionRequests.readJson(response);
+      if (result === sessionRequests.stalePayload || sequence !== sellerRequestCheckSequence) return;
+      const deviations = result.overridableDeviations || result.OverridableDeviations || [];
+      state.sellerRequestHasDeviations = deviations.length > 0;
+      requestEngineerButton.hidden = !state.sellerRequestHasDeviations;
+      submitButton.hidden = state.sellerRequestHasDeviations;
+    } catch {
+      state.sellerRequestHasDeviations = false;
+    }
+  }, 350);
 }
 
 function setJobSubmitDisabled(disabled) {
@@ -3680,6 +3837,7 @@ async function loadProjects(selectedProjectId = null, { required = false } = {})
 }
 
 async function saveCurrentConfiguration() {
+  if (state.engineerRequest) return saveEngineerRequestParameters();
   if (!state.selectedTemplate) return;
   if (!projectSelect.value) {
     renderStatusError([t("Сначала создайте проект в личном кабинете.")]);
@@ -3722,6 +3880,73 @@ async function saveCurrentConfiguration() {
   updateDownloadResultButton(null);
 }
 
+async function saveEngineerRequestParameters() {
+  const request = state.engineerRequest;
+  if (!request || !state.selectedTemplate) return;
+  saveConfigurationButton.disabled = true;
+  try {
+    const response = await apiFetch(`/api/engineer-requests/${encodeURIComponent(request.id)}/parameters`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parameters: collectParameters() })
+    });
+    if (!response.ok) {
+      renderStatusError(await readProblem(response, "Не удалось сохранить параметры заявки."));
+      return;
+    }
+    if (!sessionRequests.isCurrent(response)) return;
+    statusPanel.className = "empty";
+    statusPanel.setAttribute("role", "status");
+    statusPanel.setAttribute("aria-live", "polite");
+    statusPanel.replaceChildren(document.createTextNode(`Параметры заявки сохранены. Статус: ${request.status}. `));
+    const link = document.createElement("a");
+    link.href = `/account?requestId=${encodeURIComponent(request.id)}`;
+    link.textContent = "Вернуться к заявке";
+    statusPanel.append(link);
+  } catch {
+    renderStatusError(["Не удалось сохранить параметры заявки. Проверьте соединение с API."]);
+  } finally {
+    saveConfigurationButton.disabled = false;
+  }
+}
+
+async function loadEngineerRequestFromUrl() {
+  const requestId = new URLSearchParams(window.location.search).get("engineerRequestId");
+  if (!requestId) return false;
+  const response = await apiFetch(`/api/engineer-requests/${encodeURIComponent(requestId)}`);
+  if (!response.ok) {
+    renderStatusError(await readProblem(response, "Нет доступа к заявке или она не найдена."));
+    return false;
+  }
+  const request = await sessionRequests.readJson(response);
+  if (request === sessionRequests.stalePayload) return false;
+  const isAssignedEngineer = (state.currentUser?.roles || []).includes("Engineer")
+    && request.engineerUserName?.toLowerCase() === state.currentUser.userName?.toLowerCase();
+  if (!canAdmin() && !isAssignedEngineer || !["InProgress", "NeedsClarification"].includes(request.status)) {
+    renderStatusError(["Нет доступа к редактированию этой заявки."]);
+    return false;
+  }
+  const template = state.templates.find(item => item.id === request.templateId);
+  if (!template || !template.outputFormats.includes(request.outputFormat)) {
+    renderStatusError(["Шаблон или формат заявки недоступен."]);
+    return false;
+  }
+  state.engineerRequest = { ...request, id: request.id || requestId };
+  updateAuthView();
+  document.querySelector("#projectField").hidden = true;
+  document.querySelector("#configurationField").hidden = true;
+  document.querySelector(".reset-job-button").hidden = true;
+  previewResultButton.hidden = true;
+  downloadResultButton.hidden = true;
+  templateSelect.disabled = true;
+  formatSelect.disabled = true;
+  applyConfiguration({ ...request, id: null });
+  statusPanel.textContent = `Заявка ${request.id || requestId}. Статус: ${request.status}. Инженер: ${request.engineerUserName}.`;
+  saveConfigurationButton.disabled = false;
+  editorHeading.textContent = "Редактор заявки инженеру";
+  return true;
+}
+
 function applyConfiguration(configuration) {
   const template = state.templates.find(item => item.id === configuration.templateId);
   if (!template) {
@@ -3736,6 +3961,8 @@ function applyConfiguration(configuration) {
     ...state.parameterValues,
     ...(configuration.parameters || {})
   };
+  parametersForm.replaceChildren();
+  updateConfigurationNamePreview(state.parameterValues);
   if ([...formatSelect.options].some(option => option.value === configuration.outputFormat)) {
     formatSelect.value = configuration.outputFormat;
   }
@@ -3905,9 +4132,11 @@ async function boot({ focusOnSuccess = false, focusOnError = false, context = "l
     }
 
     await loadTemplates({ required: true });
-    await loadProjects(null, { required: true });
+    const requestMode = new URLSearchParams(window.location.search).has("engineerRequestId");
+    if (!requestMode) await loadProjects(null, { required: true });
     await refreshJobs({ required: true });
-    await loadConfigurationFromUrl();
+    if (requestMode && !await loadEngineerRequestFromUrl()) await loadProjects(null, { required: true });
+    else await loadConfigurationFromUrl();
     if (focusOnSuccess) focusBootDestination(true);
     return true;
   } catch {
@@ -3920,7 +4149,12 @@ async function boot({ focusOnSuccess = false, focusOnError = false, context = "l
 }
 
 templateSelect.addEventListener("change", renderSelectedTemplate);
-formatSelect.addEventListener("change", () => updateDownloadResultButton());
+formatSelect.addEventListener("change", () => {
+  updateDownloadResultButton();
+  scheduleSellerRequestAvailability();
+});
+parametersForm.addEventListener("input", scheduleSellerRequestAvailability);
+parametersForm.addEventListener("change", scheduleSellerRequestAvailability);
 globalSearchInput?.addEventListener("input", applyEditorSearch);
 globalSearchInput?.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
@@ -3928,6 +4162,7 @@ globalSearchInput?.addEventListener("keydown", event => {
   applyEditorSearch();
 });
 document.querySelector("#jobForm").addEventListener("submit", submitJob);
+requestEngineerButton?.addEventListener("click", submitEngineerRequest);
 document.querySelector("#jobForm").addEventListener("reset", resetJobForm);
 parameterTabsPrevious?.addEventListener("click", () => scrollParameterTabs(-1));
 parameterTabsNext?.addEventListener("click", () => scrollParameterTabs(1));
@@ -3940,6 +4175,9 @@ parameterTabsResizeObserver?.observe(parameterTabs);
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 guestLoginForm?.addEventListener("submit", login);
+for (const form of [loginForm, guestLoginForm]) {
+  form?.addEventListener("input", () => form.querySelector("[name='password']")?.setCustomValidity(""));
+}
 showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
 showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);

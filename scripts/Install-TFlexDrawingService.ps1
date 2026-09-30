@@ -2177,7 +2177,7 @@ $securityConfig = [ordered]@{
             DisplayName = $AdminUser
             PasswordHash = $adminCredential.Hash
             Enabled = $true
-            Roles = @("Admin", "Operator", "Viewer")
+            Roles = @("Admin")
         }
     )
 }

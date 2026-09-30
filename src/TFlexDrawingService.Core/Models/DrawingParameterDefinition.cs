@@ -30,6 +30,12 @@ public sealed class DrawingParameterDefinition
 
     public decimal? MaxValue { get; set; }
 
+    public bool MinValueEngineerOverridable { get; set; }
+
+    public bool MaxValueEngineerOverridable { get; set; }
+
+    public bool PositiveValueRequired { get; set; }
+
     public JsonElement? DefaultValue { get; set; }
 
     public List<string> AllowedValues { get; set; } = [];

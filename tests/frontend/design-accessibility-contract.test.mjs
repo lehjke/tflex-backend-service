@@ -11,6 +11,19 @@ function readWebSource(fileName) {
   return fs.readFileSync(path.join(webRoot, fileName), "utf8");
 }
 
+test("admin panel entry is aligned with the account heading", () => {
+  const html = readWebSource("account.html");
+  assert.match(html, /<section class="intro intro--account">\s*<h1>Личный кабинет<\/h1>\s*<a id="adminAccessCard"[^>]*href="#adminPanel"[^>]*hidden>Админ-панель<\/a>/u);
+  assert.equal((html.match(/id="adminAccessCard"/gu) || []).length, 1);
+});
+
+test("admin role selector stays visible and accessible", () => {
+  const source = readWebSource("account.js");
+  const controls = source.slice(source.indexOf("function renderAdminRoleControls("), source.indexOf("function getSelectedAdminRoles("));
+  assert.match(controls, /<select data-role-select aria-label="Роль пользователя"/u);
+  assert.doesNotMatch(controls, /class="sr-only"/u);
+});
+
 test("account project cards open accessible viewport dialogs", () => {
   const source = readWebSource("account.js");
   const styles = readWebSource("styles.css");
@@ -135,7 +148,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260929-show-more-jobs-1/u);
+  assert.match(html, /\/app\.js\?v=20260930-request-editor-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -210,7 +223,7 @@ test("account protects destructive and duplicate generation actions and recovers
   assert.match(source, /requireSuccessfulLoadResponse\(\s*configurationsResponse/u);
   assert.doesNotMatch(source, /if \(!configurationsResponse\.ok\) return \[project\.id, \[\]\]/u);
   assert.match(source, /activeAdminUserActions: new Set\(\)/u);
-  assert.match(source, /row\.querySelectorAll\("button, input"\)/u);
+  assert.match(source, /row\.querySelectorAll\("button, input, select"\)/u);
   assert.match(source, /state\.activeAdminUserActions\.has\(userName\)/u);
   assert.match(source, /async function logout\(\)[\s\S]*?showPageLoadError\(\{ context: "logout" \}\)/u);
   assert.match(source, /function updatePageLoadErrorCopy\(context = pageLoadErrorContext\)/u);
@@ -326,7 +339,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260928-account-show-more-1/u,
+      /\/styles\.css\?v=20260930-inline-requests-3/u,
       `${pageName} must load the current stylesheet`);
   }
 });

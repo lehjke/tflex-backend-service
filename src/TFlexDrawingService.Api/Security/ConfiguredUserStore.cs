@@ -55,6 +55,8 @@ public sealed class ConfiguredUserStore(
         await EnsureColumnExistsAsync(connection, "ApprovedByUserName", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(connection, "DeletedAt", "TEXT NULL", cancellationToken);
 
+        await MigrateRolesAsync(connection, cancellationToken);
+
         foreach (var user in securityOptions.CurrentValue.Users)
         {
             await InsertBootstrapUserIfMissingAsync(connection, user, cancellationToken);
@@ -178,7 +180,7 @@ public sealed class ConfiguredUserStore(
             "$displayName",
             string.IsNullOrWhiteSpace(displayName) ? userName.Trim() : displayName.Trim());
         command.Parameters.AddWithValue("$passwordHash", PasswordHashing.HashPassword(password));
-        command.Parameters.AddWithValue("$rolesJson", JsonSerializer.Serialize(new[] { "Viewer" }, JsonOptions));
+        command.Parameters.AddWithValue("$rolesJson", JsonSerializer.Serialize(new[] { "Seller" }, JsonOptions));
         command.Parameters.AddWithValue("$requestedAt", FormatDate(now));
         command.Parameters.AddWithValue("$createdAt", FormatDate(now));
         command.Parameters.AddWithValue("$updatedAt", FormatDate(now));
@@ -203,7 +205,7 @@ public sealed class ConfiguredUserStore(
             return false;
         }
 
-        var effectiveRoles = NormalizeRoles(roles is { Count: > 0 } ? roles : ["Operator", "Viewer"]);
+        var effectiveRoles = NormalizeRoles(roles is { Count: > 0 } ? roles : ["Seller"]);
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
@@ -513,6 +515,51 @@ public sealed class ConfiguredUserStore(
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
+    private static async Task MigrateRolesAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        var users = new List<(string UserName, string RolesJson)>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.CommandText = "SELECT UserName, RolesJson FROM SecurityUsers;";
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                users.Add((reader.GetString(0), reader.GetString(1)));
+            }
+        }
+
+        var changes = users
+            .Select(user => (user.UserName, RolesJson: user.RolesJson,
+                NormalizedJson: JsonSerializer.Serialize(DeserializeRoles(user.RolesJson), JsonOptions)))
+            .Where(user => !string.Equals(user.RolesJson, user.NormalizedJson, StringComparison.Ordinal))
+            .ToArray();
+        if (changes.Length == 0)
+        {
+            return;
+        }
+
+        var databasePath = connection.DataSource;
+        var backupPath = $"{databasePath}.pre-role-migration-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}.bak";
+        await using (var backup = new SqliteConnection($"Data Source={backupPath}"))
+        {
+            await backup.OpenAsync(cancellationToken);
+            connection.BackupDatabase(backup);
+        }
+
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        foreach (var (userName, _, normalizedJson) in changes)
+        {
+            await using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = "UPDATE SecurityUsers SET RolesJson = $rolesJson WHERE UserName = $userName;";
+            update.Parameters.AddWithValue("$rolesJson", normalizedJson);
+            update.Parameters.AddWithValue("$userName", userName);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private static async Task<string> GetRegistrationConflictStatusAsync(
         SqliteConnection connection,
         string userName,
@@ -586,7 +633,7 @@ public sealed class ConfiguredUserStore(
         }
         catch (JsonException)
         {
-            return ["Viewer"];
+            return ["Seller"];
         }
     }
 
@@ -598,14 +645,17 @@ public sealed class ConfiguredUserStore(
             .Select(role => role.ToLowerInvariant() switch
             {
                 "admin" => "Admin",
-                "operator" => "Operator",
-                "viewer" => "Viewer",
-                _ => role
+                "engineer" => "Engineer",
+                "seller" or "operator" or "viewer" => "Seller",
+                _ => string.Empty
             })
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return normalized.Count == 0 ? ["Viewer"] : normalized;
+        return normalized.Contains("Admin")
+            ? ["Admin"]
+            : normalized.Contains("Engineer")
+                ? ["Engineer"]
+                : ["Seller"];
     }
 
     private static string NormalizeApprovalStatus(string? status)

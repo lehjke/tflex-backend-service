@@ -320,6 +320,23 @@ public sealed class SqliteDrawingJobRepository(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task<bool> TryCancelPendingAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE DrawingJobs
+            SET Status=$cancelled, FinishedAt=$finishedAt, LeaseToken=NULL, LeaseExpiresAt=NULL
+            WHERE Id=$id AND Status=$pending;
+            """;
+        command.Parameters.AddWithValue("$cancelled", DrawingJobStatus.Cancelled.ToString());
+        command.Parameters.AddWithValue("$finishedAt", FormatDate(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<DrawingJob?> TryClaimNextPendingAsync(
         string leaseToken,
         DateTimeOffset leaseExpiresAt,

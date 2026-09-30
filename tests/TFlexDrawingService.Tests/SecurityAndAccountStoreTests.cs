@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Api.Data;
@@ -86,14 +87,15 @@ public sealed class SecurityAndAccountStoreTests
         Assert.NotNull(pendingUser);
         Assert.False(pendingUser.Enabled);
         Assert.Equal("Pending", pendingUser.ApprovalStatus);
+        Assert.Equal(["Seller"], pendingUser.Roles);
 
-        Assert.True(await store.ApproveUserAsync("operator", "admin", ["Operator", "Viewer"]));
+        Assert.True(await store.ApproveUserAsync("operator", "admin"));
 
         var approvedUser = await store.ValidateCredentialsAsync("operator", "password");
         Assert.NotNull(approvedUser);
         Assert.True(approvedUser.Enabled);
         Assert.Equal("Approved", approvedUser.ApprovalStatus);
-        Assert.Contains("Operator", approvedUser.Roles);
+        Assert.Equal(["Seller"], approvedUser.Roles);
     }
 
     [Fact]
@@ -124,6 +126,61 @@ public sealed class SecurityAndAccountStoreTests
         Assert.Equal("Deleted", repeatedRegistration.Status);
         Assert.Null(await store.ValidateCredentialsAsync("operator", "new-password"));
         Assert.Empty(await store.ListUsersAsync());
+    }
+
+    [Fact]
+    public async Task Initialize_MigratesLegacyRolesAndNormalizesKnownRolesIdempotently()
+    {
+        var storageOptions = CreateStorageOptions();
+        var options = new StaticOptionsMonitor<SecurityOptions>(new SecurityOptions());
+        var store = new ConfiguredUserStore(storageOptions, options, NullLogger<ConfiguredUserStore>.Instance);
+        await store.InitializeAsync();
+        await store.UpsertUserAsync(new ConfiguredUser
+        {
+            UserName = "legacy",
+            PasswordHash = PasswordHashing.HashPassword("password"),
+            Roles = ["aDmIn", "OPERATOR", "viewer", "eNgInEeR"]
+        });
+        await store.UpsertUserAsync(new ConfiguredUser
+        {
+            UserName = "engineer",
+            PasswordHash = PasswordHashing.HashPassword("password"),
+            Roles = ["Seller", "Engineer"]
+        });
+        await using (var connection = new SqliteConnection($"Data Source={storageOptions.Value.DatabasePath}"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE SecurityUsers SET RolesJson = CASE UserName WHEN 'legacy' THEN $adminRoles ELSE $engineerRoles END WHERE UserName IN ('legacy', 'engineer');";
+            command.Parameters.AddWithValue("$adminRoles", "[\"aDmIn\",\"OPERATOR\",\"viewer\",\"eNgInEeR\"]");
+            command.Parameters.AddWithValue("$engineerRoles", "[\"Seller\",\"eNgInEeR\"]");
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await store.InitializeAsync();
+        var backups = Directory.GetFiles(
+            Path.GetDirectoryName(storageOptions.Value.DatabasePath)!,
+            "drawings.db.pre-role-migration-*.bak");
+        var backupPath = Assert.Single(backups);
+        await using (var backup = new SqliteConnection($"Data Source={backupPath}"))
+        {
+            await backup.OpenAsync();
+            await using var command = backup.CreateCommand();
+            command.CommandText = "SELECT RolesJson FROM SecurityUsers WHERE UserName = 'legacy';";
+            Assert.Equal("[\"aDmIn\",\"OPERATOR\",\"viewer\",\"eNgInEeR\"]", await command.ExecuteScalarAsync());
+        }
+
+        await store.InitializeAsync();
+        Assert.Single(Directory.GetFiles(
+            Path.GetDirectoryName(storageOptions.Value.DatabasePath)!,
+            "drawings.db.pre-role-migration-*.bak"));
+
+        var migrated = await store.FindUserAsync("legacy");
+        Assert.NotNull(migrated);
+        Assert.Equal(["Admin"], migrated.Roles);
+        var migratedEngineer = await store.FindUserAsync("engineer");
+        Assert.NotNull(migratedEngineer);
+        Assert.Equal(["Engineer"], migratedEngineer.Roles);
     }
 
     [Fact]
@@ -391,7 +448,7 @@ public sealed class SecurityAndAccountStoreTests
             PasswordHash = PasswordHashing.HashPassword("password"),
             Enabled = true,
             ApprovalStatus = "Approved",
-            Roles = ["Admin", "Operator", "Viewer"]
+            Roles = ["Admin", "Engineer", "Seller"]
         };
     }
 
@@ -404,7 +461,7 @@ public sealed class SecurityAndAccountStoreTests
             PasswordHash = user.PasswordHash,
             Enabled = true,
             ApprovalStatus = "Approved",
-            Roles = ["Operator", "Viewer"]
+            Roles = ["Engineer", "Seller"]
         };
     }
 

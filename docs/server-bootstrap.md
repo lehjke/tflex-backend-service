@@ -424,13 +424,15 @@ C:\Services\TFlexDrawingService\storage\drawings.db
 
 Роли:
 
-- `Admin`: видит все задания, управляет пользователями и пулом шаблонов;
-- `Operator`: создает задания и видит свои задания;
-- `Viewer`: только смотрит доступные ему задания и скачивает результаты.
+- `Admin`: видит все проекты и задания, управляет пользователями и пулом шаблонов;
+- `Engineer`: создаёт стандартные и нестандартные чертежи, просматривает проекты продавцов и обрабатывает взятые заявки;
+- `Seller`: создаёт стандартные чертежи в своих проектах и отправляет нестандартные параметры инженеру.
+
+Все три роли используют калькулятор цен. Продавец получает файл по нестандартной заявке только после её выдачи инженером. Старые `Operator` и `Viewer` при запуске переводятся в `Seller`; перед изменением ролей создаётся резервная копия SQLite БД рядом с ней (`*.pre-role-migration-*.bak`).
 
 Новый пользователь может отправить заявку через форму на главной странице или в личном кабинете. До подтверждения администратором он хранится в БД со статусом `Pending`, отключен и не может войти. Администратор подтверждает, отклоняет или отключает пользователей в админ-разделе личного кабинета.
 
-При подтверждении из веб-интерфейса обычному новому пользователю выдаются роли `Operator` и `Viewer`. Для ручного управления через API можно передать роли явно:
+При подтверждении из веб-интерфейса новый пользователь получает роль `Seller`. Администратор может назначить `Engineer` в личном кабинете или через API:
 
 Создать или обновить пользователя можно через admin API после входа под admin в браузере. Для PowerShell удобнее сначала получить cookie:
 
@@ -442,34 +444,34 @@ Invoke-RestMethod "https://alesnichiy.ru/api/auth/login" `
   -ContentType "application/json" `
   -Body (@{ userName = "admin"; password = "admin-password" } | ConvertTo-Json)
 
-Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/seller" `
   -Method Put `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" } `
   -ContentType "application/json" `
   -Body (@{
-    displayName = "Operator"
-    password = "operator-password"
+    displayName = "Seller"
+    password = "seller-password"
     enabled = $true
-    roles = @("Operator", "Viewer")
+    roles = @("Seller")
   } | ConvertTo-Json)
 ```
 
 Подтвердить заявку:
 
 ```powershell
-Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator/approve" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/seller/approve" `
   -Method Post `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" } `
   -ContentType "application/json" `
-  -Body (@{ roles = @("Operator", "Viewer") } | ConvertTo-Json)
+  -Body (@{ roles = @("Seller") } | ConvertTo-Json)
 ```
 
 Отклонить заявку:
 
 ```powershell
-Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/operator/reject" `
+Invoke-RestMethod "https://alesnichiy.ru/api/admin/users/seller/reject" `
   -Method Post `
   -WebSession $session `
   -Headers @{ "X-TFlex-Requested-With" = "fetch" }
@@ -514,7 +516,7 @@ C:\Services\TFlexDrawingService\storage\drawings.db
 
 В админ-разделе личного кабинета есть пул шаблонов. Администратор может временно выключить шаблон для пользователей. Выключенный шаблон:
 
-- исчезает из списка `/api/templates` для `Operator` и `Viewer`;
+- исчезает из списка `/api/templates` для `Engineer` и `Seller`;
 - не открывается через `/api/templates/{id}` для обычных пользователей;
 - не принимается при создании задания и сохранении конфигурации;
 - остается видимым администратору, чтобы его можно было включить обратно.

@@ -178,7 +178,8 @@
             }
           ],
           "expression": "$car_type == \"PXX\" ? AA_1 : 0",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -189,7 +190,8 @@
           "defaultValue": 1200,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1200",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$PPP",
@@ -277,7 +279,8 @@
             }
           ],
           "expression": "$car_type == \"PXX\" ? BB_1 : 0",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -288,7 +291,8 @@
           "defaultValue": 1900,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1900",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HL",
@@ -361,7 +365,8 @@
           ],
           "defaultValue": 1100,
           "expression": "1100",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$fire_rating_1",
@@ -425,7 +430,8 @@
           ],
           "defaultValue": 2100,
           "expression": "2100",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$cwt_sg",
@@ -547,7 +553,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_AH_1, min_AH_2)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -558,7 +565,8 @@
           "defaultValue": 2715,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2715",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_BH",
@@ -570,7 +578,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_BH_1, min_BH_2, min_BH_3)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -581,7 +590,8 @@
           "defaultValue": 1650,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1650",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_A3",
@@ -725,7 +735,8 @@
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "stops",
@@ -939,7 +950,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -950,7 +962,8 @@
           "defaultValue": 3750,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "3750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_PD",
@@ -962,7 +975,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "HD+floor+DTM",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -973,7 +987,8 @@
           "defaultValue": 1300,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1300",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "TM_mount",
@@ -8627,32 +8642,38 @@
         {
           "name": "r_AA",
           "expression": "$car_type==\"PXX\" ? (select(cap<630,r_AA_0320,cap==630,r_AA_0630,cap>630,r_AA_1050) ? 1 : error($r_AA_text)) : 1",
-          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}."
+          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BB",
           "expression": "$car_type==\"PXX\" ? (select(cap<630,r_BB_0320,cap==630,r_BB_0630,cap>630,r_BB_1050) ? 1 : error($r_BB_text)) : 1",
-          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}."
+          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ",
           "expression": "select(cap<630,r_JJ_0320,cap==630,r_JJ_0630,cap>630,r_JJ_1050) ? 1 : error($r_JJ_text)",
-          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}."
+          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ_AA",
           "expression": "select($door_type==\"ЦО\",r_JJ_AA_ЦО,$door_type==\"ТО\",r_JJ_AA_ТО) ? 1 : error($r_JJ_AA_text)",
-          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}."
+          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_HH_HL",
           "expression": "((HL-HH)>=100) ? 1 : error($r_HH_HL_text)",
-          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100."
+          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A4_1",
           "expression": "$door_type==\"ТО\" ? 1 : (abs(A4)<=((AA-JJ)/2-50)) ? 1 : error($r_A4_1_text)",
-          "message": "A4 = {A4}. Должно быть {-(AA-JJ)/2+50} ≤ A4 ≤ {(AA-JJ)/2-50}."
+          "message": "A4 = {A4}. Должно быть {-(AA-JJ)/2+50} ≤ A4 ≤ {(AA-JJ)/2-50}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A4_2",
@@ -8662,37 +8683,44 @@
         {
           "name": "r_AH",
           "expression": "((AH>=min_AH)&&(AH<=max_A1+A2+max_A3)) ? 1 : error($r_AH_text)",
-          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_A1+A2+max_A3}."
+          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_A1+A2+max_A3}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_1",
           "expression": "(BH>=min_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A3_1",
           "expression": "(A3>=min_A3) ? 1 : error($r_A3_text)",
-          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}."
+          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A1_2",
           "expression": "(A1<=max_A1) ? 1 : error($r_A1_text)",
-          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}."
+          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A3_2",
           "expression": "(A3<=max_A3) ? 1 : error($r_A3_text)",
-          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}."
+          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_2",
           "expression": "(BH<=max_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AREA",
           "expression": "$car_type==\"PXX\" ? (AA*BB<=S_AREA*10^6 ? 1 : error($r_AREA_text)) : 1",
-          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}."
+          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_stops",
@@ -8727,12 +8755,14 @@
         {
           "name": "r_maxHF",
           "expression": "maxHF01*maxHF02*maxHF03*maxHF04*maxHF05*maxHF06*maxHF07*maxHF08*maxHF09*maxHF10*maxHF11*maxHF12*maxHF13*maxHF14*maxHF15*maxHF16*maxHF17*maxHF18*maxHF19*maxHF20*maxHF21*maxHF22*maxHF23*maxHF24*maxHF25*maxHF26*maxHF27*maxHF28*maxHF29*maxHF30*maxHF31*maxHF32*maxHF33*maxHF34*maxHF35*maxHF36*maxHF37*maxHF38*maxHF39*maxHF40*maxHF41*maxHF42*maxHF43*maxHF44*maxHF45*maxHF46*maxHF47*maxHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_maxTHF",
           "expression": "maxTHF01*maxTHF02*maxTHF03*maxTHF04*maxTHF05*maxTHF06*maxTHF07*maxTHF08*maxTHF09*maxTHF10*maxTHF11*maxTHF12*maxTHF13*maxTHF14*maxTHF15*maxTHF16*maxTHF17*maxTHF18*maxTHF19*maxTHF20*maxTHF21*maxTHF22*maxTHF23*maxTHF24*maxTHF25*maxTHF26*maxTHF27*maxTHF28*maxTHF29*maxTHF30*maxTHF31*maxTHF32*maxTHF33*maxTHF34*maxTHF35*maxTHF36*maxTHF37*maxTHF38*maxTHF39*maxTHF40*maxTHF41*maxTHF42*maxTHF43*maxTHF44*maxTHF45*maxTHF46*maxTHF47*maxTHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_main",
@@ -8747,12 +8777,14 @@
         {
           "name": "r_PD",
           "expression": "PD>=min_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть PD ≥ {min_PD}."
+          "message": "PD = {PD}. Должно быть PD ≥ {min_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_OH",
           "expression": "OH>=min_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть OH ≥ {min_OH}."
+          "message": "OH = {OH}. Должно быть OH ≥ {min_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_P14R",
@@ -8762,7 +8794,8 @@
         {
           "name": "r_A1_1",
           "expression": "(A1>=min_A1) ? 1 : error($r_A1_text)",
-          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}."
+          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}.",
+          "engineerOverridable": true
         }
       ]
     },
@@ -9008,7 +9041,8 @@
             }
           ],
           "expression": "$car_type == \"PXX\" ? AA_1 : 0",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9019,7 +9053,8 @@
           "defaultValue": 1500,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1500",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$PPP",
@@ -9163,7 +9198,8 @@
             }
           ],
           "expression": "$car_type == \"PXX\" ? BB_1 : 0",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9174,7 +9210,8 @@
           "defaultValue": 1900,
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1900",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HL",
@@ -9246,7 +9283,8 @@
           ],
           "defaultValue": 1000,
           "expression": "1000",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$fire_rating_1",
@@ -9310,7 +9348,8 @@
           ],
           "defaultValue": 2100,
           "expression": "2100",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$cwt_sg",
@@ -9486,7 +9525,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_AH_1, min_AH_2)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9497,7 +9537,8 @@
           "defaultValue": 2715,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2715",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_BH",
@@ -9509,7 +9550,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "max(min_BH_1, min_BH_2, min_BH_3)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9520,7 +9562,8 @@
           "defaultValue": 1650,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1650",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_A3",
@@ -9700,7 +9743,8 @@
           "isRequired": true,
           "defaultValue": 30,
           "expression": "30",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "stops",
@@ -9914,7 +9958,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "load_type==1 ? (load_mount==1 ? HE_1 : HE_1+100) : (HE_1+350)",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9925,7 +9970,8 @@
           "defaultValue": 3750,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "3750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_PD",
@@ -9937,7 +9983,8 @@
           "isReadOnly": true,
           "levelExpression": "dim==0 ? 1 : -1",
           "expression": "HD+floor+DTM",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "isRequired": false,
@@ -9948,7 +9995,8 @@
           "defaultValue": 1300,
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1300",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "TM_mount",
@@ -22409,32 +22457,38 @@
         {
           "name": "r_AA",
           "expression": "$car_type==\"PXX\" ? (cap<1800 ? (speed<3 ? r_AA_1 : r_AA_2): r_AA_3 ? 1 : error($r_AA_text)) : 1",
-          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}."
+          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BB",
           "expression": "$car_type==\"PXX\" ? (cap<1800 ? (speed<3 ? r_BB_1 : r_BB_2): r_BB_3 ? 1 : error($r_BB_text)) : 1",
-          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}."
+          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ",
           "expression": "cap<1800 ? (speed<3 ? r_JJ_1 : r_JJ_2): r_JJ_3 ? 1 : error($r_JJ_text)",
-          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}."
+          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ_AA",
           "expression": "select($door_type==\"ЦО\",r_JJ_AA_ЦО,$door_type==\"ТО\",r_JJ_AA_ТО) ? 1 : error($r_JJ_AA_text)",
-          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}."
+          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_HH_HL",
           "expression": "((HL-HH)>=100) ? 1 : error($r_HH_HL_text)",
-          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100."
+          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A4_1",
           "expression": "$door_type==\"ТО\" ? 1 : (abs(A4)<=((AA-JJ)/2-50)) ? 1 : error($r_A4_1_text)",
-          "message": "A4 = {A4}. Должно быть {-(AA-JJ)/2+50} ≤ A4 ≤ {(AA-JJ)/2-50}."
+          "message": "A4 = {A4}. Должно быть {-(AA-JJ)/2+50} ≤ A4 ≤ {(AA-JJ)/2-50}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A4_2",
@@ -22444,27 +22498,32 @@
         {
           "name": "r_BH_1",
           "expression": "(BH>=min_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A3_1",
           "expression": "(A3>=min_A3) ? 1 : error($r_A3_text)",
-          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}."
+          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A1_2",
           "expression": "(A1<=max_A1) ? 1 : error($r_A1_text)",
-          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}."
+          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A3_2",
           "expression": "(A3<=max_A3) ? 1 : error($r_A3_text)",
-          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}."
+          "message": "A3 = {A3}. Должно быть {min_A3} ≤ A3 ≤ {max_A3}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AREA",
           "expression": "$car_type==\"PXX\" ? (AA*BB<=S_AREA*10^6 ? 1 : error($r_AREA_text)) : 1",
-          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}."
+          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_stops",
@@ -22499,12 +22558,14 @@
         {
           "name": "r_maxHF",
           "expression": "maxHF01*maxHF02*maxHF03*maxHF04*maxHF05*maxHF06*maxHF07*maxHF08*maxHF09*maxHF10*maxHF11*maxHF12*maxHF13*maxHF14*maxHF15*maxHF16*maxHF17*maxHF18*maxHF19*maxHF20*maxHF21*maxHF22*maxHF23*maxHF24*maxHF25*maxHF26*maxHF27*maxHF28*maxHF29*maxHF30*maxHF31*maxHF32*maxHF33*maxHF34*maxHF35*maxHF36*maxHF37*maxHF38*maxHF39*maxHF40*maxHF41*maxHF42*maxHF43*maxHF44*maxHF45*maxHF46*maxHF47*maxHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_maxTHF",
           "expression": "maxTHF01*maxTHF02*maxTHF03*maxTHF04*maxTHF05*maxTHF06*maxTHF07*maxTHF08*maxTHF09*maxTHF10*maxTHF11*maxTHF12*maxTHF13*maxTHF14*maxTHF15*maxTHF16*maxTHF17*maxTHF18*maxTHF19*maxTHF20*maxTHF21*maxTHF22*maxTHF23*maxTHF24*maxTHF25*maxTHF26*maxTHF27*maxTHF28*maxTHF29*maxTHF30*maxTHF31*maxTHF32*maxTHF33*maxTHF34*maxTHF35*maxTHF36*maxTHF37*maxTHF38*maxTHF39*maxTHF40*maxTHF41*maxTHF42*maxTHF43*maxTHF44*maxTHF45*maxTHF46*maxTHF47*maxTHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_main",
@@ -22519,27 +22580,32 @@
         {
           "name": "r_PD",
           "expression": "PD>=min_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть PD ≥ {min_PD}."
+          "message": "PD = {PD}. Должно быть PD ≥ {min_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_OH",
           "expression": "OH>=min_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть OH ≥ {min_OH}."
+          "message": "OH = {OH}. Должно быть OH ≥ {min_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_A1_1",
           "expression": "(A1>=min_A1) ? 1 : error($r_A1_text)",
-          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}."
+          "message": "A1 = {A1}. Должно быть {min_A1} ≤ A1 ≤ {max_A1}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AH",
           "expression": "((AH>=min_AH)&&(AH<=max_AH)) ? 1 : error($r_AH_text)",
-          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_AH}."
+          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_AH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_2",
           "expression": "(BH<=max_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         }
       ]
     },
@@ -22566,7 +22632,8 @@
             "600",
             "800",
             "1000"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "N",
@@ -22611,7 +22678,8 @@
           "allowedValues": [
             "950",
             "1000"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "temp",
@@ -22664,7 +22732,8 @@
           "defaultValue": 10000,
           "levelExpression": "(s1*s2)!=0? -1 : f_SUP1",
           "expression": "10000",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "HGAP",
@@ -22685,7 +22754,8 @@
           "defaultValue": 40,
           "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "40",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "FFL",
@@ -22766,7 +22836,8 @@
           "defaultValue": 1250,
           "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "1250",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "$Balustrade_material",
@@ -22799,7 +22870,8 @@
           "defaultValue": 2253,
           "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "2253",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "HM2",
@@ -22809,7 +22881,8 @@
           "defaultValue": 342,
           "levelExpression": "alpha==35? -1 : (Deep_truss == -1 ? (TG+240 > 25000 ? 0 : -1) : (TG+240 > 28000 ? 0 : -1))",
           "expression": "342",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "HM1",
@@ -22819,7 +22892,8 @@
           "defaultValue": 180,
           "levelExpression": "((W==600 && TG>18000) || (W==800 && TG>17000) || (W==1000 && TG>16000)) ? 0 : -1",
           "expression": "180",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "HE",
@@ -22827,7 +22901,8 @@
           "type": "integer",
           "isRequired": true,
           "defaultValue": 3900,
-          "expression": "3900"
+          "expression": "3900",
+          "positiveValueRequired": true
         },
         {
           "name": "Lpit",
@@ -22848,7 +22923,8 @@
           "defaultValue": 4300,
           "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "4300",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "TJ",
@@ -22869,7 +22945,8 @@
           "defaultValue": 2625,
           "levelExpression": "Handmade == 1 ? 1 : -1",
           "expression": "2625",
-          "submitDefault": false
+          "submitDefault": false,
+          "positiveValueRequired": true
         },
         {
           "name": "f_Ct",
@@ -23059,7 +23136,8 @@
           "type": "integer",
           "isRequired": true,
           "defaultValue": 40,
-          "expression": "40"
+          "expression": "40",
+          "positiveValueRequired": true
         },
         {
           "name": "Double_truss",
@@ -24201,7 +24279,8 @@
           "message": "Длина верхней входной площадки должна быть {TJmin} ≤ TJ ≤ {TJmax}",
           "fieldNames": [
             "TJ_v"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err2",
@@ -24209,7 +24288,8 @@
           "message": "Длина нижней входной площадки должна быть {TKmin} ≤ TK ≤ {TKmax}",
           "fieldNames": [
             "TK_v"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err3",
@@ -24217,7 +24297,8 @@
           "message": "Для высоты подъема ≥ 9500 мм необходимо получить согласование от технического отдела",
           "fieldNames": [
             "HE"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err4",
@@ -24225,7 +24306,8 @@
           "message": "Длина приямка должна быть {Lpit_min} ≤ Lpit ≤ {Lpit_min+1000}",
           "fieldNames": [
             "Lpit_v"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err5",
@@ -24233,7 +24315,8 @@
           "message": "Глубина приямка должна быть {Dpit_min} ≤ Dpit ≤ {Dpit_min+1000}",
           "fieldNames": [
             "Dpit_v"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err6",
@@ -24241,7 +24324,8 @@
           "message": "Высота подъема должна быть ≤ {HEmax} мм",
           "fieldNames": [
             "HE"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err7",
@@ -24250,7 +24334,8 @@
           "fieldNames": [
             "HM1",
             "HM2"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err8",
@@ -24267,7 +24352,8 @@
           "message": "Высота подъема должна быть ≥ {HEmin} мм",
           "fieldNames": [
             "HE"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err10",
@@ -24477,7 +24563,8 @@
               "value": 2300
             }
           ],
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BB",
@@ -24576,7 +24663,8 @@
               "value": 2100
             }
           ],
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HL",
@@ -24607,7 +24695,8 @@
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1100",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BB_1",
@@ -24618,7 +24707,8 @@
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "2000",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$door_type",
@@ -24870,7 +24960,8 @@
             "1300"
           ],
           "expression": "900",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HH",
@@ -24885,7 +24976,8 @@
             "2400"
           ],
           "expression": "2100",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "CJ",
@@ -24926,7 +25018,8 @@
           "expression": "max(min_AH_1, min_AH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_BH",
@@ -24938,7 +25031,8 @@
           "expression": "max(min_BH_1, min_BH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_CB",
@@ -24960,7 +25054,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2100",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BH_1",
@@ -24971,7 +25066,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2000",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "CB_1",
@@ -25185,7 +25281,8 @@
           "isRequired": true,
           "defaultValue": 20,
           "expression": "20",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "stops",
@@ -25368,7 +25465,8 @@
           "expression": "max(min_OH_1, min_OH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_PD",
@@ -25380,7 +25478,8 @@
           "expression": "select(\r\n(cap<=825)&&(BB<1300), min_PD_1,\r\n(cap<=825)&&(BB>=1300), min_PD_2,\r\n(cap>=1050), min_PD_1\r\n)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "OH_1",
@@ -25391,7 +25490,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "4500",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "PD_1",
@@ -25402,7 +25502,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1200",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "ceil_thick",
@@ -42180,52 +42281,62 @@
         {
           "name": "r_BW_1",
           "expression": "(BW>=min_BW) ? 1 : error($r_BW_text)",
-          "message": "BW = {BW}. Должно быть {min_BW} ≤ BW ≤ {max_BW}."
+          "message": "BW = {BW}. Должно быть {min_BW} ≤ BW ≤ {max_BW}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BW_2",
           "expression": "(BW<=max_BW) ? 1 : error($r_BW_text)",
-          "message": "BW = {BW}. Должно быть {min_BW} ≤ BW ≤ {max_BW}."
+          "message": "BW = {BW}. Должно быть {min_BW} ≤ BW ≤ {max_BW}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CB_1",
           "expression": "(CB>=min_CB) ? 1 : error($r_CB_text)",
-          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}."
+          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CB_2",
           "expression": "(CB<=max_CB) ? 1 : error($r_CB_text)",
-          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}."
+          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AA",
           "expression": "$car_type==\"PXX\" ? (\r\n\r\nselect(\r\ncap==630, r_AA_0630,\r\ncap==825, r_AA_0825,\r\ncap==1050, r_AA_1050,\r\ncap==1200, r_AA_1200,\r\ncap==1350, r_AA_1350,\r\ncap==1600, r_AA_1600,\r\ncap==1800, r_AA_1800,\r\ncap==2025, r_AA_2025,\r\ncap==2250, r_AA_2250,\r\ncap==2500, r_AA_2500\r\n)\r\n\r\n? 1 : error($r_AA_text)\r\n\r\n) : 1",
-          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}."
+          "message": "AA = {AA}. Должно быть {min_AA} ≤ AA ≤ {max_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AH",
           "expression": "((AH>=min_AH)&&(AH<=max_BW+CA+max_CB)) ? 1 : error($r_AH_text)",
-          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_BW+CA+max_CB}."
+          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {max_BW+CA+max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AREA",
           "expression": "$car_type==\"PXX\" ? (AA*BB<=S_AREA*10^6 ? 1 : error($r_AREA_text)) : 1",
-          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}."
+          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BB",
           "expression": "$car_type==\"PXX\" ? (\r\n\r\nselect(\r\ncap==630, r_BB_0630,\r\ncap==825, r_BB_0825,\r\ncap==1050, r_BB_1050,\r\ncap==1200, r_BB_1200,\r\ncap==1350, r_BB_1350,\r\ncap==1600, r_BB_1600,\r\ncap==1800, r_BB_1800,\r\ncap==2025, r_BB_2025,\r\ncap==2250, r_BB_2250,\r\ncap==2500, r_BB_2500\r\n)\r\n\r\n? 1 : error($r_BB_text)\r\n\r\n) : 1",
-          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}."
+          "message": "BB = {BB}. Должно быть {min_BB} ≤ BB ≤ {max_BB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_1",
           "expression": "(BH>=min_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_2",
           "expression": "(BH<=max_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_HF",
@@ -42235,12 +42346,14 @@
         {
           "name": "r_HH_HL",
           "expression": "((HL-HH)>=100) ? 1 : error($r_HH_HL_text)",
-          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100."
+          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ",
           "expression": "select(\r\n(cap==630), r_JJ_0630,\r\n(cap>=825)&&(cap<=1600), r_JJ_0825_1600,\r\n(cap>=1800), r_JJ_1800_2500\r\n)\r\n\r\n? 1 : error($r_JJ_text)",
-          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}."
+          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ_WG",
@@ -42250,7 +42363,8 @@
         {
           "name": "r_JJ_AA",
           "expression": "select($door_type==\"ЦО\",r_JJ_AA_ЦО,$door_type==\"ТО\",r_JJ_AA_ТО) ? 1 : error($r_JJ_AA_text)",
-          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}."
+          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_LVL",
@@ -42260,22 +42374,26 @@
         {
           "name": "r_OH_1",
           "expression": "OH>=min_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}."
+          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_OH_2",
           "expression": "OH<=max_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}."
+          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PD_1",
           "expression": "PD>=min_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}."
+          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PD_2",
           "expression": "PD<=max_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}."
+          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PXX_AA",
@@ -42310,12 +42428,14 @@
         {
           "name": "r_maxHF",
           "expression": "maxHF01*maxHF02*maxHF03*maxHF04*maxHF05*maxHF06*maxHF07*maxHF08*maxHF09*maxHF10*maxHF11*maxHF12*maxHF13*maxHF14*maxHF15*maxHF16*maxHF17*maxHF18*maxHF19*maxHF20*maxHF21*maxHF22*maxHF23*maxHF24*maxHF25*maxHF26*maxHF27*maxHF28*maxHF29*maxHF30*maxHF31*maxHF32*maxHF33*maxHF34*maxHF35*maxHF36*maxHF37*maxHF38*maxHF39*maxHF40*maxHF41*maxHF42*maxHF43*maxHF44*maxHF45*maxHF46*maxHF47*maxHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_maxTHF",
           "expression": "maxTHF01*maxTHF02*maxTHF03*maxTHF04*maxTHF05*maxTHF06*maxTHF07*maxTHF08*maxTHF09*maxTHF10*maxTHF11*maxTHF12*maxTHF13*maxTHF14*maxTHF15*maxTHF16*maxTHF17*maxTHF18*maxTHF19*maxTHF20*maxTHF21*maxTHF22*maxTHF23*maxTHF24*maxTHF25*maxTHF26*maxTHF27*maxTHF28*maxTHF29*maxTHF30*maxTHF31*maxTHF32*maxTHF33*maxTHF34*maxTHF35*maxTHF36*maxTHF37*maxTHF38*maxTHF39*maxTHF40*maxTHF41*maxTHF42*maxTHF43*maxTHF44*maxTHF45*maxTHF46*maxTHF47*maxTHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_rear",
@@ -42363,7 +42483,8 @@
             "1100",
             "1200",
             "1300"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "OPH",
@@ -42377,7 +42498,8 @@
             "2000",
             "2100",
             "2200"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "NBENT",
@@ -42398,7 +42520,8 @@
           "isRequired": true,
           "defaultValue": 2750,
           "expression": "2750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "K",
@@ -42407,7 +42530,8 @@
           "isRequired": true,
           "defaultValue": 3850,
           "expression": "3850",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "S",
@@ -42416,7 +42540,8 @@
           "isRequired": true,
           "defaultValue": 1400,
           "expression": "1400",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$R",
@@ -42425,7 +42550,8 @@
           "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "$CWT",
@@ -42492,7 +42618,8 @@
             "2500",
             "2600",
             "2700"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "$DOMESTIC",
@@ -42635,7 +42762,8 @@
           "isRequired": true,
           "defaultValue": 1750,
           "expression": "1750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$icu_menu",
@@ -44257,7 +44385,8 @@
           "message": "Высота подъема должна быть в пределах от {R_MIN} до {R_MAX} м",
           "fieldNames": [
             "$R"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err02",
@@ -44273,7 +44402,8 @@
           "message": "Высота верхнего этажа должна быть не менее {K_MIN} мм",
           "fieldNames": [
             "K"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err12",
@@ -44281,7 +44411,8 @@
           "message": "Глубина приямка должна быть в пределах от {S_MIN} до {S_MAX} мм",
           "fieldNames": [
             "S"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err13",
@@ -44289,7 +44420,8 @@
           "message": "Ширина шахты должна быть в пределах от {HW_MIN} до {HW_MAX} мм",
           "fieldNames": [
             "HW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err16",
@@ -44297,7 +44429,8 @@
           "message": "Глубина шахты{$LDMTG == \"LAND\" ? \" в свету \" : \" \"}должна быть в пределах от {WTW_MIN} до {WTW_MAX} мм",
           "fieldNames": [
             "WTW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err17",
@@ -44305,7 +44438,8 @@
           "message": "Глубина шахты{$LDMTG == \"LAND\" ? \" в свету \" : \" \"}должна быть {WTW_MIN} мм",
           "fieldNames": [
             "WTW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err001",
@@ -44331,7 +44465,8 @@
           "message": "Привязка оси проема должна быть в пределах от {HL6_MIN} до {HL6_MAX} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err19",
@@ -44339,7 +44474,8 @@
           "message": "Привязка оси проема должна быть {HL6_MIN} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "warn01",
@@ -44366,7 +44502,8 @@
           "message": "Высота верхнего этажа должна быть не более {K_MAX} мм",
           "fieldNames": [
             "K"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "xizi_speed",
@@ -46386,7 +46523,8 @@
             "1000",
             "1100",
             "1200"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "OPH",
@@ -46400,7 +46538,8 @@
             "2000",
             "2100",
             "2200"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "HW",
@@ -46409,7 +46548,8 @@
           "isRequired": true,
           "defaultValue": 2750,
           "expression": "2750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "K",
@@ -46418,7 +46558,8 @@
           "isRequired": true,
           "defaultValue": 3600,
           "expression": "3600",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "S",
@@ -46427,7 +46568,8 @@
           "isRequired": true,
           "defaultValue": 1450,
           "expression": "1450",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$R",
@@ -46436,7 +46578,8 @@
           "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "$CWT",
@@ -46503,7 +46646,8 @@
             "2500",
             "2600",
             "2700"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "$DOMESTIC",
@@ -46649,7 +46793,8 @@
           "isRequired": true,
           "defaultValue": 1750,
           "expression": "1750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$icu_menu",
@@ -48260,7 +48405,8 @@
           "message": "Высота подъема должна быть в пределах от {R_MIN} до {R_MAX} м",
           "fieldNames": [
             "$R"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err02",
@@ -48276,7 +48422,8 @@
           "message": "Высота верхнего этажа должна быть не менее {K_MIN} мм",
           "fieldNames": [
             "K"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err12",
@@ -48284,7 +48431,8 @@
           "message": "Глубина приямка должна быть в пределах от {S_MIN} до {S_MAX} мм",
           "fieldNames": [
             "S"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err13",
@@ -48292,7 +48440,8 @@
           "message": "Ширина шахты должна быть в пределах от {HW_MIN} до {HW_MAX} мм",
           "fieldNames": [
             "HW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err16",
@@ -48300,7 +48449,8 @@
           "message": "Глубина шахты{$LDMTG == \"LAND\" ? \" в свету \" : \" \"}должна быть в пределах от {WTW_MIN} до {WTW_MAX} мм",
           "fieldNames": [
             "WTW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err17",
@@ -48308,7 +48458,8 @@
           "message": "Глубина шахты{$LDMTG == \"LAND\" ? \" в свету \" : \" \"}должна быть {WTW_MIN} мм",
           "fieldNames": [
             "WTW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err001",
@@ -48334,7 +48485,8 @@
           "message": "Привязка оси проема должна быть в пределах от {HL6_MIN} до {HL6_MAX} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err19",
@@ -48342,7 +48494,8 @@
           "message": "Привязка оси проема должна быть {HL6_MIN} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "overhead_max",
@@ -48350,7 +48503,8 @@
           "message": "Высота верхнего этажа должна быть не более {K_MAX} мм",
           "fieldNames": [
             "K"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "xizi_speed",
@@ -50251,7 +50405,8 @@
             "1100",
             "1200",
             "1300"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "OPH",
@@ -50265,7 +50420,8 @@
             "2000",
             "2100",
             "2200"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "$CUSTOMER",
@@ -50308,7 +50464,8 @@
           "isRequired": true,
           "defaultValue": 2650,
           "expression": "2650",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "K",
@@ -50317,7 +50474,8 @@
           "isRequired": true,
           "defaultValue": 3750,
           "expression": "3750",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "S",
@@ -50326,7 +50484,8 @@
           "isRequired": true,
           "defaultValue": 1400,
           "expression": "1400",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$R",
@@ -50335,7 +50494,8 @@
           "isRequired": true,
           "defaultValue": "",
           "expression": "\"\"",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "$LDMTG",
@@ -50382,7 +50542,8 @@
             "2500",
             "2600",
             "2700"
-          ]
+          ],
+          "positiveValueRequired": true
         },
         {
           "name": "$dop_menu",
@@ -51919,7 +52080,8 @@
           "message": "Высота подъема должна быть в пределах от {R_MIN} до {R_MAX} м",
           "fieldNames": [
             "$R"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err02",
@@ -51935,7 +52097,8 @@
           "message": "Высота верхнего этажа должна быть не менее {K_MIN} мм",
           "fieldNames": [
             "K"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err12",
@@ -51943,7 +52106,8 @@
           "message": "Глубина приямка должна быть в пределах от {S_MIN} до {S_MAX} мм",
           "fieldNames": [
             "S"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err13",
@@ -51951,7 +52115,8 @@
           "message": "Ширина шахты должна быть в пределах от {HW_MIN} до {HW_MAX} мм",
           "fieldNames": [
             "HW"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err16",
@@ -51959,7 +52124,8 @@
           "message": "Глубина шахты должна быть в пределах от {HD_MIN} до {HD_MAX} мм",
           "fieldNames": [
             "HD"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err17",
@@ -51967,7 +52133,8 @@
           "message": "Глубина шахты должна быть {HD_MIN} мм",
           "fieldNames": [
             "HD"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err20",
@@ -51984,7 +52151,8 @@
           "message": "Привязка оси проема должна быть в пределах от {HL6_MIN} до {HL6_MAX} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "err19",
@@ -51992,7 +52160,8 @@
           "message": "Привязка оси проема должна быть {HL6_MIN} мм",
           "fieldNames": [
             "HL6"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "r_door_height_700",
@@ -54469,7 +54638,8 @@
             "2600",
             "2700"
           ],
-          "expression": "2600"
+          "expression": "2600",
+          "positiveValueRequired": true
         },
         {
           "name": "HH",
@@ -54483,7 +54653,8 @@
             "2300",
             "2400"
           ],
-          "expression": "2400"
+          "expression": "2400",
+          "positiveValueRequired": true
         },
         {
           "name": "JJ",
@@ -54507,7 +54678,8 @@
           ],
           "expression": "900",
           "minValue": 700,
-          "maxValue": 1300
+          "maxValue": 1300,
+          "positiveValueRequired": true
         },
         {
           "name": "$Opening",
@@ -54553,7 +54725,9 @@
           "defaultValue": 1100,
           "expression": "1100",
           "minValue": 1,
-          "maxValue": 2500
+          "maxValue": 2500,
+          "maxValueEngineerOverridable": true,
+          "positiveValueRequired": true
         },
         {
           "name": "BB",
@@ -54563,7 +54737,9 @@
           "defaultValue": 2100,
           "expression": "2100",
           "minValue": 1,
-          "maxValue": 2800
+          "maxValue": 2800,
+          "maxValueEngineerOverridable": true,
+          "positiveValueRequired": true
         },
         {
           "name": "DecorWeight",
@@ -55438,7 +55614,8 @@
           "fieldNames": [
             "AA",
             "JJ"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "e2",
@@ -55454,7 +55631,8 @@
           "message": "· Глубина кабины должна быть не более 2800 мм.",
           "fieldNames": [
             "BB"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "e4",
@@ -55462,7 +55640,8 @@
           "message": "· Ширина кабины должна быть не более 2500 мм.",
           "fieldNames": [
             "AA"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "e5",
@@ -55487,7 +55666,8 @@
           "fieldNames": [
             "HL",
             "HH"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "e8",
@@ -55495,7 +55675,8 @@
           "message": "· Фронтальная стенка минимум {F_min} для установки копа {$COP}.",
           "fieldNames": [
             "$CopPlace_v_1"
-          ]
+          ],
+          "engineerOverridable": true
         },
         {
           "name": "e9",
@@ -55512,7 +55693,8 @@
           "message": "· Смещение дверей не может быть больше 150мм.",
           "fieldNames": [
             "A4_v"
-          ]
+          ],
+          "engineerOverridable": true
         }
       ]
     },
@@ -55688,7 +55870,8 @@
               "value": 2300
             }
           ],
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BB",
@@ -55762,7 +55945,8 @@
               "value": 2100
             }
           ],
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HL",
@@ -55793,7 +55977,8 @@
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1100",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BB_1",
@@ -55804,7 +55989,8 @@
           "levelExpression": "$car_type==\"PXX\" ? 1 : -1",
           "expression": "1350",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "$door_type",
@@ -56037,7 +56223,8 @@
             "1300"
           ],
           "expression": "900",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "HH",
@@ -56052,7 +56239,8 @@
             "2400"
           ],
           "expression": "2100",
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "CJ",
@@ -56093,7 +56281,8 @@
           "expression": "max(min_AH_1, min_AH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_BH",
@@ -56105,7 +56294,8 @@
           "expression": "max(min_BH_1, min_BH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_CB",
@@ -56127,7 +56317,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2200",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "BH_1",
@@ -56138,7 +56329,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "2200",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "CB_1",
@@ -56352,7 +56544,8 @@
           "isRequired": true,
           "defaultValue": 20,
           "expression": "20",
-          "unit": "м"
+          "unit": "м",
+          "positiveValueRequired": true
         },
         {
           "name": "stops",
@@ -56535,7 +56728,8 @@
           "expression": "max(min_OH_1, min_OH_2)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "min_PD",
@@ -56547,7 +56741,8 @@
           "expression": "select(\r\n(cap<=825)&&(BB<1300), min_PD_1,\r\n(cap<=825)&&(BB>=1300), min_PD_2,\r\n(cap>=1050), min_PD_1\r\n)",
           "submitDefault": false,
           "isReadOnly": true,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "OH_1",
@@ -56558,7 +56753,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "4000",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "PD_1",
@@ -56569,7 +56765,8 @@
           "levelExpression": "dim==1 ? 1 : -2",
           "expression": "1300",
           "submitDefault": false,
-          "unit": "мм"
+          "unit": "мм",
+          "positiveValueRequired": true
         },
         {
           "name": "ceil_thick",
@@ -65296,47 +65493,56 @@
         {
           "name": "r_AA",
           "expression": "$car_type==\"PXX\" ? (\r\n\r\nselect(\r\ncap==630, r_AA_0630,\r\ncap==825, r_AA_0825,\r\ncap==1050, r_AA_1050,\r\ncap==1200, r_AA_1200,\r\ncap==1350, r_AA_1350,\r\ncap==1600, r_AA_1600,\r\ncap==1800, r_AA_1800,\r\ncap==2025, r_AA_2025,\r\ncap==2250, r_AA_2250,\r\ncap==2500, r_AA_2500\r\n)\r\n\r\n? 1 : error($r_AA_text)\r\n\r\n) : 1",
-          "message": "AA = {AA}. Должно быть  {min_AA} ≤ AA ≤ {max_AA}."
+          "message": "AA = {AA}. Должно быть  {min_AA} ≤ AA ≤ {max_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BB",
           "expression": "$car_type==\"PXX\" ? (\r\n\r\nselect(\r\ncap==630, r_BB_0630,\r\ncap==825, r_BB_0825,\r\ncap==1050, r_BB_1050,\r\ncap==1200, r_BB_1200,\r\ncap==1350, r_BB_1350,\r\ncap==1600, r_BB_1600,\r\ncap==1800, r_BB_1800,\r\ncap==2025, r_BB_2025,\r\ncap==2250, r_BB_2250,\r\ncap==2500, r_BB_2500\r\n)\r\n\r\n? 1 : error($r_BB_text)\r\n\r\n) : 1",
-          "message": "BB = {BB}. Должно быть  {min_BB} ≤ BB ≤ {max_BB}."
+          "message": "BB = {BB}. Должно быть  {min_BB} ≤ BB ≤ {max_BB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_JJ",
           "expression": "select(\r\n(cap==630), r_JJ_0630,\r\n(cap>=825)&&(cap<=1050), r_JJ_0825_1050,\r\n(cap>=1200), r_JJ_1200_2500\r\n)\r\n\r\n? 1 : error($r_JJ_text)",
-          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}."
+          "message": "JJ = {JJ}. Должно быть {min_JJ} ≤ JJ ≤ {max_JJ}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AH",
           "expression": "((AH>=min_AH)&&(AH<=2*max_CB)) ? 1 : error($r_AH_text)",
-          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {2*max_CB}."
+          "message": "AH = {AH}. Должно быть {min_AH} ≤ AH ≤ {2*max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_AREA",
           "expression": "$car_type==\"PXX\" ? (AA*BB<=S_AREA*10^6 ? 1 : error($r_AREA_text)) : 1",
-          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}."
+          "message": "AA*BB = {AA*BB/10^6}. Должно быть AA*BB ≤ {S_AREA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_1",
           "expression": "(BH>=min_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть  {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть  {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_BH_2",
           "expression": "(BH<=max_BH) ? 1 : error($r_BH_text)",
-          "message": "BH = {BH}. Должно быть  {min_BH} ≤ BH ≤ {max_BH}."
+          "message": "BH = {BH}. Должно быть  {min_BH} ≤ BH ≤ {max_BH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CB_1",
           "expression": "(CB>=min_CB) ? 1 : error($r_CB_text)",
-          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}."
+          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CB_2",
           "expression": "(CB<=max_CB) ? 1 : error($r_CB_text)",
-          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}."
+          "message": "CB = {CB}. Должно быть {min_CB} ≤ CB ≤ {max_CB}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_HF",
@@ -65346,7 +65552,8 @@
         {
           "name": "r_HH_HL",
           "expression": "((HL-HH)>=100) ? 1 : error($r_HH_HL_text)",
-          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100."
+          "message": "HL-HH = {HL-HH}. Должно быть HL-HH ≥ 100.",
+          "engineerOverridable": true
         },
         {
           "name": "r_LVL",
@@ -65356,22 +65563,26 @@
         {
           "name": "r_OH_1",
           "expression": "OH>=min_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}."
+          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_OH_2",
           "expression": "OH<=max_OH ? 1 : error($r_OH_text)",
-          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}."
+          "message": "OH = {OH}. Должно быть {min_OH} ≤ OH ≤ {max_OH}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PD_1",
           "expression": "PD>=min_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}."
+          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PD_2",
           "expression": "PD<=max_PD ? 1 : error($r_PD_text)",
-          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}."
+          "message": "PD = {PD}. Должно быть {min_PD} ≤ PD ≤ {max_PD}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_PXX_AA",
@@ -65406,12 +65617,14 @@
         {
           "name": "r_maxHF",
           "expression": "maxHF01*maxHF02*maxHF03*maxHF04*maxHF05*maxHF06*maxHF07*maxHF08*maxHF09*maxHF10*maxHF11*maxHF12*maxHF13*maxHF14*maxHF15*maxHF16*maxHF17*maxHF18*maxHF19*maxHF20*maxHF21*maxHF22*maxHF23*maxHF24*maxHF25*maxHF26*maxHF27*maxHF28*maxHF29*maxHF30*maxHF31*maxHF32*maxHF33*maxHF34*maxHF35*maxHF36*maxHF37*maxHF38*maxHF39*maxHF40*maxHF41*maxHF42*maxHF43*maxHF44*maxHF45*maxHF46*maxHF47*maxHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_maxTHF",
           "expression": "maxTHF01*maxTHF02*maxTHF03*maxTHF04*maxTHF05*maxTHF06*maxTHF07*maxTHF08*maxTHF09*maxTHF10*maxTHF11*maxTHF12*maxTHF13*maxTHF14*maxTHF15*maxTHF16*maxTHF17*maxTHF18*maxTHF19*maxTHF20*maxTHF21*maxTHF22*maxTHF23*maxTHF24*maxTHF25*maxTHF26*maxTHF27*maxTHF28*maxTHF29*maxTHF30*maxTHF31*maxTHF32*maxTHF33*maxTHF34*maxTHF35*maxTHF36*maxTHF37*maxTHF38*maxTHF39*maxTHF40*maxTHF41*maxTHF42*maxTHF43*maxTHF44*maxTHF45*maxTHF46*maxTHF47*maxTHF48 ? 1 : error($r_maxHF_text)",
-          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000."
+          "message": "Максимальное межэтажное расстояние должно быть ≤ 11000.",
+          "engineerOverridable": true
         },
         {
           "name": "r_rear",
@@ -65431,12 +65644,14 @@
         {
           "name": "r_JJ_AA",
           "expression": "select($door_type==\"ЦО\",r_JJ_AA_ЦО,$door_type==\"ТО\",r_JJ_AA_ТО) ? 1 : error($r_JJ_AA_text)",
-          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}."
+          "message": "AA-JJ = {AA-JJ}. Должно быть AA-JJ ≥ {JJ_AA}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CJ_1",
           "expression": "$door_type==\"ТО\" ? 1 : ((AA-JJ)/2-abs(CJ))>=50 ? 1 : error($r_CJ_1_text)",
-          "message": "CJ = {CJ}. Должно быть {-(AA-JJ)/2+50} ≤ CJ ≤ {(AA-JJ)/2-50}."
+          "message": "CJ = {CJ}. Должно быть {-(AA-JJ)/2+50} ≤ CJ ≤ {(AA-JJ)/2-50}.",
+          "engineerOverridable": true
         },
         {
           "name": "r_CJ_2",

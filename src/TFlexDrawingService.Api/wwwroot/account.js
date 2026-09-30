@@ -19,13 +19,19 @@ const state = {
   templateAnalyses: [],
   activeTemplateAnalysis: null,
   activeGenerationActions: new Map(),
-  activeAdminUserActions: new Set()
+  activeAdminUserActions: new Set(),
+  engineerRequests: [],
+  activeEngineerRequest: null,
+  engineers: [],
+  sellers: [],
+  sellerProjects: []
 };
 const sessionRequests = createSessionRequestGuard();
 let bootPromise = null;
 let pageLoadErrorContext = "load";
 let savedConfigurationsQuery = null;
 let savedConfigurationsVisibleCount = 4;
+let engineerRequestOpenVersion = 0;
 
 const guestMain = document.querySelector("#guestMain");
 const accountMain = document.querySelector("#accountMain");
@@ -93,7 +99,7 @@ const templateAnalysisParameters = document.querySelector("#templateAnalysisPara
 const saveTemplateAnalysisDraft = document.querySelector("#saveTemplateAnalysisDraft");
 const publishTemplateAnalysis = document.querySelector("#publishTemplateAnalysis");
 const CONFIGURATION_NAME_PARAMETER_NAMES = ["$Oboznach"];
-const ADMIN_ROLE_OPTIONS = ["Admin", "Operator", "Viewer"];
+const ADMIN_ROLE_OPTIONS = ["Admin", "Engineer", "Seller"];
 const XIZI_TEMPLATE_IDS = new Set(["un_victor_mrl", "un_victor_mrl_t"]);
 const SMEC_TEMPLATE_IDS = new Set([
   "lehy_l_pro_320_1050",
@@ -109,7 +115,7 @@ function isAuthenticated() {
 
 function canCreateJobs() {
   const roles = state.currentUser?.roles || [];
-  return roles.includes("Admin") || roles.includes("Operator");
+  return roles.includes("Admin") || roles.includes("Engineer");
 }
 
 function canAdmin() {
@@ -122,8 +128,22 @@ function localized(ru, en) {
 
 function getCurrentRole() {
   const roles = state.currentUser?.roles || [];
-  return ADMIN_ROLE_OPTIONS.find(role => roles.includes(role)) || "Viewer";
+  return ADMIN_ROLE_OPTIONS.find(role => roles.includes(role)) || "Seller";
 }
+
+const engineerRequestsList = document.querySelector("#engineerRequestsList");
+const engineerRequestsStatus = document.querySelector("#engineerRequestsStatus");
+const engineerRequestDetail = document.createElement("section");
+engineerRequestDetail.id = "engineerRequestDetail";
+engineerRequestDetail.className = "engineer-request-detail";
+engineerRequestDetail.setAttribute("aria-live", "polite");
+engineerRequestDetail.hidden = true;
+const engineerRequestNewCount = document.querySelector("#engineerRequestNewCount");
+const refreshEngineerRequestsButton = document.querySelector("#refreshEngineerRequests");
+const sellerDirectory = document.querySelector("#sellerDirectory");
+const sellerDirectorySelect = document.querySelector("#sellerDirectorySelect");
+const sellerDirectoryStatus = document.querySelector("#sellerDirectoryStatus");
+const sellerProjectsList = document.querySelector("#sellerProjectsList");
 
 function isAdminPanelRoute() {
   return window.location.hash === "#adminPanel";
@@ -189,6 +209,7 @@ function showRegisterStatus(message, kind = "empty") {
 
 function clearAccountSessionState() {
   sessionRequests.invalidate();
+  engineerRequestOpenVersion++;
   state.projects = [];
   state.configurationsByProjectId = new Map();
   state.pricingByProjectId = new Map();
@@ -200,6 +221,11 @@ function clearAccountSessionState() {
   state.activeTemplateAnalysis = null;
   state.activeGenerationActions = new Map();
   state.activeAdminUserActions = new Set();
+  state.engineerRequests = [];
+  state.activeEngineerRequest = null;
+  state.engineers = [];
+  state.sellers = [];
+  state.sellerProjects = [];
 
   loginForm?.reset();
   guestLoginForm?.reset();
@@ -226,6 +252,13 @@ function clearAccountSessionState() {
 
   projectsList.replaceChildren();
   savedConfigurationsList?.replaceChildren();
+  engineerRequestsList?.replaceChildren();
+  engineerRequestDetail.hidden = true;
+  engineerRequestsStatus.hidden = true;
+  engineerRequestNewCount.textContent = "0";
+  sellerDirectorySelect.replaceChildren(new Option("Выберите продавца", ""));
+  sellerProjectsList.replaceChildren();
+  sellerDirectoryStatus.hidden = true;
   adminUsersTableBody.replaceChildren();
   adminTemplatesTableBody.replaceChildren();
   hideAccountStatus();
@@ -240,6 +273,20 @@ function getTemplate(templateId) {
 function getTemplateLabel(templateId) {
   const template = getTemplate(templateId);
   return template ? (template.name || template.code || template.id) : templateId;
+}
+
+function renderParameterSummary(templateId, parameters) {
+  const definitions = getTemplate(templateId)?.parameters || [];
+  const labels = new Map(definitions.map(parameter => [parameter.name, parameter.displayName || parameter.name]));
+  const rows = Object.entries(parameters || {}).map(([name, value]) => {
+    const readable = value == null || value === "" ? "—"
+      : typeof value === "boolean" ? (value ? "Да" : "Нет")
+      : Array.isArray(value) ? value.join(", ")
+      : typeof value === "object" ? Object.entries(value).map(([key, item]) => `${key}: ${item}`).join(", ")
+      : String(value);
+    return `<div><dt>${escapeHtml(labels.get(name) || name)}</dt><dd>${escapeHtml(readable)}</dd></div>`;
+  }).join("");
+  return rows ? `<dl class="request-parameter-list">${rows}</dl>` : '<p class="muted">Параметры не указаны.</p>';
 }
 
 function getConfigurationName(configuration) {
@@ -602,6 +649,7 @@ function updateAuthView() {
     link.hidden = !isAdmin;
   });
   if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
+  if (sellerDirectory) sellerDirectory.hidden = !authenticated || !requestCanWork();
   if (toggleProjectCreateButton) toggleProjectCreateButton.hidden = !canCreateJobs();
   if (!canCreateJobs() && accountCreateSection) {
     accountCreateSection.hidden = true;
@@ -622,12 +670,12 @@ function updateAuthView() {
       currentUserRoleLabel.textContent = currentRole;
     }
     if (currentUserAccessNote) {
-      const isViewer = currentRole === "Viewer";
-      currentUserAccessNote.hidden = !isViewer;
-      currentUserAccessNote.textContent = isViewer
+      const isSeller = currentRole === "Seller";
+      currentUserAccessNote.hidden = !isSeller;
+      currentUserAccessNote.textContent = isSeller
         ? localized(
-          "Роль Viewer: режим только для просмотра. Создание проектов и выпуск файлов недоступны.",
-          "Viewer role: read-only access. Creating projects and generating files are unavailable.")
+          "Роль Seller: отправляйте запросы инженеру из конфигуратора и отслеживайте их здесь.",
+          "Seller role: send requests from the editor and track them here.")
         : "";
     }
   } else {
@@ -641,6 +689,277 @@ function updateAuthView() {
       currentUserAccessNote.textContent = "";
     }
   }
+}
+
+async function loadEngineerRequests() {
+  const response = await apiFetch("/api/engineer-requests");
+  requireSuccessfulLoadResponse(response, "engineer requests");
+  state.engineerRequests = requireCurrentLoadPayload(await sessionRequests.readJson(response), "engineer requests") || [];
+  renderEngineerRequests();
+}
+
+function requestCanWork() {
+  const roles = state.currentUser?.roles || [];
+  return roles.includes("Admin") || roles.includes("Engineer");
+}
+
+async function loadSellerDirectory() {
+  const response = await apiFetch("/api/sellers");
+  requireSuccessfulLoadResponse(response, "sellers");
+  state.sellers = requireCurrentLoadPayload(await sessionRequests.readJson(response), "sellers") || [];
+  sellerDirectorySelect.replaceChildren(new Option("Выберите продавца", ""));
+  for (const seller of state.sellers) {
+    const option = document.createElement("option");
+    option.value = seller.userName;
+    option.textContent = seller.displayName || seller.userName;
+    sellerDirectorySelect.append(option);
+  }
+  sellerDirectoryStatus.hidden = state.sellers.length > 0;
+  sellerDirectoryStatus.textContent = state.sellers.length ? "" : "Продавцы не найдены.";
+}
+
+async function loadSellerProjects(sellerName) {
+  sellerProjectsList.replaceChildren();
+  state.sellerProjects = [];
+  if (!sellerName) return;
+  sellerDirectoryStatus.hidden = false;
+  sellerDirectoryStatus.textContent = "Загружаем проекты…";
+  const response = await apiFetch(`/api/sellers/${encodeURIComponent(sellerName)}/projects`);
+  requireSuccessfulLoadResponse(response, "seller projects");
+  state.sellerProjects = requireCurrentLoadPayload(await sessionRequests.readJson(response), "seller projects") || [];
+  sellerDirectoryStatus.hidden = state.sellerProjects.length > 0;
+  sellerDirectoryStatus.textContent = state.sellerProjects.length ? "" : "У продавца пока нет проектов.";
+  for (const project of state.sellerProjects) {
+    const details = document.createElement("details");
+    details.className = "seller-project";
+    details.dataset.projectId = project.id;
+    const summary = document.createElement("summary");
+    summary.textContent = project.name || project.id;
+    const configurations = document.createElement("div");
+    configurations.className = "seller-project__configurations";
+    configurations.textContent = "Откройте проект, чтобы загрузить конфигурации.";
+    details.append(summary, configurations);
+    details.addEventListener("toggle", () => {
+      if (details.open && details.dataset.loaded !== "true") {
+        details.dataset.loaded = "true";
+        void loadSellerProjectConfigurations(sellerName, project.id, configurations, details);
+      }
+    });
+    sellerProjectsList.append(details);
+  }
+}
+
+async function loadSellerProjectConfigurations(sellerName, projectId, container, details) {
+  container.textContent = "Загружаем конфигурации…";
+  try {
+    const response = await apiFetch(`/api/sellers/${encodeURIComponent(sellerName)}/projects/${encodeURIComponent(projectId)}/configurations`);
+    requireSuccessfulLoadResponse(response, "seller project configurations");
+    const configurations = requireCurrentLoadPayload(await sessionRequests.readJson(response), "seller project configurations") || [];
+    container.replaceChildren();
+    if (!configurations.length) {
+      container.textContent = "Сохраненных конфигураций нет.";
+      return;
+    }
+    for (const configuration of configurations) {
+      const card = document.createElement("article");
+      card.className = "seller-configuration";
+      const title = document.createElement("strong");
+      title.textContent = configuration.name || getConfigurationName(configuration) || "Конфигурация";
+      const meta = document.createElement("p");
+      meta.textContent = `${getTemplateLabel(configuration.templateId)} · ${String(configuration.outputFormat || "").toUpperCase()} · ${formatDate(configuration.updatedAt || configuration.createdAt)}`;
+      const values = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Параметры";
+      const list = document.createElement("div");
+      list.innerHTML = renderParameterSummary(configuration.templateId, configuration.parameters);
+      values.append(summary, list);
+      card.append(title, meta, values);
+      container.append(card);
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    details.dataset.loaded = "false";
+    container.textContent = "Не удалось загрузить конфигурации.";
+  }
+}
+
+function renderEngineerRequests() {
+  engineerRequestsList.replaceChildren();
+  const unreadCount = state.engineerRequests.filter(item => item.isUnread).length;
+  engineerRequestNewCount.textContent = String(unreadCount);
+  engineerRequestNewCount.hidden = unreadCount === 0;
+  if (!state.engineerRequests.length) {
+    engineerRequestsStatus.hidden = false;
+    engineerRequestsStatus.textContent = localized("Запросов пока нет.", "No requests yet.");
+    return;
+  }
+  engineerRequestsStatus.hidden = true;
+  for (const item of state.engineerRequests) {
+    const card = document.createElement("article");
+    card.className = "engineer-request-card";
+    card.dataset.requestId = item.id;
+    if (item.isUnread) card.classList.add("is-unread");
+    const title = document.createElement("strong");
+    title.textContent = `${item.projectName || item.projectId || "Проект"} · ${item.templateName || item.templateId || "Шаблон"}`;
+    if (item.isUnread) {
+      const unread = document.createElement("span");
+      unread.className = "engineer-request-unread";
+      unread.textContent = localized("Непрочитано", "Unread");
+      title.append(" ", unread);
+    }
+    const meta = document.createElement("p");
+    meta.textContent = `${item.status} · ${item.sellerUserName || ""}${item.engineerUserName ? ` · ${item.engineerUserName}` : ""}`;
+    const description = document.createElement("p");
+    description.textContent = item.description || "";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "secondary secondary--compact";
+    open.textContent = localized("Открыть", "Open");
+    open.dataset.requestId = item.id;
+    open.dataset.action = "open-request";
+    open.setAttribute("aria-expanded", String(state.activeEngineerRequest?.id === item.id && !engineerRequestDetail.hidden));
+    card.append(title, meta, description, open);
+    if (state.activeEngineerRequest?.id === item.id && !engineerRequestDetail.hidden) card.append(engineerRequestDetail);
+    engineerRequestsList.append(card);
+  }
+  updateEngineerRequestOpenControls();
+}
+
+function updateEngineerRequestOpenControls() {
+  for (const button of engineerRequestsList.querySelectorAll('[data-action="open-request"]')) {
+    const expanded = state.activeEngineerRequest?.id === button.dataset.requestId && !engineerRequestDetail.hidden;
+    button.setAttribute("aria-expanded", String(expanded));
+    if (expanded) button.setAttribute("aria-controls", engineerRequestDetail.id);
+    else button.removeAttribute("aria-controls");
+    button.textContent = expanded ? localized("Закрыть", "Close") : localized("Открыть", "Open");
+    button.closest(".engineer-request-card")?.classList.toggle("is-open", expanded);
+  }
+}
+
+async function openEngineerRequest(id, refresh = false) {
+  const openVersion = ++engineerRequestOpenVersion;
+  if (!refresh && state.activeEngineerRequest?.id === id && !engineerRequestDetail.hidden) {
+    engineerRequestDetail.hidden = true;
+    updateEngineerRequestOpenControls();
+    engineerRequestsList.querySelector(`[data-action="open-request"][data-request-id="${CSS.escape(id)}"]`)?.focus();
+    return;
+  }
+  const response = await apiFetch(`/api/engineer-requests/${encodeURIComponent(id)}`);
+  if (openVersion !== engineerRequestOpenVersion) return;
+  if (!response.ok) return showAccountStatus("Не удалось загрузить запрос.", "error");
+  const request = await sessionRequests.readJson(response);
+  if (openVersion !== engineerRequestOpenVersion) return;
+  state.activeEngineerRequest = request;
+  engineerRequestDetail.hidden = false;
+  const listed = state.engineerRequests.find(item => item.id === id);
+  if (listed?.isUnread) {
+    listed.isUnread = false;
+    renderEngineerRequests();
+  }
+  const card = [...engineerRequestsList.querySelectorAll(".engineer-request-card")].find(candidate => candidate.dataset.requestId === id);
+  card?.append(engineerRequestDetail);
+  updateEngineerRequestOpenControls();
+  renderEngineerRequestDetail();
+}
+
+async function openEngineerRequestFromUrl() {
+  const requestId = new URLSearchParams(window.location.search).get("requestId");
+  if (requestId) await openEngineerRequest(requestId);
+}
+
+function renderEngineerRequestDetail() {
+  const item = state.activeEngineerRequest;
+  if (!item) return;
+  const canWork = requestCanWork();
+  const roles = state.currentUser?.roles || [];
+  const isAdmin = roles.includes("Admin");
+  const isSeller = roles.includes("Seller");
+  const canComment = !["Ready", "Rejected", "Cancelled"].includes(item.status);
+  const canProcess = isAdmin || roles.includes("Engineer") && item.engineerUserName === state.currentUser?.userName;
+  const displayParameters = isSeller && item.status !== "Ready"
+    ? item.originalParameters || {}
+    : item.parameters || {};
+  const originalParameters = canProcess && item.originalParameters
+    ? `<details><summary>Исходные параметры продавца</summary>${renderParameterSummary(item.templateId, item.originalParameters)}</details>`
+    : "";
+  const editLink = canProcess && ["InProgress", "NeedsClarification"].includes(item.status)
+    ? `<a class="secondary button-link" href="/drawings?engineerRequestId=${encodeURIComponent(item.id)}">Открыть в редакторе конфигурации</a>`
+    : "";
+  const deviationList = Array.isArray(item.deviations)
+    ? `<ul>${item.deviations.map(deviation => `<li>${escapeHtml(deviation)}</li>`).join("")}</ul>`
+    : "";
+  const comments = (item.comments || []).map(comment => `<li><strong>${escapeHtml(comment.userName || comment.author || "")}</strong> ${escapeHtml(comment.message || comment.text || "")}</li>`).join("");
+  const history = (item.events || []).map(event => `<li>${escapeHtml(formatDate(event.createdAt))} · ${escapeHtml(event.actor || "")} · ${escapeHtml(event.kind || "")}</li>`).join("");
+  const actions = [];
+  if (canWork && item.status === "New") actions.push('<button class="secondary" data-request-action="claim">Взять в работу</button>');
+  if (canProcess && ["InProgress", "NeedsClarification"].includes(item.status)) actions.push('<button class="secondary" data-request-action="clarify">Запросить уточнение</button><button class="secondary secondary--danger" data-request-action="reject">Отклонить</button>');
+  if (canProcess && item.status === "InProgress" && item.canIssue) actions.push('<button class="primary" data-request-action="issue">Выдать результат</button>');
+  if (canProcess && item.status === "InProgress" && !item.canIssue) actions.push('<button class="primary" data-request-action="generate">Создать чертеж</button>');
+  if (isSeller && item.sellerUserName === state.currentUser?.userName && ["New", "InProgress", "NeedsClarification"].includes(item.status)) actions.push('<button class="secondary secondary--danger" data-request-action="cancel">Отменить</button>');
+  let resultLink = "";
+  if (item.issuedFileUrl) {
+    try {
+      const issuedUrl = new URL(item.issuedFileUrl, window.location.href);
+      if (issuedUrl.origin === window.location.origin) resultLink = `<p><a href="${escapeHtml(issuedUrl.href)}">Скачать выданный результат</a></p>`;
+    } catch { /* Ignore malformed result links from stale requests. */ }
+  }
+  let reviewLink = "";
+  if (canProcess && item.status === "InProgress" && item.canIssue && item.reviewFileUrl) {
+    try {
+      const reviewUrl = new URL(item.reviewFileUrl, window.location.href);
+      if (reviewUrl.origin === window.location.origin) {
+        reviewLink = `<p><a href="${escapeHtml(reviewUrl.href)}" target="_blank" rel="noopener">Проверить готовый чертёж перед выдачей</a></p>`;
+      }
+    } catch { /* Ignore malformed review links. */ }
+  }
+  engineerRequestDetail.innerHTML = `
+    <p class="muted">Формат: ${escapeHtml(item.outputFormat || "")}</p>
+    <details><summary>${isSeller && item.status !== "Ready" ? "Параметры запроса" : "Рабочие параметры"}</summary>${renderParameterSummary(item.templateId, displayParameters)}</details>
+    ${originalParameters}${editLink}
+    ${deviationList && (!isSeller || item.status === "Ready") ? `<details><summary>Отклонения от типовых значений</summary>${deviationList}</details>` : ""}
+    ${reviewLink}${resultLink}<ul class="engineer-request-comments">${comments}</ul>
+    <details><summary>История действий</summary><ol>${history}</ol></details>
+    ${canComment ? '<label class="field"><span class="field__label">Комментарий или уточнение</span><textarea data-request-message rows="2"></textarea></label>' : ""}
+    <div class="inline-actions">${actions.join("")}${canComment ? '<button class="secondary" data-request-action="comment">Добавить комментарий</button>' : ""}</div>
+    ${(state.currentUser?.roles || []).includes("Admin") && item.status === "InProgress" ? `<label class="field"><span class="field__label">Назначить инженера</span><select data-request-engineer>${state.engineers.map(engineer => `<option value="${escapeHtml(engineer.userName || engineer.id)}"${(engineer.userName || engineer.id) === item.engineerUserName ? " selected" : ""}>${escapeHtml(engineer.displayName || engineer.userName || engineer.id)}</option>`).join("")}</select></label><button class="secondary" data-request-action="reassign">Переназначить</button>` : ""}`;
+  engineerRequestDetail.hidden = false;
+  engineerRequestDetail.scrollIntoView({ block: "nearest" });
+}
+
+async function runEngineerRequestAction(action, button) {
+  const item = state.activeEngineerRequest;
+  if (!item) return;
+  const actionOpenVersion = engineerRequestOpenVersion;
+  const base = `/api/engineer-requests/${encodeURIComponent(item.id)}`;
+  const message = engineerRequestDetail.querySelector("[data-request-message]")?.value.trim() || "";
+  let path = action;
+  let body;
+  if (["comment", "clarify", "reject"].includes(action)) body = { message };
+  if (action === "generate") body = { fingerprint: item.fingerprint || item.deviations?.fingerprint || "" };
+  if (action === "reassign") body = { engineerUserName: engineerRequestDetail.querySelector("[data-request-engineer]")?.value };
+  if (action === "close") {
+    engineerRequestOpenVersion++;
+    engineerRequestDetail.hidden = true;
+    updateEngineerRequestOpenControls();
+    engineerRequestsList.querySelector(`[data-action="open-request"][data-request-id="${CSS.escape(item.id)}"]`)?.focus();
+    return;
+  }
+  if (["comment", "clarify", "reject"].includes(action) && !message) {
+    engineerRequestDetail.querySelector("[data-request-message]")?.focus();
+    return showAccountStatus("Введите сообщение для этого действия.", "error");
+  }
+  if (action === "generate" && !window.confirm(`Подтвердите параметры и создание чертежа для этого запроса.${item.deviations?.length ? `\n\n${item.deviations.join("\n")}` : ""}`)) return;
+  const response = await apiFetch(`${base}/${path}`, {
+    method: "POST",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})
+  });
+  if (!response.ok) return showAccountStatus((await readProblem(response, "Не удалось выполнить действие." )).join(" "), "error");
+  await loadEngineerRequests();
+  if (actionOpenVersion !== engineerRequestOpenVersion || state.activeEngineerRequest?.id !== item.id || engineerRequestDetail.hidden) return;
+  await openEngineerRequest(item.id, true);
+  const focusTarget = engineerRequestDetail.querySelector(`[data-request-action="${action}"]`)
+    || [...engineerRequestsList.querySelectorAll('[data-action="open-request"]')].find(candidate => candidate.dataset.requestId === item.id);
+  focusTarget?.focus();
 }
 
 function showAuthPanel(panel) {
@@ -1384,7 +1703,7 @@ function setAdminUserRowBusy(row, busy) {
     delete row.dataset.adminUserBusy;
   }
 
-  row.querySelectorAll("button, input").forEach(control => {
+  row.querySelectorAll("button, input, select").forEach(control => {
     if (busy) {
       if (control.dataset.adminRowWasDisabled === undefined) {
         control.dataset.adminRowWasDisabled = String(control.disabled);
@@ -1446,29 +1765,18 @@ function renderAdminUsers() {
 }
 
 function renderAdminRoleControls(user, isCurrentUser) {
-  const roles = new Set(user.roles || []);
+  const selectedRole = ADMIN_ROLE_OPTIONS.find(role => (user.roles || []).includes(role)) || "Seller";
   return `
-    <div class="role-controls">
-      ${ADMIN_ROLE_OPTIONS.map(role => {
-        const checked = roles.has(role) ? " checked" : "";
-        const disabled = isCurrentUser && role === "Admin" ? " disabled" : "";
-        return `
-          <label class="role-control">
-            <input type="checkbox" data-role="${role}"${checked}${disabled}>
-            <span>${role}</span>
-          </label>
-        `;
-      }).join("")}
-    </div>
+    <select data-role-select aria-label="Роль пользователя"${isCurrentUser ? " disabled" : ""}>
+      ${ADMIN_ROLE_OPTIONS.map(role => `<option value="${role}"${selectedRole === role ? " selected" : ""}>${role}</option>`).join("")}
+    </select>
   `;
 }
 
 function getSelectedAdminRoles(button) {
   const row = button.closest("tr");
-  const roles = Array.from(row?.querySelectorAll("input[data-role]:checked") || [])
-    .map(input => input.dataset.role)
-    .filter(Boolean);
-  return roles.length > 0 ? roles : ["Viewer"];
+  const role = row?.querySelector("[data-role-select]")?.value;
+  return ADMIN_ROLE_OPTIONS.includes(role) ? [role] : ["Seller"];
 }
 
 async function handleAdminUserAction(action, userName, button) {
@@ -1488,9 +1796,9 @@ async function handleAdminUserAction(action, userName, button) {
     }
   } else if (action === "approve") {
     const selectedRoles = getSelectedAdminRoles(button);
-    const roles = selectedRoles.some(role => role === "Admin" || role === "Operator")
+    const roles = selectedRoles.some(role => role === "Admin" || role === "Engineer")
       ? selectedRoles
-      : ["Operator", "Viewer"];
+      : ["Seller"];
     url += "/approve";
     options = {
       method: "POST",
@@ -1911,8 +2219,15 @@ async function login(event) {
     await loadTemplates();
     await loadProjects();
     await loadAccountJobs();
+    await loadEngineerRequests();
+    if (requestCanWork()) await loadSellerDirectory();
+    if (canAdmin()) {
+      const engineersResponse = await apiFetch("/api/engineers");
+      if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];
+    }
     await loadAdminData();
     updateAuthView();
+    await openEngineerRequestFromUrl();
   } catch (error) {
     if (error?.name !== "AbortError") {
       showPageLoadError();
@@ -1954,9 +2269,16 @@ async function runBoot({ context = "load" } = {}) {
     await loadTemplates();
     await loadProjects();
     await loadAccountJobs();
+    await loadEngineerRequests();
+    if (requestCanWork()) await loadSellerDirectory();
+    if (canAdmin()) {
+      const engineersResponse = await apiFetch("/api/engineers");
+      if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];
+    }
     await loadAdminData();
     updateAuthView();
     hidePageSkeleton();
+    await openEngineerRequestFromUrl();
   } catch (error) {
     if (error?.name === "AbortError") {
       hidePageSkeleton();
@@ -1977,6 +2299,9 @@ function boot({ context = "load" } = {}) {
 registerForm.addEventListener("submit", register);
 loginForm.addEventListener("submit", login);
 guestLoginForm?.addEventListener("submit", login);
+for (const form of [loginForm, guestLoginForm]) {
+  form?.addEventListener("input", () => form.querySelector("[name='password']")?.setCustomValidity(""));
+}
 showRegisterPanelButton?.addEventListener("click", () => showAuthPanel("register"));
 showLoginPanelButton?.addEventListener("click", () => showAuthPanel("login"));
 logoutButton.addEventListener("click", logout);
@@ -2001,6 +2326,19 @@ for (const searchInput of [globalSearchInput, projectSearchInput]) {
   });
 }
 window.addEventListener("hashchange", updateAuthView);
+refreshEngineerRequestsButton?.addEventListener("click", () => loadEngineerRequests().catch(() => showAccountStatus("Не удалось обновить запросы.", "error")));
+sellerDirectorySelect?.addEventListener("change", () => loadSellerProjects(sellerDirectorySelect.value).catch(() => {
+  sellerDirectoryStatus.hidden = false;
+  sellerDirectoryStatus.textContent = "Не удалось загрузить проекты продавца.";
+}));
+engineerRequestsList?.addEventListener("click", event => {
+  const button = event.target.closest('[data-action="open-request"]');
+  if (button) void openEngineerRequest(button.dataset.requestId);
+});
+engineerRequestDetail?.addEventListener("click", event => {
+  const button = event.target.closest("[data-request-action]");
+  if (button) void runEngineerRequestAction(button.dataset.requestAction, button);
+});
 projectsList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;

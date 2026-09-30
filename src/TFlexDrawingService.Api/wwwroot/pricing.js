@@ -212,7 +212,7 @@ function isAuthenticated() {
 
 function canSavePricing() {
   const roles = state.currentUser?.roles || [];
-  return roles.includes("Admin") || roles.includes("Operator");
+  return roles.some(role => ["Admin", "Engineer", "Seller"].includes(role));
 }
 
 function localized(ru, en) {
@@ -222,8 +222,8 @@ function localized(ru, en) {
 function getRoleLabel() {
   const roles = state.currentUser?.roles || [];
   if (roles.includes("Admin")) return "Admin";
-  if (roles.includes("Operator")) return "Operator";
-  if (roles.includes("Viewer")) return "Viewer";
+  if (roles.includes("Engineer")) return "Engineer";
+  if (roles.includes("Seller")) return "Seller";
   return "";
 }
 
@@ -245,13 +245,8 @@ function updateAuthView() {
       currentUserRole.textContent = role;
     }
     if (pricingAccessNote) {
-      const readOnly = role === "Viewer";
-      pricingAccessNote.hidden = !readOnly;
-      pricingAccessNote.textContent = readOnly
-        ? (getLanguage() === "en"
-          ? "Viewer role: calculations are available, but saving specifications and exporting quotations require the Operator or Admin role."
-          : "Роль Viewer: расчет доступен, но сохранение спецификаций и выгрузка ТКП требуют роль Operator или Admin.")
-        : "";
+      pricingAccessNote.hidden = true;
+      pricingAccessNote.textContent = "";
     }
   } else {
     currentUserName.textContent = "";
@@ -2533,6 +2528,7 @@ downloadTkpButton.addEventListener("click", saveAndDownloadTkp);
 downloadRequestXlsxButton.addEventListener("click", saveAndDownloadRequestXlsx);
 registerForm?.addEventListener("submit", register);
 loginForm?.addEventListener("submit", login);
+loginForm?.addEventListener("input", () => loginPassword.setCustomValidity(""));
 logoutButton?.addEventListener("click", logout);
 syncPricingAccessibleCopy();
 setupPricingSearch();

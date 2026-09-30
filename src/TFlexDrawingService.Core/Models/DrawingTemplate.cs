@@ -36,4 +36,6 @@ public sealed class DrawingValidationRule
     public string Severity { get; set; } = "error";
 
     public List<string> FieldNames { get; set; } = [];
+
+    public bool EngineerOverridable { get; set; }
 }

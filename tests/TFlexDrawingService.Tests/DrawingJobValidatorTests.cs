@@ -70,6 +70,70 @@ public sealed class DrawingJobValidatorTests
     }
 
     [Fact]
+    public async Task ClassifyAsync_AllowsMarkedDeviationsWithStableFingerprintButKeepsStructuralLimitsHard()
+    {
+        var template = new DrawingTemplate
+        {
+            Id = "classification", Code = "classification", Name = "Classification", OutputFormats = ["pdf"],
+            Parameters =
+            [
+                new() { Name = "WIDTH", Type = "integer", IsRequired = true, MaxValue = 10, MaxValueEngineerOverridable = true, PositiveValueRequired = true },
+                new() { Name = "FLOORS", Type = "integer", IsRequired = true, MinValue = 1, MaxValue = 5 },
+                new() { Name = "FLOOR_LEVEL", Type = "number", IsRequired = true },
+                new() { Name = "OFFSET", Type = "number", IsRequired = true }
+            ],
+            ValidationRules = [new() { Name = "width_rule", Expression = "WIDTH <= 10", Message = "Width is above typical range.", EngineerOverridable = true }]
+        };
+        var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(template));
+        var request = new CreateDrawingJobRequest
+        {
+            TemplateId = template.Id, OutputFormat = "pdf",
+            Parameters = JsonParameters("""{"WIDTH":12,"FLOORS":3,"FLOOR_LEVEL":-1,"OFFSET":-25}""")
+        };
+
+        var classified = await validator.ClassifyAsync(request);
+        var strict = await validator.ValidateAsync(request);
+        var repeated = await validator.ClassifyAsync(request);
+
+        Assert.Empty(classified.HardErrors);
+        Assert.Equal(2, classified.OverridableDeviations.Count);
+        Assert.Equal(classified.Fingerprint, repeated.Fingerprint);
+        Assert.Same(template, classified.Template);
+        Assert.Equal("pdf", classified.OutputFormat);
+        Assert.Equal(12L, classified.NormalizedParameters["WIDTH"]);
+        Assert.Equal(-1m, classified.NormalizedParameters["FLOOR_LEVEL"]);
+        Assert.Equal(-25m, classified.NormalizedParameters["OFFSET"]);
+        Assert.False(strict.IsValid);
+
+        template.ValidationRules.Add(new DrawingValidationRule { Name = "hard_rule", Expression = "FLOORS > 0" });
+        var beforeRuleEdit = await validator.ClassifyAsync(request);
+        template.ValidationRules[^1].Expression = "FLOORS > 1";
+        var afterRuleEdit = await validator.ClassifyAsync(request);
+        Assert.Equal(beforeRuleEdit.OverridableDeviations, afterRuleEdit.OverridableDeviations);
+        Assert.NotEqual(beforeRuleEdit.Fingerprint, afterRuleEdit.Fingerprint);
+
+        template.CalculatedVariables.Add(new DrawingParameterDefinition { Name = "CALCULATED", Type = "number", Expression = "1" });
+        template.LookupTables["SIZES"] = [JsonParameters("""{"WIDTH":10}""")];
+        var beforeAuxiliaryEdit = await validator.ClassifyAsync(request);
+        template.CalculatedVariables[0].Expression = "2";
+        var afterCalculatedEdit = await validator.ClassifyAsync(request);
+        Assert.NotEqual(beforeAuxiliaryEdit.Fingerprint, afterCalculatedEdit.Fingerprint);
+        template.LookupTables["SIZES"] = [JsonParameters("""{"WIDTH":11}""")];
+        var afterLookupEdit = await validator.ClassifyAsync(request);
+        Assert.NotEqual(afterCalculatedEdit.Fingerprint, afterLookupEdit.Fingerprint);
+
+        request.Parameters = JsonParameters("""{"WIDTH":0,"FLOORS":3,"FLOOR_LEVEL":-1,"OFFSET":-25}""");
+        var nonPositiveDimension = await validator.ClassifyAsync(request);
+        Assert.Contains(nonPositiveDimension.HardErrors, error => error.Contains("WIDTH", StringComparison.Ordinal));
+
+        request.Parameters = JsonParameters("""{"WIDTH":12,"FLOORS":6,"FLOOR_LEVEL":-1,"OFFSET":-25}""");
+        var structural = await validator.ClassifyAsync(request);
+        Assert.Contains(structural.HardErrors, error => error.Contains("FLOORS", StringComparison.Ordinal));
+        Assert.Empty(structural.OverridableDeviations);
+        Assert.Null(structural.Fingerprint);
+    }
+
+    [Fact]
     public async Task ValidateAsync_NormalizesValidParameters()
     {
         var validator = new DrawingJobValidator(new InMemoryTemplateCatalog(CreateTemplate()));

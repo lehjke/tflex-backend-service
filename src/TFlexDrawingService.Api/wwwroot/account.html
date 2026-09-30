@@ -7,7 +7,7 @@
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
   <script src="/sidebar-init.js?v=20260924-sidebar-collapse-1"></script>
-  <link rel="stylesheet" href="/styles.css?v=20260928-account-show-more-1">
+  <link rel="stylesheet" href="/styles.css?v=20260930-inline-requests-3">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -177,6 +177,7 @@
       <main id="accountMain" class="layout layout--account" hidden>
         <section class="intro intro--account">
           <h1>Личный кабинет</h1>
+          <a id="adminAccessCard" class="button-link admin-panel-entry" href="#adminPanel" hidden>Админ-панель</a>
           <p>Проекты, сохраненные конфигурации, история выпуска и доступные действия для продавца, инженера и администратора.</p>
           <p id="currentUserAccessNote" class="role-note" hidden></p>
         </section>
@@ -198,6 +199,27 @@
             <strong id="pendingMetric">0</strong>
             <span>Ожидают обработки</span>
           </article>
+        </section>
+
+        <section class="panel panel--wide engineer-requests" aria-labelledby="engineerRequestsTitle">
+          <div class="panel__header">
+            <h2 id="engineerRequestsTitle">Запросы инженеру <span id="engineerRequestNewCount" class="request-count" aria-label="Непрочитанных запросов">0</span></h2>
+            <button id="refreshEngineerRequests" class="secondary secondary--compact" type="button">Обновить</button>
+          </div>
+          <div id="engineerRequestsStatus" class="empty" role="status" aria-live="polite" hidden></div>
+          <div id="engineerRequestsList" class="engineer-request-list" aria-live="polite"></div>
+        </section>
+
+        <section id="sellerDirectory" class="panel panel--wide seller-directory" aria-labelledby="sellerDirectoryTitle" hidden>
+          <div class="panel__header">
+            <h2 id="sellerDirectoryTitle">Проекты продавцов</h2>
+          </div>
+          <label class="field seller-directory__chooser">
+            <span class="field__label">Продавец</span>
+            <select id="sellerDirectorySelect"><option value="">Выберите продавца</option></select>
+          </label>
+          <div id="sellerDirectoryStatus" class="empty" role="status" aria-live="polite" hidden></div>
+          <div id="sellerProjectsList" class="seller-projects-list"></div>
         </section>
 
         <div class="account-columns">
@@ -254,14 +276,6 @@
             <div id="savedConfigurationsList" class="saved-configurations-list"></div>
           </section>
         </div>
-
-        <section id="adminAccessCard" class="admin-access-card" hidden>
-          <div>
-            <h2>Администратор</h2>
-            <p>Пользователи, шаблоны и доступность форматов.</p>
-          </div>
-          <a class="admin-access-card__button" href="#adminPanel">Открыть</a>
-        </section>
 
         <section id="adminPanel" class="admin-panel" hidden>
           <section class="intro admin-intro">
@@ -388,6 +402,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260924-sidebar-collapse-2"></script>
-  <script type="module" src="/account.js?v=20260928-account-show-more-1"></script>
+  <script type="module" src="/account.js?v=20260930-admin-role-select-1"></script>
 </body>
 </html>

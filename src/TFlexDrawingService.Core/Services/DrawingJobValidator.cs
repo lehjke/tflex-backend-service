@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using TFlexDrawingService.Core.Abstractions;
@@ -122,6 +124,13 @@ public sealed partial class DrawingJobValidator : IDrawingRequestValidator
             }
         }
 
+        foreach (var definition in template.Parameters.Where(parameter => parameter.PositiveValueRequired))
+        {
+            if (normalized.TryGetValue(definition.Name, out var value)
+                && (!TryConvertPositiveDimension(value, out var dimension) || dimension <= 0))
+                errors.Add($"Parameter '{definition.Name}' must be greater than zero.");
+        }
+
         if (errors.Count == 0)
         {
             var expressionContext = TemplateExpressionContextBuilder.BuildRuntimeContext(
@@ -135,6 +144,110 @@ public sealed partial class DrawingJobValidator : IDrawingRequestValidator
         return errors.Count == 0
             ? DrawingJobValidationResult.Success(template, outputFormat, normalized)
             : DrawingJobValidationResult.Failure(errors);
+    }
+
+    public async Task<DrawingValidationClassification> ClassifyAsync(
+        CreateDrawingJobRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.TemplateId))
+        {
+            return new(["TemplateId is required."], [], null);
+        }
+
+        var template = await _templateCatalog.GetByIdOrCodeAsync(request.TemplateId, cancellationToken);
+        if (template is null)
+        {
+            return new([$"Template '{request.TemplateId}' was not found."], [], null);
+        }
+
+        var relaxed = new DrawingTemplate
+        {
+            Id = template.Id, Code = template.Code, Name = template.Name,
+            OutputFormats = template.OutputFormats,
+            Parameters = template.Parameters.Select(parameter => new DrawingParameterDefinition
+            {
+                Name = parameter.Name, DisplayName = parameter.DisplayName, Type = parameter.Type,
+                Unit = parameter.Unit, IsRequired = parameter.IsRequired, IsReadOnly = parameter.IsReadOnly,
+                PositiveValueRequired = parameter.PositiveValueRequired,
+                SubmitDefault = parameter.SubmitDefault, SubmitWhenDisabled = parameter.SubmitWhenDisabled,
+                Expression = parameter.Expression, LevelExpression = parameter.LevelExpression,
+                LookupValues = parameter.LookupValues, MinValue = parameter.MinValueEngineerOverridable ? null : parameter.MinValue,
+                MaxValue = parameter.MaxValueEngineerOverridable ? null : parameter.MaxValue,
+                DefaultValue = parameter.DefaultValue, AllowedValues = parameter.AllowedValues,
+                AllowedValueLabels = parameter.AllowedValueLabels, Description = parameter.Description,
+                Multiline = parameter.Multiline, Rows = parameter.Rows
+            }).ToList(),
+            CalculatedVariables = template.CalculatedVariables,
+            LookupTables = template.LookupTables,
+            ValidationRules = template.ValidationRules.Select(rule => new DrawingValidationRule
+            {
+                Name = rule.Name, Expression = rule.Expression, Message = rule.Message,
+                Severity = rule.EngineerOverridable ? "warning" : rule.Severity,
+                FieldNames = rule.FieldNames, EngineerOverridable = rule.EngineerOverridable
+            }).ToList()
+        };
+
+        var result = await new DrawingJobValidator(new SingleTemplateCatalog(relaxed), _maxLookupRowEvaluations)
+            .ValidateAsync(request, cancellationToken);
+        if (!result.IsValid)
+        {
+            return new(result.Errors, [], null);
+        }
+
+        var deviations = new List<string>();
+        var fingerprintParts = new List<string>
+        {
+            JsonSerializer.Serialize(new { OutputFormat = result.OutputFormat, Template = template })
+        };
+        foreach (var parameter in template.Parameters)
+        {
+            if (!result.NormalizedParameters.TryGetValue(parameter.Name, out var value)
+                || !TryConvertValidationNumber(value!, out var number)) continue;
+            if (parameter.MinValueEngineerOverridable && parameter.MinValue is decimal min && number < min)
+            {
+                deviations.Add($"Parameter '{parameter.Name}' is below {min} (value {number}).");
+                fingerprintParts.Add($"min:{parameter.Name}:{min}:{number}");
+            }
+            if (parameter.MaxValueEngineerOverridable && parameter.MaxValue is decimal max && number > max)
+            {
+                deviations.Add($"Parameter '{parameter.Name}' is above {max} (value {number}).");
+                fingerprintParts.Add($"max:{parameter.Name}:{max}:{number}");
+            }
+        }
+
+        var context = TemplateExpressionContextBuilder.BuildRuntimeContext(template, result.NormalizedParameters, _maxLookupRowEvaluations);
+        foreach (var rule in template.ValidationRules.Where(rule => rule.EngineerOverridable))
+        {
+            fingerprintParts.Add($"rule:{rule.Name}:{rule.Expression}");
+            if (!context.TryEvaluateRule(rule.Expression, out var passed))
+            {
+                return new([$"Validation rule '{rule.Name}' could not be evaluated safely. The template catalogue must be corrected before this request can be generated."], [], null);
+            }
+            if (passed) continue;
+            deviations.Add(string.IsNullOrWhiteSpace(rule.Message) ? $"Validation rule '{rule.Name}' failed." : InterpolateValidationMessage(rule.Message, context));
+        }
+
+        foreach (var pair in result.NormalizedParameters.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            fingerprintParts.Add($"value:{pair.Key}:{Convert.ToString(pair.Value, CultureInfo.InvariantCulture)}");
+        }
+        var fingerprint = deviations.Count == 0 ? null : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", fingerprintParts))));
+        return new([], deviations, fingerprint, template, result.OutputFormat, result.NormalizedParameters);
+    }
+
+    private static bool TryConvertPositiveDimension(object? value, out decimal number)
+    {
+        if (value is string text && TryReadDecimalString(text, out number)) return true;
+        if (value is not null) return TryConvertValidationNumber(value, out number);
+        number = default;
+        return false;
+    }
+
+    private sealed class SingleTemplateCatalog(DrawingTemplate template) : ITemplateCatalog
+    {
+        public Task<IReadOnlyList<DrawingTemplate>> ListAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DrawingTemplate>>([template]);
+        public Task<DrawingTemplate?> GetByIdOrCodeAsync(string idOrCode, CancellationToken cancellationToken = default) => Task.FromResult<DrawingTemplate?>(template);
     }
 
     private static string NormalizeFormat(string? outputFormat)

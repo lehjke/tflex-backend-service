@@ -9,10 +9,12 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using TFlexDrawingService.Api.Data;
+using TFlexDrawingService.Api;
 using TFlexDrawingService.Api.Security;
 using TFlexDrawingService.Core.Abstractions;
 using TFlexDrawingService.Core.Models;
 using TFlexDrawingService.Core.Requests;
+using TFlexDrawingService.Core.Services;
 using TFlexDrawingService.Infrastructure.Configuration;
 using TFlexDrawingService.Infrastructure.Persistence;
 
@@ -100,6 +102,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 builder.Services.AddSingleton<ConfiguredUserStore>();
 builder.Services.AddSingleton<ProjectStore>();
+builder.Services.AddSingleton<EngineerRequestStore>();
 builder.Services.AddSingleton<TemplateAccessStore>();
 builder.Services.AddSingleton<PricingCatalogStore>();
 builder.Services.AddSingleton<TemplateImportService>();
@@ -171,8 +174,8 @@ builder.Services
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(ViewerPolicy, policy => policy.RequireRole("Admin", "Operator", "Viewer"));
-    options.AddPolicy(OperatorPolicy, policy => policy.RequireRole("Admin", "Operator"));
+    options.AddPolicy(ViewerPolicy, policy => policy.RequireRole("Admin", "Engineer", "Seller"));
+    options.AddPolicy(OperatorPolicy, policy => policy.RequireRole("Admin", "Engineer", "Seller"));
     options.AddPolicy(AdminPolicy, policy => policy.RequireRole("Admin"));
 });
 
@@ -208,9 +211,11 @@ using (var scope = app.Services.CreateScope())
 {
     var userStore = scope.ServiceProvider.GetRequiredService<ConfiguredUserStore>();
     var projectStore = scope.ServiceProvider.GetRequiredService<ProjectStore>();
+    var engineerRequestStore = scope.ServiceProvider.GetRequiredService<EngineerRequestStore>();
     var templateAccessStore = scope.ServiceProvider.GetRequiredService<TemplateAccessStore>();
     var userCount = await userStore.InitializeAsync();
     await projectStore.InitializeAsync();
+    await engineerRequestStore.InitializeAsync();
     await templateAccessStore.InitializeAsync();
     if (securityOptions.RequireAuthentication && userCount == 0)
     {
@@ -294,6 +299,8 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+
+app.MapEngineerRequests(securityOptions.RequireAuthentication);
 
 app.MapGet("/drawings", (IWebHostEnvironment environment) => ServeHtml(environment, "drawings.html"));
 app.MapGet("/pricing", (IWebHostEnvironment environment) => ServeHtml(environment, "pricing.html"));
@@ -381,7 +388,7 @@ app.MapGet("/api/auth/me", async (
             IsAuthenticated = true,
             UserName = "local",
             DisplayName = "Local",
-            Roles = new[] { "Admin", "Operator", "Viewer" }
+            Roles = new[] { "Admin" }
         });
     }
 
@@ -436,6 +443,46 @@ var adminUsersEndpoint = app.MapGet("/api/admin/users", async (
     return Results.Ok(allUsers.Select(ToPublicUserDto));
 });
 RequirePolicy(adminUsersEndpoint, securityOptions.RequireAuthentication, AdminPolicy);
+
+var sellersEndpoint = app.MapGet("/api/sellers", async (ConfiguredUserStore users, HttpContext context, CancellationToken ct) =>
+{
+    if (securityOptions.RequireAuthentication && !context.User.IsInRole("Admin") && !context.User.IsInRole("Engineer")) return Results.Forbid();
+    var all = await users.ListUsersAsync(ct);
+    return Results.Ok(all.Where(user => user.Enabled && user.Roles.Contains("Seller", StringComparer.OrdinalIgnoreCase))
+        .Select(user => new { user.UserName, user.DisplayName }));
+});
+RequirePolicy(sellersEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var engineersEndpoint = app.MapGet("/api/engineers", async (ConfiguredUserStore users, HttpContext context, CancellationToken ct) =>
+{
+    if (securityOptions.RequireAuthentication && !context.User.IsInRole("Admin")) return Results.Forbid();
+    var all = await users.ListUsersAsync(ct);
+    return Results.Ok(all.Where(user => user.Enabled && user.Roles.Contains("Engineer", StringComparer.OrdinalIgnoreCase))
+        .Select(user => new { user.UserName, user.DisplayName }));
+});
+RequirePolicy(engineersEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var sellerProjectsEndpoint = app.MapGet("/api/sellers/{seller}/projects", async (string seller, ConfiguredUserStore users,
+    ProjectStore projects, HttpContext context, CancellationToken ct) =>
+{
+    if (securityOptions.RequireAuthentication && !context.User.IsInRole("Admin") && !context.User.IsInRole("Engineer")) return Results.Forbid();
+    var user = await users.FindUserAsync(seller, ct);
+    if (user is null || !user.Roles.Contains("Seller", StringComparer.OrdinalIgnoreCase)) return Results.NotFound();
+    return Results.Ok(await projects.ListProjectsAsync(user.UserName, ct));
+});
+RequirePolicy(sellerProjectsEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
+var sellerProjectConfigurationsEndpoint = app.MapGet("/api/sellers/{seller}/projects/{projectId}/configurations", async (
+    string seller, string projectId, ConfiguredUserStore users, ProjectStore projects, HttpContext context, CancellationToken ct) =>
+{
+    if (securityOptions.RequireAuthentication && !context.User.IsInRole("Admin") && !context.User.IsInRole("Engineer")) return Results.Forbid();
+    var user = await users.FindUserAsync(seller, ct);
+    if (user is null || !user.Roles.Contains("Seller", StringComparer.OrdinalIgnoreCase)
+        || await projects.GetProjectAsync(projectId, user.UserName, ct) is null) return Results.NotFound();
+    var configurations = await projects.ListConfigurationsAsync(projectId, user.UserName, ct);
+    return Results.Ok(configurations.Select(ToProjectConfigurationDto));
+});
+RequirePolicy(sellerProjectConfigurationsEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 var adminApproveUserEndpoint = app.MapPost("/api/admin/users/{userName}/approve", async (
     string userName,
@@ -539,7 +586,7 @@ var adminUpsertUserEndpoint = app.MapPut("/api/admin/users/{userName}", async (
         });
     }
 
-    var normalizedRoles = NormalizeRoles(request.Roles ?? existing?.Roles ?? ["Viewer"]);
+    var normalizedRoles = NormalizeRoles(request.Roles ?? existing?.Roles ?? ["Seller"]);
     var enabled = request.Enabled ?? existing?.Enabled ?? true;
     var removesAdministrativeAccess = existing is not null
         && existing.Enabled
@@ -926,13 +973,25 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
 {
     var ownerUserName = securityOptions.RequireAuthentication ? GetUserName(context.User) : "local";
     var queueLimits = queueOptions.Value;
-    var validation = await validator.ValidateAsync(request, cancellationToken);
+    var validation = await validator.ClassifyAsync(request, cancellationToken);
     if (!validation.IsValid || validation.Template is null || validation.OutputFormat is null)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
-            ["request"] = validation.Errors.ToArray()
+            ["request"] = validation.HardErrors.ToArray()
         });
+    }
+
+    if (validation.OverridableDeviations.Count > 0
+        && (!context.User.IsInRole("Admin") && !context.User.IsInRole("Engineer")
+            || !string.Equals(request.ConfirmationFingerprint, validation.Fingerprint, StringComparison.Ordinal)))
+    {
+        return Results.Json(new
+        {
+            Message = "Engineer confirmation is required for this configuration.",
+            Deviations = validation.OverridableDeviations,
+            validation.Fingerprint
+        }, statusCode: StatusCodes.Status409Conflict);
     }
 
     if (securityOptions.RequireAuthentication
@@ -981,31 +1040,54 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
 .RequireRateLimiting(JobCreateRateLimitPolicy);
 RequirePolicy(createJobEndpoint, securityOptions.RequireAuthentication, OperatorPolicy);
 
+var classifyDrawingEndpoint = app.MapPost("/api/drawings/classify", async (
+    CreateDrawingJobRequest request,
+    IDrawingRequestValidator validator,
+    CancellationToken cancellationToken) =>
+{
+    var result = await validator.ClassifyAsync(request, cancellationToken);
+    return Results.Ok(new
+    {
+        result.HardErrors,
+        result.OverridableDeviations,
+        result.Fingerprint,
+        CanGenerate = result.IsValid && result.OverridableDeviations.Count == 0
+    });
+});
+RequirePolicy(classifyDrawingEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
+
 var jobsEndpoint = app.MapGet("/api/jobs", async (
     int? take,
     IDrawingJobRepository repository,
+    EngineerRequestStore requests,
+    ConfiguredUserStore users,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var jobs = !securityOptions.RequireAuthentication || CanViewAllJobs(context.User)
+    var jobs = !securityOptions.RequireAuthentication || CanViewAllJobs(context.User) || context.User.IsInRole("Engineer")
         ? await repository.ListAsync(take ?? 25, cancellationToken)
         : await repository.ListAsync(take ?? 25, GetUserName(context.User), cancellationToken);
-
-    return Results.Ok(jobs.Select(job => ToJobDto(job, context.User, securityOptions)));
+    var visible = new List<object>();
+    foreach (var job in jobs)
+    {
+        if (await CanReadJobAsync(job, context.User, securityOptions, requests, users, cancellationToken))
+            visible.Add(ToJobDto(job, context.User, securityOptions));
+    }
+    return Results.Ok(visible);
 });
 RequirePolicy(jobsEndpoint, securityOptions.RequireAuthentication, ViewerPolicy);
 
 var jobEndpoint = app.MapGet("/api/jobs/{id}", async (
     string id,
     IDrawingJobRepository repository,
+    EngineerRequestStore requests,
+    ConfiguredUserStore users,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var job = !securityOptions.RequireAuthentication || CanViewAllJobs(context.User)
-        ? await repository.GetAsync(id, cancellationToken)
-        : await repository.GetAsync(id, GetUserName(context.User), cancellationToken);
+    var job = await repository.GetAsync(id, cancellationToken);
 
-    return job is null
+    return job is null || !await CanReadJobAsync(job, context.User, securityOptions, requests, users, cancellationToken)
         ? Results.NotFound()
         : Results.Ok(ToJobDto(job, context.User, securityOptions));
 });
@@ -1016,13 +1098,15 @@ var downloadEndpoint = app.MapGet("/api/jobs/{jobId}/files/{fileId}/download", a
     string fileId,
     bool? inline,
     IDrawingJobRepository repository,
+    EngineerRequestStore requests,
+    ConfiguredUserStore users,
     IOptions<DrawingStorageOptions> storageOptions,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var job = !securityOptions.RequireAuthentication || CanViewAllJobs(context.User)
-        ? await repository.GetAsync(jobId, cancellationToken)
-        : await repository.GetAsync(jobId, GetUserName(context.User), cancellationToken);
+    var job = await repository.GetAsync(jobId, cancellationToken);
+    if (job is null || !await CanReadJobAsync(job, context.User, securityOptions, requests, users, cancellationToken))
+        return Results.NotFound();
 
     var file = job?.ResultFiles.FirstOrDefault(candidate =>
         string.Equals(candidate.Id, fileId, StringComparison.OrdinalIgnoreCase));
@@ -1119,9 +1203,14 @@ RequirePolicy(updateProjectEndpoint, securityOptions.RequireAuthentication, Oper
 var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
     string projectId,
     ProjectStore projects,
+    EngineerRequestStore requests,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
+    var ownProject = await projects.GetProjectAsync(projectId, GetProjectOwnerScope(context.User, securityOptions), cancellationToken);
+    if (ownProject is null) return Results.NotFound();
+    if ((await requests.ListAsync(cancellationToken: cancellationToken)).Any(request => request.ProjectId == projectId))
+        return Results.Conflict(new { Message = "A project with engineer requests cannot be deleted." });
     return await projects.DeleteProjectAsync(
         projectId,
         GetProjectOwnerScope(context.User, securityOptions),
@@ -1916,6 +2005,27 @@ static bool CanViewAllJobs(ClaimsPrincipal principal)
     return principal.IsInRole("Admin");
 }
 
+static async Task<bool> CanReadJobAsync(
+    DrawingJob job, ClaimsPrincipal principal, SecurityOptions options,
+    EngineerRequestStore requests, ConfiguredUserStore users, CancellationToken cancellationToken)
+{
+    if (!options.RequireAuthentication || principal.IsInRole("Admin")) return true;
+    var request = await requests.GetByJobIdAsync(job.Id, cancellationToken);
+    var currentUser = GetUserName(principal);
+    if (request is not null)
+    {
+        return request.Status == EngineerRequestStatus.Ready
+                && string.Equals(currentUser, request.Seller, StringComparison.OrdinalIgnoreCase)
+            || principal.IsInRole("Engineer")
+                && string.Equals(currentUser, request.Assignee, StringComparison.OrdinalIgnoreCase);
+    }
+
+    if (string.Equals(currentUser, job.OwnerUserName, StringComparison.OrdinalIgnoreCase)) return true;
+    if (!principal.IsInRole("Engineer")) return false;
+    var owner = await users.FindUserAsync(job.OwnerUserName, cancellationToken);
+    return owner is not null && owner.Roles.Contains("Seller", StringComparer.OrdinalIgnoreCase);
+}
+
 static IReadOnlyList<string> NormalizeRoles(IEnumerable<string> roles)
 {
     var normalized = roles
@@ -1924,14 +2034,15 @@ static IReadOnlyList<string> NormalizeRoles(IEnumerable<string> roles)
         .Select(role => role.ToLowerInvariant() switch
         {
             "admin" => "Admin",
-            "operator" => "Operator",
-            "viewer" => "Viewer",
-            _ => role
+            "engineer" => "Engineer",
+            "seller" or "operator" or "viewer" => "Seller",
+            _ => "Seller"
         })
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
-
-    return normalized.Length == 0 ? ["Viewer"] : normalized;
+    if (normalized.Contains("Admin", StringComparer.OrdinalIgnoreCase)) return ["Admin"];
+    if (normalized.Contains("Engineer", StringComparer.OrdinalIgnoreCase)) return ["Engineer"];
+    return ["Seller"];
 }
 
 static string GetUserPartitionKey(HttpContext context)

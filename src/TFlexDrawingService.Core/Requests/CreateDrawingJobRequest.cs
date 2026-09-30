@@ -8,5 +8,7 @@ public sealed class CreateDrawingJobRequest
 
     public string OutputFormat { get; set; } = "pdf";
 
+    public string? ConfirmationFingerprint { get; set; }
+
     public Dictionary<string, JsonElement> Parameters { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

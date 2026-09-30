@@ -305,6 +305,11 @@ public sealed class DrawingJobProcessorTests
             return inner.DeleteAsync(id, cancellationToken);
         }
 
+        public Task<bool> TryCancelPendingAsync(string id, CancellationToken cancellationToken = default)
+        {
+            return inner.TryCancelPendingAsync(id, cancellationToken);
+        }
+
         public Task<DrawingJob?> TryClaimNextPendingAsync(
             string leaseToken,
             DateTimeOffset leaseExpiresAt,

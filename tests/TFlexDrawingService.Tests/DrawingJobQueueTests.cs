@@ -29,6 +29,26 @@ public sealed class DrawingJobQueueTests
     }
 
     [Fact]
+    public async Task TryCancelPendingAsync_CancelsOnlyUnclaimedJobs()
+    {
+        var (repository, _, _) = await CreateQueueAsync();
+        var pending = CreateJob("seller");
+        await repository.CreateAsync(pending);
+
+        Assert.True(await repository.TryCancelPendingAsync(pending.Id));
+        var cancelled = await repository.GetAsync(pending.Id);
+        Assert.Equal(DrawingJobStatus.Cancelled, cancelled!.Status);
+        Assert.NotNull(cancelled.FinishedAt);
+        Assert.False(await repository.TryCancelPendingAsync(pending.Id));
+
+        var claimed = CreateJob("seller");
+        await repository.CreateAsync(claimed);
+        Assert.NotNull(await repository.TryClaimNextPendingAsync("lease", DateTimeOffset.UtcNow.AddMinutes(1)));
+        Assert.False(await repository.TryCancelPendingAsync(claimed.Id));
+        Assert.Equal(DrawingJobStatus.Running, (await repository.GetAsync(claimed.Id))!.Status);
+    }
+
+    [Fact]
     public async Task TryEnqueueAsync_EnforcesTotalLimitAtomically()
     {
         var (repository, queue, _) = await CreateQueueAsync();
