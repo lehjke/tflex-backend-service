@@ -137,10 +137,13 @@ Invoke-Native -FilePath "icacls.exe" -Arguments @(
     "/inheritance:r",
     "/grant:r",
     "*S-1-5-18:(OI)(CI)F",
-    "*S-1-5-32-544:(OI)(CI)F",
-    "/T",
-    "/C"
+    "*S-1-5-32-544:(OI)(CI)F"
 ) | Out-Null
+foreach ($path in @($runnerPath, $configPath, $successMarkerPath)) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        Invoke-Native -FilePath "icacls.exe" -Arguments @($path, "/reset") | Out-Null
+    }
+}
 
 $powershellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $actionArguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runnerPath`" -ConfigPath `"$configPath`""
