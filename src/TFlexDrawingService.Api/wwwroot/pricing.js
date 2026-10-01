@@ -1273,7 +1273,10 @@ function renderProjects() {
   for (const project of state.projects) {
     const option = document.createElement("option");
     option.value = project.id;
-    option.textContent = project.name;
+    const ownerUserName = project.ownerUserName || project.OwnerUserName;
+    option.textContent = ownerUserName && ownerUserName.toLowerCase() !== state.currentUser?.userName?.toLowerCase()
+      ? `${project.name} · ${ownerUserName}`
+      : project.name;
     pricingProjectSelect.append(option);
   }
 
