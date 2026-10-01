@@ -1207,13 +1207,14 @@ var deleteProjectEndpoint = app.MapDelete("/api/projects/{projectId}", async (
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var ownProject = await projects.GetProjectAsync(projectId, GetProjectOwnerScope(context.User, securityOptions), cancellationToken);
+    var ownerScope = GetProjectDeletionOwnerScope(context.User, securityOptions);
+    var ownProject = await projects.GetProjectAsync(projectId, ownerScope, cancellationToken);
     if (ownProject is null) return Results.NotFound();
     if ((await requests.ListAsync(cancellationToken: cancellationToken)).Any(request => request.ProjectId == projectId))
         return Results.Conflict(new { Message = "A project with engineer requests cannot be deleted." });
     return await projects.DeleteProjectAsync(
         projectId,
-        GetProjectOwnerScope(context.User, securityOptions),
+        ownerScope,
         cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
@@ -1361,7 +1362,7 @@ var deleteConfigurationEndpoint = app.MapDelete("/api/project-configurations/{co
 {
     return await projects.DeleteConfigurationAsync(
         configurationId,
-        GetProjectOwnerScope(context.User, securityOptions),
+        GetProjectDeletionOwnerScope(context.User, securityOptions),
         cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
@@ -1461,7 +1462,7 @@ var savePricingSpecificationEndpoint = app.MapPost("/api/projects/{projectId}/pr
         ? pricingRequest.Name ?? $"{calculation.Series} {pricingRequest.CapacityKg} кг"
         : request.Name;
     var specification = await projects.SavePricingSpecificationAsync(
-        GetEffectiveUserName(context.User, securityOptions),
+        GetProjectOwnerScope(context.User, securityOptions),
         projectId,
         pricingRequest.ProjectConfigurationId,
         name,
@@ -1561,7 +1562,7 @@ var deletePricingSpecificationEndpoint = app.MapDelete("/api/pricing-specificati
 {
     return await projects.DeletePricingSpecificationAsync(
         specificationId,
-        GetProjectOwnerScope(context.User, securityOptions),
+        GetProjectDeletionOwnerScope(context.User, securityOptions),
         cancellationToken)
         ? Results.NoContent()
         : Results.NotFound();
@@ -1990,14 +1991,21 @@ static string SanitizeFileName(string value)
 
 static string? GetProjectOwnerScope(ClaimsPrincipal principal, SecurityOptions securityOptions)
 {
-    return CanManageAllProjects(principal, securityOptions)
+    return CanAccessAllProjects(principal, securityOptions)
         ? null
         : GetEffectiveUserName(principal, securityOptions);
 }
 
-static bool CanManageAllProjects(ClaimsPrincipal principal, SecurityOptions securityOptions)
+static bool CanAccessAllProjects(ClaimsPrincipal principal, SecurityOptions securityOptions)
 {
-    return !securityOptions.RequireAuthentication || principal.IsInRole("Admin");
+    return !securityOptions.RequireAuthentication || principal.IsInRole("Admin") || principal.IsInRole("Engineer");
+}
+
+static string? GetProjectDeletionOwnerScope(ClaimsPrincipal principal, SecurityOptions securityOptions)
+{
+    return !securityOptions.RequireAuthentication || principal.IsInRole("Admin")
+        ? null
+        : GetEffectiveUserName(principal, securityOptions);
 }
 
 static bool CanViewAllJobs(ClaimsPrincipal principal)

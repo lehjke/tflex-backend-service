@@ -496,7 +496,7 @@ public sealed class ProjectStore(IOptions<DrawingStorageOptions> storageOptions)
     }
 
     public async Task<PricingSpecification?> SavePricingSpecificationAsync(
-        string ownerUserName,
+        string? ownerUserName,
         string projectId,
         string? projectConfigurationId,
         string name,

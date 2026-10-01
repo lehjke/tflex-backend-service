@@ -148,7 +148,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20260930-request-editor-1/u);
+  assert.match(html, /\/app\.js\?v=20261001-engineer-global-projects-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -339,7 +339,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20261001-seller-projects-1/u,
+      /\/styles\.css\?v=20261001-engineer-global-projects-1/u,
       `${pageName} must load the current stylesheet`);
   }
 });

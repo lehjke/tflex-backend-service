@@ -655,7 +655,7 @@ function matchesProjectOption(project, query) {
 
 function getProjectOptionLabel(project) {
   const ownerUserName = project.ownerUserName || project.OwnerUserName || "";
-  return canAdmin() && ownerUserName && ownerUserName !== state.currentUser?.userName
+  return (canAdmin() || state.currentUser?.roles?.includes("Engineer")) && ownerUserName && ownerUserName !== state.currentUser?.userName
     ? `${project.name} · ${ownerUserName}`
     : project.name;
 }

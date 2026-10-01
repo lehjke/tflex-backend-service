@@ -23,8 +23,6 @@ const state = {
   engineerRequests: [],
   activeEngineerRequest: null,
   engineers: [],
-  sellers: [],
-  sellerProjects: []
 };
 const sessionRequests = createSessionRequestGuard();
 let bootPromise = null;
@@ -140,10 +138,6 @@ engineerRequestDetail.setAttribute("aria-live", "polite");
 engineerRequestDetail.hidden = true;
 const engineerRequestNewCount = document.querySelector("#engineerRequestNewCount");
 const refreshEngineerRequestsButton = document.querySelector("#refreshEngineerRequests");
-const sellerDirectory = document.querySelector("#sellerDirectory");
-const sellerDirectorySelect = document.querySelector("#sellerDirectorySelect");
-const sellerDirectoryStatus = document.querySelector("#sellerDirectoryStatus");
-const sellerProjectsList = document.querySelector("#sellerProjectsList");
 
 function isAdminPanelRoute() {
   return window.location.hash === "#adminPanel";
@@ -224,8 +218,6 @@ function clearAccountSessionState() {
   state.engineerRequests = [];
   state.activeEngineerRequest = null;
   state.engineers = [];
-  state.sellers = [];
-  state.sellerProjects = [];
 
   loginForm?.reset();
   guestLoginForm?.reset();
@@ -256,9 +248,6 @@ function clearAccountSessionState() {
   engineerRequestDetail.hidden = true;
   engineerRequestsStatus.hidden = true;
   engineerRequestNewCount.textContent = "0";
-  sellerDirectorySelect.replaceChildren(new Option("Выберите продавца", ""));
-  sellerProjectsList.replaceChildren();
-  sellerDirectoryStatus.hidden = true;
   adminUsersTableBody.replaceChildren();
   adminTemplatesTableBody.replaceChildren();
   hideAccountStatus();
@@ -429,7 +418,17 @@ function getProjectFactoryRequestNumber(project) {
 
 function shouldShowProjectOwner(project) {
   const ownerUserName = getProjectOwnerName(project);
-  return canAdmin() && ownerUserName && ownerUserName !== state.currentUser?.userName;
+  return (canAdmin() || state.currentUser?.roles?.includes("Engineer"))
+    && ownerUserName && ownerUserName.toLocaleLowerCase() !== state.currentUser?.userName?.toLocaleLowerCase();
+}
+
+function canDeleteProjectAssets(project) {
+  if (canAdmin()) return true;
+  const ownerUserName = getProjectOwnerName(project);
+  const currentUserName = state.currentUser?.userName;
+  return state.currentUser?.roles?.includes("Engineer")
+    && Boolean(ownerUserName && currentUserName)
+    && ownerUserName.toLocaleLowerCase() === currentUserName.toLocaleLowerCase();
 }
 
 function renderProjectOwnerBadge(project) {
@@ -649,7 +648,6 @@ function updateAuthView() {
     link.hidden = !isAdmin;
   });
   if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
-  if (sellerDirectory) sellerDirectory.hidden = !authenticated || !canBrowseSellerProjects();
   if (toggleProjectCreateButton) toggleProjectCreateButton.hidden = !canCreateJobs();
   if (!canCreateJobs() && accountCreateSection) {
     accountCreateSection.hidden = true;
@@ -701,90 +699,6 @@ async function loadEngineerRequests() {
 function requestCanWork() {
   const roles = state.currentUser?.roles || [];
   return roles.includes("Admin") || roles.includes("Engineer");
-}
-
-function canBrowseSellerProjects() {
-  return !canAdmin() && state.currentUser?.roles?.includes("Engineer");
-}
-
-async function loadSellerDirectory() {
-  const response = await apiFetch("/api/sellers");
-  requireSuccessfulLoadResponse(response, "sellers");
-  state.sellers = requireCurrentLoadPayload(await sessionRequests.readJson(response), "sellers") || [];
-  sellerDirectorySelect.replaceChildren(new Option("Выберите продавца", ""));
-  for (const seller of state.sellers) {
-    const option = document.createElement("option");
-    option.value = seller.userName;
-    option.textContent = seller.displayName || seller.userName;
-    sellerDirectorySelect.append(option);
-  }
-  sellerDirectoryStatus.hidden = state.sellers.length > 0;
-  sellerDirectoryStatus.textContent = state.sellers.length ? "" : "Продавцы не найдены.";
-}
-
-async function loadSellerProjects(sellerName) {
-  sellerProjectsList.replaceChildren();
-  state.sellerProjects = [];
-  if (!sellerName) return;
-  sellerDirectoryStatus.hidden = false;
-  sellerDirectoryStatus.textContent = "Загружаем проекты…";
-  const response = await apiFetch(`/api/sellers/${encodeURIComponent(sellerName)}/projects`);
-  requireSuccessfulLoadResponse(response, "seller projects");
-  state.sellerProjects = requireCurrentLoadPayload(await sessionRequests.readJson(response), "seller projects") || [];
-  sellerDirectoryStatus.hidden = state.sellerProjects.length > 0;
-  sellerDirectoryStatus.textContent = state.sellerProjects.length ? "" : "У продавца пока нет проектов.";
-  for (const project of state.sellerProjects) {
-    const details = document.createElement("details");
-    details.className = "seller-project";
-    details.dataset.projectId = project.id;
-    const summary = document.createElement("summary");
-    summary.textContent = project.name || project.id;
-    const configurations = document.createElement("div");
-    configurations.className = "seller-project__configurations";
-    configurations.textContent = "Откройте проект, чтобы загрузить конфигурации.";
-    details.append(summary, configurations);
-    details.addEventListener("toggle", () => {
-      if (details.open && details.dataset.loaded !== "true") {
-        details.dataset.loaded = "true";
-        void loadSellerProjectConfigurations(sellerName, project.id, configurations, details);
-      }
-    });
-    sellerProjectsList.append(details);
-  }
-}
-
-async function loadSellerProjectConfigurations(sellerName, projectId, container, details) {
-  container.textContent = "Загружаем конфигурации…";
-  try {
-    const response = await apiFetch(`/api/sellers/${encodeURIComponent(sellerName)}/projects/${encodeURIComponent(projectId)}/configurations`);
-    requireSuccessfulLoadResponse(response, "seller project configurations");
-    const configurations = requireCurrentLoadPayload(await sessionRequests.readJson(response), "seller project configurations") || [];
-    container.replaceChildren();
-    if (!configurations.length) {
-      container.textContent = "Сохраненных конфигураций нет.";
-      return;
-    }
-    for (const configuration of configurations) {
-      const card = document.createElement("article");
-      card.className = "seller-configuration";
-      const title = document.createElement("strong");
-      title.textContent = configuration.name || getConfigurationName(configuration) || "Конфигурация";
-      const meta = document.createElement("p");
-      meta.textContent = `${getTemplateLabel(configuration.templateId)} · ${String(configuration.outputFormat || "").toUpperCase()} · ${formatDate(configuration.updatedAt || configuration.createdAt)}`;
-      const values = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "Параметры";
-      const list = document.createElement("div");
-      list.innerHTML = renderParameterSummary(configuration.templateId, configuration.parameters);
-      values.append(summary, list);
-      card.append(title, meta, values);
-      container.append(card);
-    }
-  } catch (error) {
-    if (error?.name === "AbortError") return;
-    details.dataset.loaded = "false";
-    container.textContent = "Не удалось загрузить конфигурации.";
-  }
 }
 
 function renderEngineerRequests() {
@@ -1229,7 +1143,7 @@ function createProjectEditForm(project) {
     ${canCreateJobs() ? `
       <div class="project-edit-form__actions">
         <button class="secondary" type="button" data-action="update-project" data-project-id="${escapeHtml(project.id)}">Сохранить проект</button>
-        <button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>
+        ${canDeleteProjectAssets(project) ? `<button class="secondary secondary--danger" type="button" data-action="delete-project" data-project-id="${escapeHtml(project.id)}">Удалить проект</button>` : ""}
       </div>
     ` : ""}
   `;
@@ -1374,13 +1288,15 @@ function renderProjectAssetActions(project, group) {
     }
     if (canCreateJobs()) {
       actions.push(`<button class="secondary" type="button" data-action="download" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Скачать чертёж</button>`);
+    }
+    if (canCreateJobs() && canDeleteProjectAssets(project)) {
       actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(configuration.id)}">Удалить чертёж</button>`);
     }
   }
   for (const specification of group.pricingSpecifications) {
     actions.push(`<a class="secondary button-link" href="/pricing?specificationId=${encodeURIComponent(specification.id)}">Редактировать цену</a>`);
     actions.push(`<a class="primary primary--compact button-link" href="/api/pricing-specifications/${encodeURIComponent(specification.id)}/tkp">Скачать ТКП</a>`);
-    if (canCreateJobs()) {
+    if (canCreateJobs() && canDeleteProjectAssets(project)) {
       actions.push(`<button class="secondary secondary--danger" type="button" data-action="delete-pricing" data-project-id="${escapeHtml(project.id)}" data-id="${escapeHtml(specification.id)}">Удалить цену</button>`);
     }
   }
@@ -2224,7 +2140,6 @@ async function login(event) {
     await loadProjects();
     await loadAccountJobs();
     await loadEngineerRequests();
-    if (canBrowseSellerProjects()) await loadSellerDirectory();
     if (canAdmin()) {
       const engineersResponse = await apiFetch("/api/engineers");
       if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];
@@ -2274,7 +2189,6 @@ async function runBoot({ context = "load" } = {}) {
     await loadProjects();
     await loadAccountJobs();
     await loadEngineerRequests();
-    if (canBrowseSellerProjects()) await loadSellerDirectory();
     if (canAdmin()) {
       const engineersResponse = await apiFetch("/api/engineers");
       if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];
@@ -2331,10 +2245,6 @@ for (const searchInput of [globalSearchInput, projectSearchInput]) {
 }
 window.addEventListener("hashchange", updateAuthView);
 refreshEngineerRequestsButton?.addEventListener("click", () => loadEngineerRequests().catch(() => showAccountStatus("Не удалось обновить запросы.", "error")));
-sellerDirectorySelect?.addEventListener("change", () => loadSellerProjects(sellerDirectorySelect.value).catch(() => {
-  sellerDirectoryStatus.hidden = false;
-  sellerDirectoryStatus.textContent = "Не удалось загрузить проекты продавца.";
-}));
 engineerRequestsList?.addEventListener("click", event => {
   const button = event.target.closest('[data-action="open-request"]');
   if (button) void openEngineerRequest(button.dataset.requestId);

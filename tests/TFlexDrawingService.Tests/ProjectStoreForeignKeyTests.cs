@@ -115,6 +115,42 @@ public sealed class ProjectStoreForeignKeyTests
     }
 
     [Fact]
+    public async Task GlobalWriteScopeCanAddPricingWithoutChangingProjectOwnerOrAllowingForeignDeletes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var store = new ProjectStore(Options.Create(new DrawingStorageOptions
+        {
+            RootPath = Path.Combine(root, "storage"),
+            DatabasePath = Path.Combine(root, "storage", "drawings.db")
+        }));
+        await store.InitializeAsync();
+
+        var project = await store.CreateProjectAsync("seller", "Seller project", null, null);
+        var configuration = await store.SaveConfigurationAsync(
+            "seller",
+            project.Id,
+            "Configuration",
+            "template-a",
+            "pdf",
+            JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("{}")!);
+        Assert.NotNull(configuration);
+
+        var specification = await store.SavePricingSpecificationAsync(
+            null,
+            project.Id,
+            configuration.Id,
+            "Engineer pricing",
+            CreatePricingRequest(configuration.Id),
+            CreatePricingResult());
+
+        Assert.NotNull(specification);
+        Assert.Equal("seller", (await store.GetProjectAsync(project.Id, null))!.OwnerUserName);
+        Assert.False(await store.DeleteProjectAsync(project.Id, "engineer"));
+        Assert.False(await store.DeleteConfigurationAsync(configuration.Id, "engineer"));
+        Assert.False(await store.DeletePricingSpecificationAsync(specification.Id, "engineer"));
+    }
+
+    [Fact]
     public async Task PricingSpecification_CanBeUpdatedAndDeletedOnlyByProjectOwner()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));

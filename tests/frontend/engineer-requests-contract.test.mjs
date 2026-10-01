@@ -54,19 +54,17 @@ test("account exposes request lifecycle actions, role choices, and unread count"
   assert.match(fs.readFileSync(path.join(web, "styles.css"), "utf8"), /\.engineer-request-card\.is-unread/u);
 });
 
-test("Engineer can browse seller projects read-only inside Projects while Admin uses the global list", () => {
-  const projectsPanel = accountPage.slice(accountPage.indexOf('class="panel account-projects-panel"'), accountPage.indexOf('id="accountCreateForm"'));
-  assert.match(projectsPanel, /<h2>Проекты<\/h2>[\s\S]*?id="sellerDirectory"[^>]*hidden/u);
-  assert.doesNotMatch(accountPage.slice(0, accountPage.indexOf('class="account-columns"')), /id="sellerDirectory"/u);
-  assert.match(accountPage, /id="sellerDirectorySelect"/u);
-  assert.match(accountPage, /id="sellerProjectsList"/u);
-  assert.match(account, /sellerDirectory\.hidden = !authenticated \|\| !canBrowseSellerProjects\(\)/u);
-  assert.match(account, /return !canAdmin\(\) && state\.currentUser\?\.roles\?\.includes\("Engineer"\)/u);
-  assert.match(account, /apiFetch\("\/api\/sellers"\)/u);
-  assert.match(account, /api\/sellers\/\$\{encodeURIComponent\(sellerName\)\}\/projects/u);
-  assert.match(account, /projects\/\$\{encodeURIComponent\(projectId\)\}\/configurations/u);
-  assert.match(account, /values\.append\(summary, list\)/u);
-  assert.doesNotMatch(account.match(/async function loadSellerProjectConfigurations[\s\S]*?\r?\n\}/u)?.[0] || "", /data-action|apiFetch\([^\n]*method:/u);
+test("Engineer uses the global project list, sees owners, and cannot delete foreign project assets", () => {
+  assert.doesNotMatch(accountPage, /sellerDirectory|sellerProjectsList/u);
+  assert.doesNotMatch(account, /sellerDirectory|loadSellerDirectory|loadSellerProjects|canBrowseSellerProjects/u);
+  assert.match(account, /roles\?\.includes\("Engineer"\)[\s\S]{0,100}ownerUserName/u);
+  assert.match(account, /function canDeleteProjectAssets\(project\)[\s\S]*?if \(canAdmin\(\)\) return true;[\s\S]*?Boolean\(ownerUserName && currentUserName\)[\s\S]*?ownerUserName\.toLocaleLowerCase\(\) === currentUserName\.toLocaleLowerCase\(\)/u);
+  assert.match(account, /canDeleteProjectAssets\(project\).*?data-action="delete-project"/u);
+  const assetActions = account.slice(account.indexOf("function renderProjectAssetActions("), account.indexOf("function createConfigurationsTable("));
+  assert.match(assetActions, /if \(canCreateJobs\(\)\) \{\s*actions\.push\([\s\S]*?data-action="download"[\s\S]*?\}\s*if \(canCreateJobs\(\) && canDeleteProjectAssets\(project\)\) \{\s*actions\.push\([\s\S]*?data-action="delete"/u);
+  assert.match(account, /canCreateJobs\(\) && canDeleteProjectAssets\(project\)[\s\S]*?data-action="delete-pricing"/u);
+  const app = fs.readFileSync(path.join(web, "app.js"), "utf8");
+  assert.match(app, /roles\?\.includes\("Engineer"\)\) && ownerUserName/u);
 });
 
 test("only Admin or the assigned Engineer can process a request or review its completed drawing", () => {
