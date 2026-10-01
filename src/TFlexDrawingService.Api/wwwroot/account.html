@@ -7,7 +7,7 @@
   <title>Личный кабинет — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
   <script src="/sidebar-init.js?v=20260924-sidebar-collapse-1"></script>
-  <link rel="stylesheet" href="/styles.css?v=20260930-inline-requests-3">
+  <link rel="stylesheet" href="/styles.css?v=20261001-seller-projects-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -210,18 +210,6 @@
           <div id="engineerRequestsList" class="engineer-request-list" aria-live="polite"></div>
         </section>
 
-        <section id="sellerDirectory" class="panel panel--wide seller-directory" aria-labelledby="sellerDirectoryTitle" hidden>
-          <div class="panel__header">
-            <h2 id="sellerDirectoryTitle">Проекты продавцов</h2>
-          </div>
-          <label class="field seller-directory__chooser">
-            <span class="field__label">Продавец</span>
-            <select id="sellerDirectorySelect"><option value="">Выберите продавца</option></select>
-          </label>
-          <div id="sellerDirectoryStatus" class="empty" role="status" aria-live="polite" hidden></div>
-          <div id="sellerProjectsList" class="seller-projects-list"></div>
-        </section>
-
         <div class="account-columns">
           <section class="panel account-projects-panel">
             <div class="panel__header">
@@ -243,6 +231,15 @@
                 type="button"
                 aria-controls="accountCreateForm"
                 aria-expanded="false">Создать проект</button>
+            </div>
+
+            <div id="sellerDirectory" class="seller-directory" hidden>
+              <label class="field seller-directory__chooser">
+                <span class="field__label">Проекты продавца</span>
+                <select id="sellerDirectorySelect"><option value="">Выберите продавца</option></select>
+              </label>
+              <div id="sellerDirectoryStatus" class="empty" role="status" aria-live="polite" hidden></div>
+              <div id="sellerProjectsList" class="seller-projects-list"></div>
             </div>
 
             <div id="accountStatus" class="empty" role="status" aria-live="polite" aria-atomic="true" hidden></div>
@@ -402,6 +399,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260924-sidebar-collapse-2"></script>
-  <script type="module" src="/account.js?v=20260930-admin-role-select-1"></script>
+  <script type="module" src="/account.js?v=20261001-seller-projects-1"></script>
 </body>
 </html>

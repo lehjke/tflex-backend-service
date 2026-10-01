@@ -339,7 +339,7 @@ test("all frontend pages share the current stylesheet cache key", () => {
   for (const pageName of pageNames) {
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20260930-inline-requests-3/u,
+      /\/styles\.css\?v=20261001-seller-projects-1/u,
       `${pageName} must load the current stylesheet`);
   }
 });

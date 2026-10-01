@@ -649,7 +649,7 @@ function updateAuthView() {
     link.hidden = !isAdmin;
   });
   if (adminAccessCard) adminAccessCard.hidden = !isAdmin;
-  if (sellerDirectory) sellerDirectory.hidden = !authenticated || !requestCanWork();
+  if (sellerDirectory) sellerDirectory.hidden = !authenticated || !canBrowseSellerProjects();
   if (toggleProjectCreateButton) toggleProjectCreateButton.hidden = !canCreateJobs();
   if (!canCreateJobs() && accountCreateSection) {
     accountCreateSection.hidden = true;
@@ -701,6 +701,10 @@ async function loadEngineerRequests() {
 function requestCanWork() {
   const roles = state.currentUser?.roles || [];
   return roles.includes("Admin") || roles.includes("Engineer");
+}
+
+function canBrowseSellerProjects() {
+  return !canAdmin() && state.currentUser?.roles?.includes("Engineer");
 }
 
 async function loadSellerDirectory() {
@@ -2220,7 +2224,7 @@ async function login(event) {
     await loadProjects();
     await loadAccountJobs();
     await loadEngineerRequests();
-    if (requestCanWork()) await loadSellerDirectory();
+    if (canBrowseSellerProjects()) await loadSellerDirectory();
     if (canAdmin()) {
       const engineersResponse = await apiFetch("/api/engineers");
       if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];
@@ -2270,7 +2274,7 @@ async function runBoot({ context = "load" } = {}) {
     await loadProjects();
     await loadAccountJobs();
     await loadEngineerRequests();
-    if (requestCanWork()) await loadSellerDirectory();
+    if (canBrowseSellerProjects()) await loadSellerDirectory();
     if (canAdmin()) {
       const engineersResponse = await apiFetch("/api/engineers");
       if (engineersResponse.ok) state.engineers = await sessionRequests.readJson(engineersResponse) || [];

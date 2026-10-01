@@ -54,11 +54,14 @@ test("account exposes request lifecycle actions, role choices, and unread count"
   assert.match(fs.readFileSync(path.join(web, "styles.css"), "utf8"), /\.engineer-request-card\.is-unread/u);
 });
 
-test("Engineer and Admin can browse seller projects and saved configurations read-only", () => {
-  assert.match(accountPage, /id="sellerDirectory"[^>]*hidden/u);
+test("Engineer can browse seller projects read-only inside Projects while Admin uses the global list", () => {
+  const projectsPanel = accountPage.slice(accountPage.indexOf('class="panel account-projects-panel"'), accountPage.indexOf('id="accountCreateForm"'));
+  assert.match(projectsPanel, /<h2>Проекты<\/h2>[\s\S]*?id="sellerDirectory"[^>]*hidden/u);
+  assert.doesNotMatch(accountPage.slice(0, accountPage.indexOf('class="account-columns"')), /id="sellerDirectory"/u);
   assert.match(accountPage, /id="sellerDirectorySelect"/u);
   assert.match(accountPage, /id="sellerProjectsList"/u);
-  assert.match(account, /sellerDirectory\.hidden = !authenticated \|\| !requestCanWork\(\)/u);
+  assert.match(account, /sellerDirectory\.hidden = !authenticated \|\| !canBrowseSellerProjects\(\)/u);
+  assert.match(account, /return !canAdmin\(\) && state\.currentUser\?\.roles\?\.includes\("Engineer"\)/u);
   assert.match(account, /apiFetch\("\/api\/sellers"\)/u);
   assert.match(account, /api\/sellers\/\$\{encodeURIComponent\(sellerName\)\}\/projects/u);
   assert.match(account, /projects\/\$\{encodeURIComponent\(projectId\)\}\/configurations/u);
