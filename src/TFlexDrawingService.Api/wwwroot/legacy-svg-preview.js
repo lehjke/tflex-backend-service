@@ -127,11 +127,13 @@ const KII_ESCALATOR_EXCLUDED_PDF_PATHS = new Set([
 
 export function renderLegacyShaftPreviewSvg(dimensions) {
   const svgWidth = 380;
-  const svgHeight = 286;
-  const paddingX = 34;
+  const svgHeight = 360;
+  const paddingX = 75;
   const paddingY = 30;
-  const drawingWidth = svgWidth - paddingX * 2;
-  const drawingHeight = svgHeight - paddingY * 2;
+  const rightReserve = 45;
+  const bottomReserve = 100;
+  const drawingWidth = svgWidth - paddingX - rightReserve;
+  const drawingHeight = svgHeight - paddingY - bottomReserve;
 
   const shaftRect = { x: 0, y: 0, width: dimensions.ah, height: dimensions.bh };
   const shaftWallThickness = clampPreviewNumber(Math.min(dimensions.ah, dimensions.bh) * 0.075, 95, 160);
@@ -355,6 +357,7 @@ export function renderLegacyShaftPreviewSvg(dimensions) {
   };
   const frontOpening = getShaftDoorOpeningBounds(doorPairs[0]);
   const rearOpening = doorPairs[1] ? getShaftDoorOpeningBounds(doorPairs[1]) : null;
+  const cabinDoorOpening = getCabinDoorOpeningBounds(doorPairs[0]);
   const concreteCollisionRects = [
     {
       x: shaftLeft - shaftWallThickness,
@@ -479,6 +482,61 @@ export function renderLegacyShaftPreviewSvg(dimensions) {
       <line class="shaft-preview-svg__door-opening-marker" ${lineAttrs(opening.end, outerY, opening.end, innerY)} />
     `;
   }).join("");
+  const outerSvg = {
+    left: mapX(shaftConcreteOuterRect.x), right: mapX(shaftConcreteOuterRect.x + shaftConcreteOuterRect.width),
+    top: mapY(shaftConcreteOuterRect.y), bottom: mapY(shaftConcreteOuterRect.y + shaftConcreteOuterRect.height)
+  };
+  const widthStart = mapX(cabinInnerRect.x), widthEnd = mapX(cabinInnerRect.x + cabinInnerRect.width);
+  const widthY = outerSvg.top - 18;
+  const depthX = outerSvg.right + 22;
+  const depthStart = mapY(cabinInnerRect.y), depthEnd = mapY(cabinInnerRect.y + cabinInnerRect.height);
+  const doorStart = mapX(cabinDoorOpening.start), doorEnd = mapX(cabinDoorOpening.end);
+  const doorY = outerSvg.bottom + 18;
+  const overallWidthY = outerSvg.bottom + 54;
+  const overallDepthX = outerSvg.left - 54;
+  const widthLabel = dimensions.xizi ? "CW" : "AA";
+  const depthLabel = dimensions.xizi ? "CD" : "BB";
+  const doorLabel = dimensions.xizi ? "OP" : "JJ";
+  const clearWidthText = `${doorLabel} ${formatPreviewNumber(cabinDoorOpening.end - cabinDoorOpening.start)}${dimensions.xizi ? ` · HL6 ${formatPreviewNumber(dimensions.xizi.doorAxisX)}` : ""}`;
+  const overallWidthLabel = dimensions.xizi ? "HW" : "AH";
+  const overallDepthLabel = dimensions.xizi ? "HD" : "BH";
+  const horizontalLine = (x1, x2, y, name = "") => `<line${name ? ` data-dimension="${name}"` : ""} x1="${x1.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+  const verticalLine = (x, y1, y2, name = "") => `<line${name ? ` data-dimension="${name}"` : ""} x1="${x.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+  const dimensionLabel = (name, x, y, text, vertical = false) =>
+    `<text data-dimension-label="${name}" x="${x.toFixed(1)}" y="${y.toFixed(1)}"${vertical ? ` transform="rotate(-90 ${x.toFixed(1)} ${y.toFixed(1)})"` : ""}>${text}</text>`;
+  const tick = (x, y, vertical = true) => vertical
+    ? `<line x1="${x.toFixed(1)}" y1="${(y - 4).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y + 4).toFixed(1)}"/>`
+    : `<line x1="${(x - 4).toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 4).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+  const shaftDimensions = `
+    <g fill="none" stroke="#64748b" stroke-width="1">
+      ${horizontalLine(widthStart, widthEnd, widthY, "cabin-width")}
+      ${verticalLine(widthStart, outerSvg.top, widthY)}
+      ${verticalLine(widthEnd, outerSvg.top, widthY)}
+      ${tick(widthStart, widthY)}${tick(widthEnd, widthY)}
+      ${verticalLine(depthX, depthStart, depthEnd, "cabin-depth")}
+      ${horizontalLine(outerSvg.right, depthX, depthStart)}
+      ${horizontalLine(outerSvg.right, depthX, depthEnd)}
+      ${tick(depthX, depthStart, false)}${tick(depthX, depthEnd, false)}
+      ${horizontalLine(doorStart, doorEnd, doorY, "door-clear-width")}
+      ${verticalLine(doorStart, outerSvg.bottom, doorY)}
+      ${verticalLine(doorEnd, outerSvg.bottom, doorY)}
+      ${tick(doorStart, doorY)}${tick(doorEnd, doorY)}
+      ${horizontalLine(mapX(shaftLeft), mapX(shaftRight), overallWidthY, "shaft-width")}
+      ${verticalLine(mapX(shaftLeft), outerSvg.bottom, overallWidthY)}
+      ${verticalLine(mapX(shaftRight), outerSvg.bottom, overallWidthY)}
+      ${tick(mapX(shaftLeft), overallWidthY)}${tick(mapX(shaftRight), overallWidthY)}
+      ${verticalLine(overallDepthX, mapY(shaftTop), mapY(shaftBottom), "shaft-depth")}
+      ${horizontalLine(overallDepthX, outerSvg.left, mapY(shaftTop))}
+      ${horizontalLine(overallDepthX, outerSvg.left, mapY(shaftBottom))}
+      ${tick(overallDepthX, mapY(shaftTop), false)}${tick(overallDepthX, mapY(shaftBottom), false)}
+    </g>
+    <g fill="#465360" font-size="11" font-weight="700" text-anchor="middle">
+      ${dimensionLabel("cabin-width", (widthStart + widthEnd) / 2, widthY - 5, `${widthLabel} ${formatPreviewNumber(cabinInnerRect.width)}`)}
+      ${dimensionLabel("door-clear-width", (doorStart + doorEnd) / 2, doorY + 13, clearWidthText)}
+      ${dimensionLabel("shaft-width", (mapX(shaftLeft) + mapX(shaftRight)) / 2, overallWidthY + 13, `${overallWidthLabel} ${formatPreviewNumber(dimensions.ah)}`)}
+      ${dimensionLabel("cabin-depth", depthX + 9, (depthStart + depthEnd) / 2, `${depthLabel} ${formatPreviewNumber(cabinInnerRect.height)}`, true)}
+      ${dimensionLabel("shaft-depth", overallDepthX - 8, (mapY(shaftTop) + mapY(shaftBottom)) / 2, `${overallDepthLabel} ${formatPreviewNumber(dimensions.bh)}`, true)}
+    </g>`;
 
   return `
     <svg class="shaft-preview-svg" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="План шахты">
@@ -500,9 +558,7 @@ export function renderLegacyShaftPreviewSvg(dimensions) {
       ${openingMarkerMarkup}
       ${xiziDirectionMarkup}
       ${doorMarkup}
-      <text class="shaft-preview-svg__label" x="${mapX(shaftRect.x + shaftRect.width / 2).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height + shaftWallThickness + 130).toFixed(1)}">${dimensions.xizi ? "HW" : "AH"} ${formatPreviewNumber(dimensions.ah)}</text>
-      <text class="shaft-preview-svg__label shaft-preview-svg__label--vertical" x="${mapX(shaftRect.x - shaftWallThickness - 125).toFixed(1)}" y="${mapY(shaftRect.y + shaftRect.height / 2).toFixed(1)}">${dimensions.xizi ? "HD" : "BH"} ${formatPreviewNumber(dimensions.bh)}</text>
-      ${dimensions.xizi ? `<text class="shaft-preview-svg__label" x="${mapX(dimensions.xizi.cabinAxisX).toFixed(1)}" y="${mapY(dimensions.xizi.cabin.y + dimensions.xizi.cabin.height / 2).toFixed(1)}">CW ${formatPreviewNumber(dimensions.aa)} × CD ${formatPreviewNumber(dimensions.bb)}</text><text class="shaft-preview-svg__label" x="${mapX(dimensions.xizi.doorAxisX).toFixed(1)}" y="${mapY(dimensions.xizi.cabin.y + dimensions.xizi.cabin.height + 150).toFixed(1)}">HL6 ${formatPreviewNumber(dimensions.xizi.doorAxisX)}</text>` : ""}
+      ${shaftDimensions}
     </svg>`;
 }
 
@@ -625,6 +681,17 @@ export function renderLegacyEscalatorPreviewSvg(dimensions) {
   );
   const translateX = paddingX - bounds.minX * scale;
   const translateY = paddingY + bounds.maxY * scale;
+  const mapX = value => translateX + value * scale;
+  const mapY = value => translateY - value * scale;
+  const dimensionLine = (x1, y1, x2, y2, label, labelX, labelY, anchor = "middle", transform = "") =>
+    `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#334155" stroke-width="1.2"/><text data-dimension="${label.split(" ")[0]}" x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}"${transform ? ` transform="${transform}"` : ""} text-anchor="${anchor}" fill="#334155" font-size="11" font-weight="700" paint-order="stroke" stroke="white" stroke-width="3" stroke-linejoin="round">${label}</text>`;
+  const x0 = mapX(0), xRun = mapX(totalRun), y0 = mapY(0), yRise = mapY(rise);
+  const escalatorDimensions = [
+    dimensionLine(x0 - 12, yRise, x0 - 12, y0, `HE ${formatPreviewNumber(rise)}`, x0 + 5, (yRise + y0) / 2, "middle", `rotate(-90 ${(x0 + 5).toFixed(1)} ${((yRise + y0) / 2).toFixed(1)})`),
+    dimensionLine(x0, y0 + 12, xRun, y0 + 12, `TG ${formatPreviewNumber(totalRun)}`, (x0 + xRun) / 2, y0 + 9),
+    dimensionLine(x0, y0 + 29, mapX(lowerLanding), y0 + 29, `TK ${formatPreviewNumber(lowerLanding)}`, (x0 + mapX(lowerLanding)) / 2, y0 + 26),
+    dimensionLine(mapX(totalRun - upperLanding), yRise - 12, xRun, yRise - 12, `TJ ${formatPreviewNumber(upperLanding)}`, (mapX(totalRun - upperLanding) + xRun) / 2, yRise - 15)
+  ].join("");
   const slabRects = [
     ...(!hasPit ? [
       { x: -slabOverhang, y: -floorThickness, width: slabOverhang, height: floorThickness },
@@ -682,6 +749,7 @@ export function renderLegacyEscalatorPreviewSvg(dimensions) {
           ${paths}
         </g>
       </g>
+      <g aria-label="Размеры эскалатора">${escalatorDimensions}</g>
     </svg>`;
 }
 

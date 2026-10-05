@@ -6,6 +6,9 @@ body { color: #202833; background: #f1f3f5; font: 14px/1.4 system-ui, sans-serif
 .pdf-toolbar button { min-width: 32px; height: 32px; padding: 0 9px; border: 1px solid #cbd1d8; border-radius: 4px; color: inherit; background: #fff; font: inherit; cursor: pointer; }
 .pdf-toolbar button:hover:not(:disabled) { background: #f1f4f7; }
 .pdf-toolbar button:disabled { opacity: .45; cursor: default; }
+.pdf-toolbar button:focus-visible { outline: 2px solid #152f60; outline-offset: 2px; }
+.pdf-toolbar .pdf-close { min-width: 44px; height: 44px; margin-right: auto; border-color: #d7dae3; color: #152f60; }
+.pdf-close[hidden] { display: none; }
 .pdf-page-controls { display: flex; align-items: center; gap: 6px; }
 .pdf-page-controls[hidden] { display: none; }
 .pdf-page-input { display: flex; align-items: center; gap: 5px; }
@@ -14,6 +17,6 @@ body { color: #202833; background: #f1f3f5; font: 14px/1.4 system-ui, sans-serif
 .pdf-zoom-label { min-width: 54px; color: #59636e; text-align: center; font-size: 12px; }
 .pdf-message { padding: 12px; color: #4b5560; }
 .pdf-message[hidden], .pdf-scroll[hidden] { display: none; }
-.pdf-scroll { flex: 1; overflow: auto; padding: 12px; text-align: center; }
+.pdf-scroll { flex: 1; overflow: auto; scrollbar-gutter: stable; padding: 12px; text-align: center; }
 #pdfCanvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 1px 4px #0002; }
 @media (max-width: 420px) { .pdf-toolbar { gap: 4px; padding-inline: 4px; } .pdf-toolbar button { min-width: 30px; padding-inline: 6px; } #fitWidth { font-size: 12px; } }

@@ -3,7 +3,7 @@ import { isPdfFile, openGeneratedFilePreview } from "./file-preview.js?v=2026092
 import { evaluateTFlexExpression } from "./safe-expression.js?v=20260828-speed-dependent-oh-pd-1";
 import { createSessionRequestGuard } from "./session-requests.js?v=20260720-ui-hardening-1";
 import { createNativePreviewController } from "./native-preview.js?v=20261004-native-preview-3";
-import { renderLiveSvgPreview, renderLiveSvgPreviewMetrics } from "./live-svg-preview.js?v=20261004-restored-svg-1";
+import { renderLiveSvgPreview, renderLiveSvgPreviewMetrics } from "./live-svg-preview.js?v=20261005-unfolding-panels-1";
 import {
   calculateAutomaticStopLevel,
   clampStopCount,
@@ -143,8 +143,8 @@ const nativePreviewController = createNativePreviewController({
       pdfUrl.searchParams.set("inline", "true");
       const file = encodeURIComponent(`${pdfUrl.pathname}${pdfUrl.search}`);
       const template = encodeURIComponent(state.selectedTemplate?.id || "");
-      nativePreviewFrame.src = `/native-pdf-viewer.html?file=${file}&page=${page}&mode=crop&template=${template}`;
-      nativePreviewOpen.href = `/native-pdf-viewer.html?file=${file}&page=${page}&mode=sheet&template=${template}`;
+      nativePreviewFrame.src = `/native-pdf-viewer.html?file=${file}&page=${page}&mode=crop&template=${template}&v=20261005-preview-fixes-3`;
+      nativePreviewOpen.href = `/native-pdf-viewer.html?file=${file}&page=${page}&mode=sheet&template=${template}&v=20261005-preview-fixes-3`;
     } else {
       nativePreviewFrame.removeAttribute("src");
       nativePreviewOpen.removeAttribute("href");
@@ -1113,6 +1113,8 @@ function formatPreviewNumber(value) {
 
 function updateShaftPreview(context = null) {
   if (!nativePreviewController) return;
+  if (previewPanelTitle) previewPanelTitle.textContent = previewMode === "svg" && state.selectedTemplate?.id === "razvertki_lehy"
+    ? "Предпросмотр развёрток" : "Предпросмотр плана";
   const allowed = Boolean(state.selectedTemplate && isAuthenticated() && canCreateJobs() && !state.engineerRequest);
   if (!allowed) {
     nativePreviewController.invalidate();
