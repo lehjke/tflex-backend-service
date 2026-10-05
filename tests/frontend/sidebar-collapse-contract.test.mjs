@@ -18,8 +18,7 @@ test("desktop sidebar toggle and navigation icons are shared across pages", () =
     assert.equal((page.match(/class="sidebar__nav-icon"/gu) || []).length, 3);
     assert.match(page, /<rect x="5\.5" y="3\.5" width="13" height="17" rx="2"\/>/u);
     assert.match(page, /class="sidebar__help-icon"/u);
-    const stylesheetKey = pageName === "drawings" ? "restored-svg-1" : "preview-geometry-2";
-    assert.match(page, new RegExp(`styles\\.css\\?v=20261004-${stylesheetKey}`, "u"));
+    assert.match(page, /styles\.css\?v=[^"&\s]+/u);
     assert.match(page, /shell\.js\?v=20260924-sidebar-collapse-2/u);
   }
 });

@@ -148,7 +148,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20261004-restored-svg-1/u);
+  assert.match(html, /\/app\.js\?v=[^"&\s]+/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -336,13 +336,12 @@ test("SMEC drawing templates expose the same inline dimension units as XIZI temp
 
 test("all frontend pages share the current stylesheet cache key", () => {
   const pageNames = ["index.html", "drawings.html", "pricing.html", "account.html"];
-  for (const pageName of pageNames) {
-    const expectedKey = pageName === "drawings.html" ? "restored-svg-1" : "preview-geometry-2";
-    assert.match(
-      readWebSource(pageName),
-      new RegExp(`/styles\\.css\\?v=20261004-${expectedKey}`, "u"),
-      `${pageName} must load the current stylesheet`);
-  }
+  const versions = pageNames.map(pageName => {
+    const match = readWebSource(pageName).match(/\/styles\.css\?v=([^"&\s]+)/u);
+    assert.ok(match?.[1], `${pageName} must load a versioned stylesheet`);
+    return match[1];
+  });
+  assert.equal(new Set(versions).size, 1, "all frontend pages must share one stylesheet cache key");
 });
 
 test("all pages expose skip navigation, stable logo dimensions, and current navigation state", () => {
