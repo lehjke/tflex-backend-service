@@ -17,7 +17,9 @@ const scroll = document.querySelector("#pdfScroll");
 const zoomLabel = document.querySelector("#zoomLabel");
 const previous = document.querySelector("#previousPage");
 const next = document.querySelector("#nextPage");
+const closeButton = document.querySelector("#closeViewer");
 document.querySelector("#pageControls").hidden = mode === "crop";
+closeButton.hidden = mode !== "sheet";
 let documentProxy;
 let page = 1;
 let zoom = null;
@@ -55,6 +57,7 @@ async function render() {
   try {
     const pdfPage = await documentProxy.getPage(page);
     if (revision !== renderRevision) return;
+    scroll.hidden = false;
     const base = pdfPage.getViewport({ scale: 1 });
     const baseCrop = cropRect(base.width, base.height, cropFractions);
     const scale = zoom === null
@@ -64,14 +67,18 @@ async function render() {
     const viewport = pdfPage.getViewport({ scale });
     const crop = cropRect(viewport.width, viewport.height, cropFractions);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.ceil(crop.width * dpr);
-    canvas.height = Math.ceil(crop.height * dpr);
-    canvas.style.width = `${Math.ceil(crop.width)}px`;
-    canvas.style.height = `${Math.ceil(crop.height)}px`;
+    const paintCanvas = document.createElement("canvas");
+    paintCanvas.width = Math.ceil(crop.width * dpr);
+    paintCanvas.height = Math.ceil(crop.height * dpr);
     const transform = cropTransform(crop, dpr);
-    renderTask = pdfPage.render({ canvasContext: context, viewport, transform, background: "#ffffff" });
+    renderTask = pdfPage.render({ canvasContext: paintCanvas.getContext("2d", { alpha: false }), viewport, transform, background: "#ffffff" });
     await renderTask.promise;
     if (revision === renderRevision) {
+      canvas.width = paintCanvas.width;
+      canvas.height = paintCanvas.height;
+      canvas.style.width = `${Math.ceil(crop.width)}px`;
+      canvas.style.height = `${Math.ceil(crop.height)}px`;
+      context.drawImage(paintCanvas, 0, 0);
       message.hidden = true;
       scroll.hidden = false;
       updateControls();
@@ -99,11 +106,24 @@ pageInput.addEventListener("change", () => {
 document.querySelector("#zoomOut").addEventListener("click", () => { zoom = clampZoom((zoom ?? currentScale) - 0.1); render(); });
 document.querySelector("#zoomIn").addEventListener("click", () => { zoom = clampZoom((zoom ?? currentScale) + 0.1); render(); });
 document.querySelector("#fitWidth").addEventListener("click", () => { zoom = null; render(); });
+closeButton.addEventListener("click", () => {
+  window.close();
+  setTimeout(() => {
+    if (!window.closed) window.location.replace("/drawings");
+  }, 0);
+});
+window.addEventListener("keydown", event => {
+  if (mode === "sheet" && event.key === "Escape") closeButton.click();
+});
+let observedWidth;
 new ResizeObserver(() => {
   if (zoom !== null || !documentProxy) return;
+  const width = scroll.parentElement.clientWidth;
+  if (width === observedWidth) return;
+  observedWidth = width;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(render, 100);
-}).observe(scroll);
+}).observe(scroll.parentElement);
 
 const pdfUrl = safePdfUrl(file);
 if (!pdfUrl) showError("Недопустимая ссылка на файл PDF.");
@@ -112,6 +132,6 @@ else {
   const requestedPage = Number.parseInt(params.get("page") || "1", 10);
   page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
   pdfjsLib.getDocument({ url: pdfUrl, withCredentials: true, cMapUrl: "/vendor/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/vendor/pdfjs/standard_fonts/", wasmUrl: "/vendor/pdfjs/wasm/" }).promise
-    .then(pdf => { documentProxy = pdf; page = Math.min(page, pdf.numPages); render(); })
+    .then(pdf => { documentProxy = pdf; page = Math.min(page, pdf.numPages); observedWidth = scroll.parentElement.clientWidth; render(); })
     .catch(() => showError("Не удалось загрузить PDF. Обновите предпросмотр и повторите попытку."));
 }

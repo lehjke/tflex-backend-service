@@ -1,13 +1,13 @@
 import { getXiziPreviewGeometry, isXiziPreviewTemplate } from "./xizi-preview.js?v=20261004-restored-svg-1";
 import { getLehyPreviewGeometry, isLehyPreviewTemplate } from "./lehy-preview.js?v=20261004-geometry-2";
 import { getEscalatorPreviewGeometry } from "./escalator-preview.js?v=20261004-geometry-2";
-import { getCabinUnfoldingGeometry, renderCabinUnfoldingPreviewSvg } from "./cabin-unfolding-preview.js?v=20261004-geometry-1";
+import { getCabinUnfoldingGeometry, renderCabinUnfoldingPreviewSvg } from "./cabin-unfolding-preview.js?v=20261005-unfolding-panels-1";
 import {
   renderLegacyEscalatorPreviewMetrics,
   renderLegacyEscalatorPreviewSvg,
   renderLegacyShaftPreviewMetrics,
   renderLegacyShaftPreviewSvg
-} from "./legacy-svg-preview.js?v=20261004-restored-svg-1";
+} from "./legacy-svg-preview.js?v=20261005-outer-dimensions-2";
 
 const finite = value => {
   if (value === null || value === undefined || String(value).trim() === "") return null;
@@ -138,7 +138,7 @@ export function renderLiveSvgPreview(template, context) {
     return dimensions ? renderLegacyEscalatorPreviewSvg(dimensions) : "";
   }
   if (template.id === "razvertki_lehy") {
-    return renderCabinUnfoldingPreviewSvg(getCabinUnfoldingGeometry(context), { planOnly: true });
+    return renderCabinUnfoldingPreviewSvg(getCabinUnfoldingGeometry(context));
   }
   return "";
 }

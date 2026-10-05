@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Предпросмотр PDF</title>
-  <link rel="stylesheet" href="/native-pdf-viewer.css">
-  <script type="module" src="/native-pdf-viewer.js"></script>
+  <link rel="stylesheet" href="/native-pdf-viewer.css?v=20261005-preview-fixes-3">
+  <script type="module" src="/native-pdf-viewer.js?v=20261005-preview-fixes-3"></script>
 </head>
 <body>
   <main class="pdf-viewer" aria-label="Предпросмотр PDF">
     <div class="pdf-toolbar" role="toolbar" aria-label="Управление просмотром PDF">
+      <button id="closeViewer" class="pdf-close" type="button" aria-label="Закрыть просмотр PDF" hidden>×</button>
       <span id="pageControls" class="pdf-page-controls"><button id="previousPage" type="button" aria-label="Предыдущая страница">‹</button>
       <span class="pdf-page-input"><input id="pageNumber" type="number" min="1" value="1" aria-label="Номер страницы"><span id="pageCount">/ —</span></span>
       <button id="nextPage" type="button" aria-label="Следующая страница">›</button></span>

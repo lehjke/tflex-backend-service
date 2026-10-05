@@ -38,7 +38,8 @@ test("sidebar collapse persists safely and keeps mobile menu state separate", ()
   assert.match(styles, /body\.sidebar-ready \.app-shell \{\s*transition: grid-template-columns 180ms ease;/u);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/u);
   assert.match(styles, /:is\(body\.sidebar-collapsed, html\.sidebar-collapsed\) \.sidebar__language \{\s*display: none;/u);
-  assert.match(styles, /@media \(min-width: 901px\) \{[\s\S]*?:is\(body\.sidebar-collapsed, html\.sidebar-collapsed\) \.app-shell\s*\{\s*grid-template-columns: 72px/u);
+  assert.match(styles, /@media \(min-width: 901px\) \{[\s\S]*?:is\(body\.sidebar-collapsed, html\.sidebar-collapsed\) \.app-shell\s*\{\s*--sidebar-width: 72px;/u);
+  assert.match(styles, /left: calc\(var\(--sidebar-width\) - 8px\)/u);
   assert.match(styles, /@media \(max-width: 900px\) \{[\s\S]*?\.sidebar \{\s*position: sticky/u);
   assert.match(styles, /\.sidebar__nav a \{[\s\S]*?border: 1px solid rgb\(255 255 255 \/ 16%\);/u);
   assert.doesNotMatch(styles, /@media \(max-width: 900px\) \{[\s\S]*?\.sidebar__nav a \{[^}]*border: 1px solid transparent;/u);

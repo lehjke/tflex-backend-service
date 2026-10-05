@@ -86,3 +86,24 @@ parameters reused its URL. Changing XIZI MRL shaft width from 3000 to 3100 mm
 updated SVG immediately, cleared the previous PDF link, and produced a new
 native PDF whose plan showed HW 3100. The nine served preview assets matched
 the local files, and the frontend suite passed 126 tests.
+
+## Cabin unfolding SVG, 2026-10-05
+
+The plan shows panel seams and separate dimension chains for walls A (rear),
+B (right), C (left), and D (front). It uses the catalog's native panel formulas.
+For the 1100 × 2100 baseline, the B plan chain is 700 / 767.5 / 221 / 411.5 mm;
+the elevation chain is 693 / 760.5 / 235 / 411.5 mm. The COP strip is WB+1 in
+plan and WB+15 in elevation. These two chains must not be interchanged.
+
+Front COP uses ordinary side-wall panel chains and the centre of the front
+door flank. Through side-COP layouts mirror the C plan chain; native CO
+elevations keep the opening centred even when A4 offsets the top plan.
+The default, front-COP and through-CO chains were checked against isolated
+exports from the installed server T-FLEX runtime. Source GRBs were copied
+to a temporary directory before export.
+
+The SVG prioritizes readable panel positions and dimensions: its plan is
+full width, with roof/floor and elevations below it in the preview's scroll
+area. Ceiling drawings remain schematic; ND10 controls use native dimensions,
+while other COP models show their panel width and position. PDF remains the
+authoritative drawing for finish details and model-specific controls.
