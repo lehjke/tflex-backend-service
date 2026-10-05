@@ -115,10 +115,13 @@ public sealed class DrawingJobProcessorTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
     public async Task ProcessAsync_CancelsAtLeaseDeadlineWhenRenewalIsUnavailable(
-        bool renewalHangs)
+        bool renewalHangs,
+        bool preparationHangs)
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
         var templatePath = Path.Combine(root, "templates", "template.grb");
@@ -138,7 +141,7 @@ public sealed class DrawingJobProcessorTests
         var queueOptions = Options.Create(new DrawingQueueOptions
         {
             PollInterval = TimeSpan.FromMilliseconds(10),
-            LeaseDuration = TimeSpan.FromMilliseconds(400),
+            LeaseDuration = TimeSpan.FromMinutes(1),
             LeaseHeartbeatInterval = TimeSpan.FromMilliseconds(40)
         });
         var queue = new SqliteDrawingJobQueue(
@@ -152,7 +155,6 @@ public sealed class DrawingJobProcessorTests
             InputParametersJson = "{}"
         };
         await queue.EnqueueAsync(job);
-        var claimedJob = await queue.DequeueAsync(CancellationToken.None);
 
         var template = new DrawingTemplate
         {
@@ -167,18 +169,27 @@ public sealed class DrawingJobProcessorTests
         var processor = new DrawingJobProcessor(
             new InMemoryTemplateCatalog(template),
             renewalRepository,
-            new LocalFileStorage(storageOptions),
+            new LeaseTestFileStorage(root, preparationHangs),
             automation,
             CreateReadyAutomationState(),
             queueOptions,
             NullLogger<DrawingJobProcessor>.Instance);
 
+        var claimedJob = await queue.DequeueAsync(CancellationToken.None);
+        // Start the short deadline after SQLite claiming and all fixture setup.
+        claimedJob.LeaseExpiresAt = DateTimeOffset.UtcNow.AddMilliseconds(400);
         await processor.ProcessAsync(claimedJob);
+        var processingStoppedAt = DateTimeOffset.UtcNow;
 
-        Assert.NotNull(automation.CancellationObservedAt);
+        Assert.Equal(!preparationHangs, automation.GenerationStarted);
+        if (automation.GenerationStarted)
+        {
+            Assert.NotNull(automation.CancellationObservedAt);
+        }
         Assert.NotNull(claimedJob.LeaseExpiresAt);
+        // Check expiry both during preparation and during automation.
         Assert.InRange(
-            automation.CancellationObservedAt.Value,
+            automation.CancellationObservedAt ?? processingStoppedAt,
             claimedJob.LeaseExpiresAt.Value,
             claimedJob.LeaseExpiresAt.Value.AddSeconds(1));
         Assert.True(renewalRepository.RenewalAttempts >= 1);
@@ -205,12 +216,14 @@ public sealed class DrawingJobProcessorTests
 
     private sealed class CancellationAwareAutomationClient : ITFlexAutomationClient
     {
+        public bool GenerationStarted { get; private set; }
         public DateTimeOffset? CancellationObservedAt { get; private set; }
 
         public async Task<IReadOnlyList<GeneratedFile>> GenerateAsync(
             TFlexGenerationRequest request,
             CancellationToken cancellationToken = default)
         {
+            GenerationStarted = true;
             try
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -222,6 +235,25 @@ public sealed class DrawingJobProcessorTests
                 throw;
             }
         }
+    }
+
+    private sealed class LeaseTestFileStorage(string root, bool pausePreparation) : IFileStorage
+    {
+        public async Task<string> CreateWorkingDirectoryAsync(DrawingJob job, CancellationToken cancellationToken = default)
+        {
+            if (pausePreparation)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("Preparation must be cancelled when the lease expires.");
+            }
+            return Path.Combine(root, "working");
+        }
+
+        public Task<string> CopyTemplateToWorkingDirectoryAsync(DrawingTemplate template, string workingDirectory, CancellationToken cancellationToken = default)
+            => Task.FromResult(template.TemplateFilePath);
+
+        public string CreateGeneratedDirectory(DrawingJob job)
+            => Path.Combine(root, "generated");
     }
 
     private sealed class UnavailableRenewalRepository(
@@ -350,11 +382,8 @@ public sealed class DrawingJobProcessorTests
             CancellationToken cancellationToken = default,
             string? leaseToken = null)
         {
-            return inner.UpdateWorkingDirectoryAsync(
-                id,
-                workingDirectory,
-                cancellationToken,
-                leaseToken);
+            // Keep database setup latency outside this lease-cancellation test.
+            return Task.FromResult(true);
         }
 
         public Task<bool> AddGeneratedFileAsync(
