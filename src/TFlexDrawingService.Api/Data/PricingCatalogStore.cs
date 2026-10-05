@@ -1661,15 +1661,19 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         if (Selected("Fire Rating"))
         {
             var rating = Field("Fire Rating");
+            var decoration = FindSmecDecoration(catalog.Decorations, request, "DoorAddon", $"Firerated door({rating})", null);
             var code = rating.ToUpperInvariant() switch
             {
                 "EI30" or "EI60" or "EI120" => "EI120",
                 "E30" or "E60" or "E120" => "E120",
                 _ => rating
             };
+            var usedFallback = decoration is null && !EqualsText(code, rating);
+            if (usedFallback)
+                decoration = FindSmecDecoration(catalog.Decorations, request, "DoorAddon", $"Firerated door({code})", null);
             doorAddonPrice += Add("fire-rating", $"Fire-rated landing doors: {rating}",
-                FindSmecDecoration(catalog.Decorations, request, "DoorAddon", $"Firerated door({code})", null)?.Price, request.DoorCount);
-            if (!EqualsText(code, rating))
+                decoration?.Price, request.DoorCount);
+            if (usedFallback && decoration is { Price: >= 0 })
                 warnings.Add($"Огнестойкость {rating}: для предварительной цены использована строка {code} исходного прайса. Исполнение и цену {rating} необходимо подтвердить у SMEC.");
         }
         if (Selected("Glass Door"))

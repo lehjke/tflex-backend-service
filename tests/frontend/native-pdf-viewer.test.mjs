@@ -36,7 +36,7 @@ test("native PDF preview routes through the local canvas viewer", () => {
   assert.match(viewer, /new ResizeObserver/u);
 });
 
-function runViewer(mode, { closable = false } = {}) {
+function runViewer(mode, { closable = false, lineEnding = "\n" } = {}) {
   const elements = new Map();
   const timers = [];
   const windowListeners = new Map();
@@ -54,7 +54,8 @@ function runViewer(mode, { closable = false } = {}) {
   const scroll = element("#pdfScroll");
   scroll.clientWidth = 620;
   scroll.parentElement = { clientWidth: 700 };
-  const source = viewer.replace(/^import \* as pdfjsLib from .*;\nimport \{.*\} from .*;\n/mu, "");
+  const source = viewer.replace(/\r?\n/gu, lineEnding)
+    .replace(/^import \* as pdfjsLib from .*;\r?\nimport \{.*\} from .*;\r?\n/mu, "");
   const window = {
     location: { origin: "https://example.test", search: `?file=${encodeURIComponent("/api/jobs/1/files/output/download")}&mode=${mode}&template=razvertki_lehy`, replace(path) { this.replaced = path; } },
     devicePixelRatio: 1, closed: false,
@@ -89,48 +90,50 @@ function runViewer(mode, { closable = false } = {}) {
   };
 }
 
-test("sheet dismissal closes the tab or falls back to /drawings; crop view stays unchanged", async () => {
-  const html = await readFile(new URL("native-pdf-viewer.html", root), "utf8");
-  const css = await readFile(new URL("native-pdf-viewer.css", root), "utf8");
-  const drawings = await readFile(new URL("drawings.html", root), "utf8");
-  const styles = await readFile(new URL("styles.css", root), "utf8");
-  assert.match(html, /id="closeViewer"[^>]*hidden/u);
-  assert.match(css, /scrollbar-gutter: stable/u);
-  assert.match(drawings, /id="nativePreviewOpen" class="button-link secondary native-preview-open"/u);
-  assert.match(styles, /\.native-preview-open \{[^}]*min-height: 44px/su);
+for (const [lineEndingName, lineEnding] of [["LF", "\n"], ["CRLF", "\r\n"]]) {
+  test(`sheet dismissal closes the tab or falls back to /drawings; crop view stays unchanged (${lineEndingName})`, async () => {
+    const html = await readFile(new URL("native-pdf-viewer.html", root), "utf8");
+    const css = await readFile(new URL("native-pdf-viewer.css", root), "utf8");
+    const drawings = await readFile(new URL("drawings.html", root), "utf8");
+    const styles = await readFile(new URL("styles.css", root), "utf8");
+    assert.match(html, /id="closeViewer"[^>]*hidden/u);
+    assert.match(css, /scrollbar-gutter: stable/u);
+    assert.match(drawings, /id="nativePreviewOpen" class="button-link secondary native-preview-open"/u);
+    assert.match(styles, /\.native-preview-open \{[^}]*min-height: 44px/su);
 
-  const sheet = runViewer("sheet", { closable: true });
-  await sheet.settle();
-  assert.equal(sheet.elements.get("#closeViewer").hidden, false);
-  sheet.windowListeners.get("keydown")({ key: "Escape" });
-  sheet.runTimers();
-  assert.equal(sheet.window.closed, true);
-  assert.equal(sheet.window.location.replaced, undefined);
+    const sheet = runViewer("sheet", { closable: true, lineEnding });
+    await sheet.settle();
+    assert.equal(sheet.elements.get("#closeViewer").hidden, false);
+    sheet.windowListeners.get("keydown")({ key: "Escape" });
+    sheet.runTimers();
+    assert.equal(sheet.window.closed, true);
+    assert.equal(sheet.window.location.replaced, undefined);
 
-  const direct = runViewer("sheet");
-  await direct.settle();
-  direct.elements.get("#closeViewer").click();
-  direct.runTimers();
-  assert.equal(direct.window.location.replaced, "/drawings");
+    const direct = runViewer("sheet", { lineEnding });
+    await direct.settle();
+    direct.elements.get("#closeViewer").click();
+    direct.runTimers();
+    assert.equal(direct.window.location.replaced, "/drawings");
 
-  const crop = runViewer("crop");
-  await crop.settle();
-  assert.equal(crop.elements.get("#closeViewer").hidden, true);
-  crop.windowListeners.get("keydown")({ key: "Escape" });
-  crop.runTimers();
-  assert.equal(crop.window.location.replaced, undefined);
-});
+    const crop = runViewer("crop", { lineEnding });
+    await crop.settle();
+    assert.equal(crop.elements.get("#closeViewer").hidden, true);
+    crop.windowListeners.get("keydown")({ key: "Escape" });
+    crop.runTimers();
+    assert.equal(crop.window.location.replaced, undefined);
+  });
 
-test("resize observer schedules a render only when the stable container width changes", async () => {
-  const run = runViewer("sheet");
-  await run.settle();
-  const initialRenders = run.renders;
-  run.resize();
-  assert.equal(run.timers.length, 0);
-  run.elements.get("#pdfScroll").parentElement.clientWidth += 24;
-  run.resize();
-  assert.equal(run.timers.length, 1);
-  run.runTimers();
-  await run.settle();
-  assert.equal(run.renders, initialRenders + 1);
-});
+  test(`resize observer schedules a render only when the stable container width changes (${lineEndingName})`, async () => {
+    const run = runViewer("sheet", { lineEnding });
+    await run.settle();
+    const initialRenders = run.renders;
+    run.resize();
+    assert.equal(run.timers.length, 0);
+    run.elements.get("#pdfScroll").parentElement.clientWidth += 24;
+    run.resize();
+    assert.equal(run.timers.length, 1);
+    run.runTimers();
+    await run.settle();
+    assert.equal(run.renders, initialRenders + 1);
+  });
+}
