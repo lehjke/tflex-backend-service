@@ -1762,12 +1762,12 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(60m, Line("Main LOP Faceplate").AmountCny);
         Assert.Equal(1920m, Line("Other LOP Faceplate").AmountCny);
         Assert.Equal(5, Line("Fire-rated landing doors").Quantity);
-        Assert.True(Line("Fire-rated landing doors").AmountCny > 0);
+        Assert.Equal(9150m, Line("Fire-rated landing doors").AmountCny);
         Assert.Equal(6, Line("Glass doors").Quantity);
         Assert.True(Line("Glass doors").AmountCny > 0);
         Assert.Equal(9280m, Line("CWT Safety Gear").AmountCny);
         Assert.Equal(6000m, Line("Функция Roller guide shoe").AmountCny);
-        Assert.Contains(result.Warnings, warning => warning.Contains("EI60") && warning.Contains("EI120"));
+        Assert.DoesNotContain(result.Warnings, warning => warning.Contains("EI60") && warning.Contains("EI120"));
 
         var legacy = request with
         {
@@ -1784,6 +1784,42 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(result.TotalCny + 420, legacyResult.TotalCny);
         Assert.Single(legacyResult.Lines, line => line.Code == "function-cwt-safety-gear");
         Assert.Single(legacyResult.Lines, line => line.Label.StartsWith("Функция Roller guide shoe", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("EI60", 320, 1830)]
+    [InlineData("EI60", 2500, 1980)]
+    [InlineData("E60", 320, 500)]
+    [InlineData("E60", 2500, 600)]
+    public async Task SmecFireRating_UsesExactRatingAndCapacityPrice(string rating, int capacity, decimal unitPrice)
+    {
+        var request = CreateXiziSupplierRequest() with
+        {
+            Supplier = "SMEC", CapacityKg = capacity, DoorCount = 14,
+            SpecificationFields = new Dictionary<string, string> { ["Fire Rating"] = rating }
+        };
+
+        var result = await CreateSupplierCatalogStore().CalculateAsync(request);
+        var line = Assert.Single(result.Lines, item => item.Label.StartsWith("Fire-rated landing doors", StringComparison.Ordinal));
+
+        Assert.Equal(14, line.Quantity);
+        Assert.Equal(unitPrice * 14, line.AmountCny);
+        Assert.DoesNotContain(result.Warnings, warning => warning.Contains(rating) && warning.Contains("предварительной цены"));
+    }
+
+    [Fact]
+    public async Task SmecFireRating_UnsupportedEi30RetainsEi120FallbackWarning()
+    {
+        var request = CreateXiziSupplierRequest() with
+        {
+            Supplier = "SMEC", CapacityKg = 1050, DoorCount = 1,
+            SpecificationFields = new Dictionary<string, string> { ["Fire Rating"] = "EI30" }
+        };
+
+        var result = await CreateSupplierCatalogStore().CalculateAsync(request);
+
+        Assert.Contains(result.Warnings, warning => warning.Contains("EI30") && warning.Contains("EI120"));
+        Assert.True(Assert.Single(result.Lines, line => line.Label.StartsWith("Fire-rated landing doors", StringComparison.Ordinal)).AmountCny > 0);
     }
 
     [Fact]

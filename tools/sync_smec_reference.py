@@ -18,6 +18,8 @@ DEFAULT_SOURCE = Path("/Users/lehjke/Downloads/Price FOB CNY.xlsx")
 DEFAULT_CATALOG = Path("src/TFlexDrawingService.Api/Data/pricing-catalog.json")
 MATERIALS = ("SUS-H", "SUS-M", "SUS-I", "SUS-S")
 TITANIUM_CODES = ("001", "002", "003", "004", "005", "006", "500", "501", "502", "503", "504", "505", "506")
+FIRE_DOOR_CODES = {"Firerated door(E60)", "Firerated door(EI60)"}
+FIRE_DOOR_SOURCE_FILE = "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx"
 
 
 def clean(value: Any) -> Any:
@@ -280,13 +282,36 @@ def parse_cwt_prices(workbook) -> list[dict[str, Any]]:
     return entries
 
 
+def preserve_fire_door_supplement(primary: list[dict[str, Any]], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep verified fire-door rows absent from the primary workbook."""
+    result = list(primary)
+    keys = {(item.get("category"), item.get("code"), item.get("capacity"), item.get("variant")) for item in primary}
+    for item in existing:
+        source = item.get("source") or {}
+        key = (item.get("category"), item.get("code"), item.get("capacity"), item.get("variant"))
+        if (
+            item.get("category") == "DoorAddon"
+            and item.get("code") in FIRE_DOOR_CODES
+            and source.get("kind") == "excel-supplement"
+            and source.get("file") == FIRE_DOOR_SOURCE_FILE
+            and source.get("sheet") == "Decoration"
+            and source.get("cell")
+            and key not in keys
+        ):
+            result.append(item)
+            keys.add(key)
+    return result
+
+
 def synchronized_catalog(source: Path, catalog_path: Path, *, update_timestamp: bool) -> dict[str, Any]:
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     result = deepcopy(catalog)
     workbook = load_workbook(source, data_only=True, read_only=False)
     smec = result["smec"]
     smec["basePrices"] = parse_base_prices(workbook)
-    smec["decorations"] = parse_decorations(workbook)
+    smec["decorations"] = preserve_fire_door_supplement(
+        parse_decorations(workbook), smec.get("decorations", [])
+    )
     smec["functions"] = parse_functions(workbook, smec.get("functions", []))
     smec["groupControl"] = parse_group_control(workbook, smec.get("groupControl", []))
     smec["controlPrices"] = parse_control_prices(workbook)

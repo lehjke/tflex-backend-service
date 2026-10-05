@@ -179009,6 +179009,396 @@
         "capacity": 0,
         "variant": null,
         "price": 480
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 320,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "D120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 450,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "E120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 550,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "F120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 630,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "G120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 825,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "H120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1050,
+        "variant": null,
+        "price": 500,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "I120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1200,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "J120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1275,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "K120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1350,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "L120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1600,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "M120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 1800,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "N120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 2000,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "O120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 2025,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "P120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 2250,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "Q120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(E60)",
+        "capacity": 2500,
+        "variant": null,
+        "price": 600,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "R120"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 320,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "D121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 450,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "E121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 550,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "F121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 630,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "G121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 825,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "H121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1050,
+        "variant": null,
+        "price": 1830,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "I121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1200,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "J121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1275,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "K121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1350,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "L121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1600,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "M121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 1800,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "N121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 2000,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "O121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 2025,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "P121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 2250,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "Q121"
+        }
+      },
+      {
+        "category": "DoorAddon",
+        "code": "Firerated door(EI60)",
+        "capacity": 2500,
+        "variant": null,
+        "price": 1980,
+        "source": {
+          "kind": "excel-supplement",
+          "file": "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
+          "sheet": "Decoration",
+          "cell": "R121"
+        }
       }
     ],
     "functions": [

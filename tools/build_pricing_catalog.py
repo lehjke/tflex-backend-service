@@ -16,6 +16,7 @@ from PIL import Image
 
 ROOT = Path("/Users/lehjke/Desktop/Dokumentatsia")
 OUT = Path("src/TFlexDrawingService.Api/Data/pricing-catalog.json")
+LEHY_PRICE_SOURCE = ROOT / "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx"
 SMEC_ASSET_OUT = Path("src/TFlexDrawingService.Api/wwwroot/assets/smec")
 SMEC_FORM_EXAMPLE = Path("/Users/lehjke/Downloads/Example_sp.xlsx")
 if not SMEC_FORM_EXAMPLE.exists():
@@ -781,6 +782,7 @@ def append_smec_matrix_prices(
     end_row: int,
     code_column: int = 2,
     code_aliases: dict[str, str] | None = None,
+    source_file: str | None = None,
 ) -> None:
     aliases = code_aliases or {}
     for row in range(start_row, end_row + 1):
@@ -792,15 +794,21 @@ def append_smec_matrix_prices(
             price = as_number(ws.cell(row, column).value)
             if price is None:
                 continue
-            entries.append(
-                {
-                    "category": category,
-                    "code": code,
-                    "capacity": capacity,
-                    "variant": variant,
-                    "price": price,
+            entry = {
+                "category": category,
+                "code": code,
+                "capacity": capacity,
+                "variant": variant,
+                "price": price,
+            }
+            if source_file and code in {"Firerated door(E60)", "Firerated door(EI60)"}:
+                entry["source"] = {
+                    "kind": "excel-supplement",
+                    "file": source_file,
+                    "sheet": ws.title,
+                    "cell": ws.cell(row, column).coordinate,
                 }
-            )
+            entries.append(entry)
 
 
 def parse_smec_decorations(wb) -> list[dict[str, Any]]:
@@ -841,12 +849,11 @@ def parse_smec_decorations(wb) -> list[dict[str, Any]]:
         124,
         code_column=2,
         code_aliases={
-            "Firerated door(E60)": "E120",
-            "Firerated door(EI60)": "EI120",
             "Glass door(ZPKG-200)": "ZPKG-200",
             "Glass door(ZPKG-150)": "ZPKG-150",
             "Glass door(ZPKG-050)": "ZPKG-050",
         },
+        source_file=LEHY_PRICE_SOURCE.name,
     )
 
     jamb_columns = [
@@ -1315,11 +1322,7 @@ def parse_containers(wb) -> list[dict[str, Any]]:
 
 def main() -> None:
     xizi = load_workbook(ROOT / "XIZI_price_list_20_02_2026.xlsx", data_only=True, read_only=False)
-    lehy = load_workbook(
-        ROOT / "Price_of_FOB_CNY__165__2025__20420__21521__Including_LEHY-L-Pro.xlsx",
-        data_only=True,
-        read_only=False,
-    )
+    lehy = load_workbook(LEHY_PRICE_SOURCE, data_only=True, read_only=False)
     containers = load_workbook(ROOT / "Containers.xlsx", data_only=True, read_only=False)
     spec_template = load_workbook(ROOT / "Spetsifikatsia_TKP" / "SPEC_TKP_ELE_v2.0.xlsx", data_only=True, read_only=False)
     cardesign = load_workbook(ROOT / "Spetsifikatsia_TKP" / "CARDESIGN.xlsx", data_only=True, read_only=False)
