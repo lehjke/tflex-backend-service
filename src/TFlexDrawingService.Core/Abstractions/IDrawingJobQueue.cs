@@ -12,6 +12,12 @@ public interface IDrawingJobQueue
         int maxActiveJobsPerUser,
         CancellationToken cancellationToken = default);
 
+    Task<(DrawingJobEnqueueResult Result, DrawingJob? Job, bool Enqueued)> TryEnqueuePreviewAsync(
+        DrawingJob job,
+        int maxActiveJobs,
+        int maxActiveJobsPerUser,
+        CancellationToken cancellationToken = default);
+
     Task<DrawingJob> DequeueAsync(CancellationToken cancellationToken);
 
     Task<int> RecoverInterruptedAsync(CancellationToken cancellationToken = default);

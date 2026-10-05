@@ -14,6 +14,12 @@ public interface IDrawingJobRepository
         int maxActiveJobsPerUser,
         CancellationToken cancellationToken = default);
 
+    Task<(DrawingJobEnqueueResult Result, DrawingJob? Job, bool Enqueued)> TryCreatePreviewAsync(
+        DrawingJob job,
+        int maxActiveJobs,
+        int maxActiveJobsPerUser,
+        CancellationToken cancellationToken = default);
+
     Task<DrawingJob?> GetAsync(string id, CancellationToken cancellationToken = default);
 
     Task<DrawingJob?> GetAsync(string id, string ownerUserName, CancellationToken cancellationToken = default);

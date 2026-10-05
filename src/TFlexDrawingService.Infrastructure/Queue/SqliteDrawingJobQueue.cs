@@ -41,6 +41,21 @@ public sealed class SqliteDrawingJobQueue(
         return result;
     }
 
+    public async Task<(DrawingJobEnqueueResult Result, DrawingJob? Job, bool Enqueued)> TryEnqueuePreviewAsync(
+        DrawingJob job,
+        int maxActiveJobs,
+        int maxActiveJobsPerUser,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await repository.TryCreatePreviewAsync(job, maxActiveJobs, maxActiveJobsPerUser, cancellationToken);
+        if (result.Enqueued)
+        {
+            _signal.Release();
+            logger.LogInformation("Queued preview drawing job {JobId}", result.Job?.Id);
+        }
+        return result;
+    }
+
     public async Task<DrawingJob> DequeueAsync(CancellationToken cancellationToken)
     {
         while (true)

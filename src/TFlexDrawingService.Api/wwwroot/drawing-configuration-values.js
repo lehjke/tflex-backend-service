@@ -51,10 +51,14 @@ function applyKnownDerivedValues(context) {
   context.load_mount = context.$load_type === "Крюки" && context.$load_mount === "Да" ? 1 : 0;
   context.$lip_type = context.$lop_type === "Да" ? "Нет" : (context.$lip_type_1 || "Нет");
   context.lip_type = context.$lip_type === "Да" ? 1 : 0;
-  context.$A4 = context.$door_type === "ТО" ? "Нет" : (context.$A4_1 || "Нет");
-  context.A4 = context.$door_type === "ТО"
-    ? Math.abs(toNumber(context.AA) / 2 - (toNumber(context.JJ) / 2 + 25))
-    : (context.$A4_1 === "Нет" ? 0 : toNumber(context.A4_1));
+  // Legacy shaft-door fields must not overwrite the cabin-unfolding A4 formula.
+  if (hasValue(context.$door_type)) {
+    context.$A4 = context.$door_type === "ТО" ? "Нет" : (context.$A4_1 || "Нет");
+    context.A4 = context.$door_type === "ТО"
+      ? Math.abs(toNumber(context.AA) / 2 - (toNumber(context.JJ) / 2 + 25))
+      : (context.$A4_1 === "Нет" ? 0 : toNumber(context.A4_1));
+  }
+
   context.$fire_rating = context.$PPP === "Да"
     ? "EI60"
     : (context.$fire_rating_1 === "Нет" ? "Без огнестойкости" : context.$fire_rating_1);
@@ -71,6 +75,7 @@ function findNumericVariant(parameters, prefix, numericValue) {
 export function resolveDrawingConfigurationValues(configuration, template, overrides = {}) {
   const parameters = template?.parameters || [];
   const calculatedVariables = template?.calculatedVariables || [];
+  const calculatedNames = new Set(calculatedVariables.map(definition => definition.name));
   const definitions = [...parameters, ...calculatedVariables];
   const storedValues = { ...(configuration?.parameters || {}), ...overrides };
   const overriddenNames = new Set(Object.keys(overrides));
@@ -109,7 +114,8 @@ export function resolveDrawingConfigurationValues(configuration, template, overr
 
   const expressionDefinitions = [
     ...calculatedVariables,
-    ...parameters.filter(definition => definition.isReadOnly)
+    ...parameters.filter(definition => definition.isReadOnly
+      && !calculatedNames.has(definition.name))
   ];
   for (let pass = 0; pass < 8; pass += 1) {
     for (const definition of expressionDefinitions) {

@@ -232,8 +232,10 @@ app.Use(async (context, next) =>
     {
         var headers = context.Response.Headers;
         var isInlineGeneratedFile = context.Items.ContainsKey(InlineGeneratedFileItemKey);
+        var isNativePdfViewer = context.Request.Path.Equals("/native-pdf-viewer.html", StringComparison.OrdinalIgnoreCase);
+        var isPdfWorker = context.Request.Path.Equals("/vendor/pdfjs/pdf.worker.mjs", StringComparison.OrdinalIgnoreCase);
         headers["X-Content-Type-Options"] = "nosniff";
-        headers["X-Frame-Options"] = isInlineGeneratedFile ? "SAMEORIGIN" : "DENY";
+        headers["X-Frame-Options"] = isInlineGeneratedFile || isNativePdfViewer ? "SAMEORIGIN" : "DENY";
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         if (context.Request.IsHttps)
         {
@@ -242,9 +244,9 @@ app.Use(async (context, next) =>
 
         headers["Content-Security-Policy"] = isInlineGeneratedFile
             ? "default-src 'none'; frame-ancestors 'self'"
-            : "default-src 'self'; script-src 'self'; style-src 'self'; " +
+            : "default-src 'self'; script-src 'self'" + (isNativePdfViewer || isPdfWorker ? " 'wasm-unsafe-eval'" : "") + "; style-src 'self'; " +
               "font-src 'self'; img-src 'self' data:; " +
-              "object-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+              "object-src 'self'; base-uri 'self'; frame-ancestors " + (isNativePdfViewer ? "'self'" : "'none'") + "; form-action 'self'";
         return Task.CompletedTask;
     });
 
@@ -974,6 +976,10 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
     var ownerUserName = securityOptions.RequireAuthentication ? GetUserName(context.User) : "local";
     var queueLimits = queueOptions.Value;
     var validation = await validator.ClassifyAsync(request, cancellationToken);
+    if (request.IsPreview && !string.Equals(request.OutputFormat, "pdf", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["outputFormat"] = ["Preview jobs require PDF output."] });
+    }
     if (!validation.IsValid || validation.Template is null || validation.OutputFormat is null)
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -1007,18 +1013,31 @@ var createJobEndpoint = app.MapPost("/api/jobs", async (
     var job = new DrawingJob
     {
         TemplateId = validation.Template.Id,
+        IsPreview = request.IsPreview,
         OutputFormat = validation.OutputFormat,
         OwnerUserName = ownerUserName,
         Status = DrawingJobStatus.Pending,
-        InputParametersJson = JsonSerializer.Serialize(validation.NormalizedParameters, jsonOptions),
+        InputParametersJson = JsonSerializer.Serialize(
+            request.IsPreview
+                ? validation.NormalizedParameters.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                : validation.NormalizedParameters,
+            jsonOptions),
         CreatedAt = DateTimeOffset.UtcNow
     };
 
-    var enqueueResult = await queue.TryEnqueueAsync(
-        job,
-        queueLimits.MaxActiveJobs,
-        queueLimits.MaxActiveJobsPerUser,
-        cancellationToken);
+    var previewResult = request.IsPreview
+        ? await queue.TryEnqueuePreviewAsync(job, queueLimits.MaxActiveJobs, queueLimits.MaxActiveJobsPerUser, cancellationToken)
+        : default;
+    var enqueueResult = request.IsPreview
+        ? previewResult.Result
+        : await queue.TryEnqueueAsync(job, queueLimits.MaxActiveJobs, queueLimits.MaxActiveJobsPerUser, cancellationToken);
+    if (request.IsPreview && previewResult.Job is not null)
+    {
+        var result = ToJobDto(previewResult.Job, context.User, securityOptions);
+        return previewResult.Enqueued
+            ? Results.Created($"/api/jobs/{previewResult.Job.Id}", result)
+            : Results.Ok(result);
+    }
     if (enqueueResult == DrawingJobEnqueueResult.TotalLimitReached)
     {
         return Results.Problem(
@@ -1923,6 +1942,7 @@ static object ToJobDto(DrawingJob job, ClaimsPrincipal user, SecurityOptions sec
         job.TemplateId,
         Status = job.Status.ToString(),
         job.OutputFormat,
+        job.IsPreview,
         OwnerUserName = canViewInternal ? job.OwnerUserName : null,
         job.CreatedAt,
         job.StartedAt,

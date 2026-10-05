@@ -6,6 +6,8 @@ public sealed class CreateDrawingJobRequest
 {
     public string TemplateId { get; set; } = string.Empty;
 
+    public bool IsPreview { get; set; }
+
     public string OutputFormat { get; set; } = "pdf";
 
     public string? ConfirmationFingerprint { get; set; }

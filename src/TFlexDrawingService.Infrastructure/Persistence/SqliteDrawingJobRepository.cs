@@ -31,6 +31,7 @@ public sealed class SqliteDrawingJobRepository(
                 Status TEXT NOT NULL,
                 InputParametersJson TEXT NOT NULL,
                 OutputFormat TEXT NOT NULL,
+                IsPreview INTEGER NOT NULL DEFAULT 0,
                 OwnerUserName TEXT NOT NULL DEFAULT 'legacy',
                 CreatedAt TEXT NOT NULL,
                 StartedAt TEXT NULL,
@@ -58,6 +59,7 @@ public sealed class SqliteDrawingJobRepository(
 
         await command.ExecuteNonQueryAsync(cancellationToken);
 
+        await EnsureColumnExistsAsync(connection, "DrawingJobs", "IsPreview", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
         await EnsureColumnExistsAsync(
             connection,
             "DrawingJobs",
@@ -149,6 +151,79 @@ public sealed class SqliteDrawingJobRepository(
         return DrawingJobEnqueueResult.Enqueued;
     }
 
+    public async Task<(DrawingJobEnqueueResult Result, DrawingJob? Job, bool Enqueued)> TryCreatePreviewAsync(
+        DrawingJob job, int maxActiveJobs, int maxActiveJobsPerUser, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxActiveJobs);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxActiveJobsPerUser);
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+
+        await using (var match = connection.CreateCommand())
+        {
+            match.Transaction = transaction;
+            match.CommandText = """
+                SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
+                       StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
+                FROM DrawingJobs WHERE IsPreview=1 AND OwnerUserName=$owner AND TemplateId=$template
+                  AND InputParametersJson=$parameters AND Status IN ($pending,$running)
+                ORDER BY CASE Status WHEN $running THEN 0 ELSE 1 END, CreatedAt DESC LIMIT 1;
+                """;
+            match.Parameters.AddWithValue("$owner", job.OwnerUserName);
+            match.Parameters.AddWithValue("$template", job.TemplateId);
+            match.Parameters.AddWithValue("$parameters", job.InputParametersJson);
+            match.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+            match.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
+            await using var reader = await match.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var existing = MapJob(reader);
+                await reader.DisposeAsync();
+                await using (var cancelOtherPending = connection.CreateCommand())
+                {
+                    cancelOtherPending.Transaction = transaction;
+                    cancelOtherPending.CommandText = "UPDATE DrawingJobs SET Status=$cancelled, FinishedAt=$now WHERE IsPreview=1 AND OwnerUserName=$owner AND Status=$pending AND Id<>$matchedId;";
+                    cancelOtherPending.Parameters.AddWithValue("$cancelled", DrawingJobStatus.Cancelled.ToString());
+                    cancelOtherPending.Parameters.AddWithValue("$now", FormatDate(DateTimeOffset.UtcNow));
+                    cancelOtherPending.Parameters.AddWithValue("$owner", job.OwnerUserName);
+                    cancelOtherPending.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+                    cancelOtherPending.Parameters.AddWithValue("$matchedId", existing.Id);
+                    await cancelOtherPending.ExecuteNonQueryAsync(cancellationToken);
+                }
+                await transaction.CommitAsync(cancellationToken);
+                existing.ResultFiles = [.. await LoadFilesAsync(connection, existing.Id, cancellationToken)];
+                return (DrawingJobEnqueueResult.Enqueued, existing, false);
+            }
+        }
+
+        await using (var cancel = connection.CreateCommand())
+        {
+            cancel.Transaction = transaction;
+            cancel.CommandText = "UPDATE DrawingJobs SET Status=$cancelled, FinishedAt=$now WHERE IsPreview=1 AND OwnerUserName=$owner AND Status=$pending;";
+            cancel.Parameters.AddWithValue("$cancelled", DrawingJobStatus.Cancelled.ToString());
+            cancel.Parameters.AddWithValue("$now", FormatDate(DateTimeOffset.UtcNow));
+            cancel.Parameters.AddWithValue("$owner", job.OwnerUserName);
+            cancel.Parameters.AddWithValue("$pending", DrawingJobStatus.Pending.ToString());
+            await cancel.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var total = await CountActiveCoreAsync(connection, transaction, null, cancellationToken);
+        var user = await CountActiveCoreAsync(connection, transaction, job.OwnerUserName, cancellationToken);
+        if (total >= maxActiveJobs || user >= maxActiveJobsPerUser)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return (total >= maxActiveJobs ? DrawingJobEnqueueResult.TotalLimitReached : DrawingJobEnqueueResult.UserLimitReached, null, false);
+        }
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            ConfigureInsertCommand(insert, job);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return (DrawingJobEnqueueResult.Enqueued, job, true);
+    }
+
     public async Task<DrawingJob?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -187,9 +262,10 @@ public sealed class SqliteDrawingJobRepository(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
+            WHERE IsPreview = 0
             ORDER BY CreatedAt DESC
             LIMIT $take;
             """;
@@ -220,10 +296,10 @@ public sealed class SqliteDrawingJobRepository(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
-            WHERE OwnerUserName = $ownerUserName
+            WHERE OwnerUserName = $ownerUserName AND IsPreview = 0
             ORDER BY CreatedAt DESC
             LIMIT $take;
             """;
@@ -264,7 +340,7 @@ public sealed class SqliteDrawingJobRepository(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Status IN ($completed, $failed, $cancelled)
@@ -359,11 +435,16 @@ public sealed class SqliteDrawingJobRepository(
                 SELECT Id
                 FROM DrawingJobs
                 WHERE Status = $pending
+                  AND (IsPreview = 0 OR NOT EXISTS (
+                      SELECT 1 FROM DrawingJobs runningPreview
+                      WHERE runningPreview.OwnerUserName = DrawingJobs.OwnerUserName
+                        AND runningPreview.IsPreview = 1 AND runningPreview.Status = $running
+                  ))
                 ORDER BY CreatedAt
                 LIMIT 1
             )
               AND Status = $pending
-            RETURNING Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            RETURNING Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                       StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt;
             """;
         command.Parameters.AddWithValue("$running", DrawingJobStatus.Running.ToString());
@@ -621,7 +702,7 @@ public sealed class SqliteDrawingJobRepository(
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Id = $id;
@@ -640,7 +721,7 @@ public sealed class SqliteDrawingJobRepository(
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+            SELECT Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                    StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             FROM DrawingJobs
             WHERE Id = $id AND OwnerUserName = $ownerUserName;
@@ -764,6 +845,7 @@ public sealed class SqliteDrawingJobRepository(
         command.Parameters.AddWithValue("$status", job.Status.ToString());
         command.Parameters.AddWithValue("$inputParametersJson", job.InputParametersJson);
         command.Parameters.AddWithValue("$outputFormat", job.OutputFormat);
+        command.Parameters.AddWithValue("$isPreview", job.IsPreview ? 1 : 0);
         command.Parameters.AddWithValue("$ownerUserName", job.OwnerUserName);
         command.Parameters.AddWithValue("$createdAt", FormatDate(job.CreatedAt));
         command.Parameters.AddWithValue("$startedAt", ToDbValue(job.StartedAt));
@@ -780,11 +862,11 @@ public sealed class SqliteDrawingJobRepository(
     {
         command.CommandText = """
             INSERT INTO DrawingJobs (
-                Id, TemplateId, Status, InputParametersJson, OutputFormat, OwnerUserName, CreatedAt,
+                Id, TemplateId, Status, InputParametersJson, OutputFormat, IsPreview, OwnerUserName, CreatedAt,
                 StartedAt, FinishedAt, ErrorMessage, WorkingDirectory, LeaseToken, LeaseExpiresAt
             )
             VALUES (
-                $id, $templateId, $status, $inputParametersJson, $outputFormat, $ownerUserName, $createdAt,
+                $id, $templateId, $status, $inputParametersJson, $outputFormat, $isPreview, $ownerUserName, $createdAt,
                 $startedAt, $finishedAt, $errorMessage, $workingDirectory, $leaseToken, $leaseExpiresAt
             );
             """;
@@ -800,14 +882,15 @@ public sealed class SqliteDrawingJobRepository(
             Status = Enum.Parse<DrawingJobStatus>(reader.GetString(2)),
             InputParametersJson = reader.GetString(3),
             OutputFormat = reader.GetString(4),
-            OwnerUserName = reader.GetString(5),
-            CreatedAt = ParseDate(reader.GetString(6)),
-            StartedAt = ReadNullableDate(reader, 7),
-            FinishedAt = ReadNullableDate(reader, 8),
-            ErrorMessage = reader.IsDBNull(9) ? null : reader.GetString(9),
-            WorkingDirectory = reader.IsDBNull(10) ? null : reader.GetString(10),
-            LeaseToken = reader.IsDBNull(11) ? null : reader.GetString(11),
-            LeaseExpiresAt = ReadNullableDate(reader, 12)
+            IsPreview = reader.GetInt32(5) != 0,
+            OwnerUserName = reader.GetString(6),
+            CreatedAt = ParseDate(reader.GetString(7)),
+            StartedAt = ReadNullableDate(reader, 8),
+            FinishedAt = ReadNullableDate(reader, 9),
+            ErrorMessage = reader.IsDBNull(10) ? null : reader.GetString(10),
+            WorkingDirectory = reader.IsDBNull(11) ? null : reader.GetString(11),
+            LeaseToken = reader.IsDBNull(12) ? null : reader.GetString(12),
+            LeaseExpiresAt = ReadNullableDate(reader, 13)
         };
     }
 

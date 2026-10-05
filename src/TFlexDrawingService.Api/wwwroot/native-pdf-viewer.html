@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Предпросмотр PDF</title>
+  <link rel="stylesheet" href="/native-pdf-viewer.css">
+  <script type="module" src="/native-pdf-viewer.js"></script>
+</head>
+<body>
+  <main class="pdf-viewer" aria-label="Предпросмотр PDF">
+    <div class="pdf-toolbar" role="toolbar" aria-label="Управление просмотром PDF">
+      <span id="pageControls" class="pdf-page-controls"><button id="previousPage" type="button" aria-label="Предыдущая страница">‹</button>
+      <span class="pdf-page-input"><input id="pageNumber" type="number" min="1" value="1" aria-label="Номер страницы"><span id="pageCount">/ —</span></span>
+      <button id="nextPage" type="button" aria-label="Следующая страница">›</button></span>
+      <span class="pdf-toolbar-spacer"></span>
+      <button id="zoomOut" type="button" aria-label="Уменьшить">−</button>
+      <span id="zoomLabel" class="pdf-zoom-label">По ширине</span>
+      <button id="zoomIn" type="button" aria-label="Увеличить">+</button>
+      <button id="fitWidth" type="button">По ширине</button>
+    </div>
+    <div id="pdfMessage" class="pdf-message" role="status" aria-live="polite">Загрузка PDF…</div>
+    <div id="pdfScroll" class="pdf-scroll" hidden><canvas id="pdfCanvas" aria-label="Страница PDF"></canvas></div>
+  </main>
+</body>
+</html>

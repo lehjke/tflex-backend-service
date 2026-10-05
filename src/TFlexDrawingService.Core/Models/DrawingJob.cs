@@ -10,6 +10,8 @@ public sealed class DrawingJob
 
     public string InputParametersJson { get; set; } = "{}";
 
+    public bool IsPreview { get; set; }
+
     public string OutputFormat { get; set; } = "pdf";
 
     public string OwnerUserName { get; set; } = "legacy";

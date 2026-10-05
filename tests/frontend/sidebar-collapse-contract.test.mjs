@@ -9,15 +9,17 @@ const webRoot = path.join(root, "src/TFlexDrawingService.Api/wwwroot");
 const html = name => fs.readFileSync(path.join(webRoot, `${name}.html`), "utf8");
 
 test("desktop sidebar toggle and navigation icons are shared across pages", () => {
-  const pages = ["index", "drawings", "pricing", "account"].map(html);
-  for (const page of pages) {
+  const pages = ["index", "drawings", "pricing", "account"];
+  for (const pageName of pages) {
+    const page = html(pageName);
     assert.match(page, /class="sidebar__menu-toggle"[^>]*aria-controls="sidebarMenu"[^>]*aria-expanded="false"/u);
     assert.ok(page.indexOf("/sidebar-init.js") < page.indexOf("/styles.css"));
     assert.match(page, /<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"\/>/u);
     assert.equal((page.match(/class="sidebar__nav-icon"/gu) || []).length, 3);
     assert.match(page, /<rect x="5\.5" y="3\.5" width="13" height="17" rx="2"\/>/u);
     assert.match(page, /class="sidebar__help-icon"/u);
-    assert.match(page, /styles\.css\?v=20261001-engineer-global-projects-1/u);
+    const stylesheetKey = pageName === "drawings" ? "restored-svg-1" : "preview-geometry-2";
+    assert.match(page, new RegExp(`styles\\.css\\?v=20261004-${stylesheetKey}`, "u"));
     assert.match(page, /shell\.js\?v=20260924-sidebar-collapse-2/u);
   }
 });

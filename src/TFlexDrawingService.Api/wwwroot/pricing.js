@@ -7,7 +7,7 @@ import {
   resolveDrawingDoorCount,
   resolveDrawingConfigurationValues,
   toTravelHeightMillimeters
-} from "./drawing-configuration-values.js?v=20260830-readable-validation-errors-1";
+} from "./drawing-configuration-values.js?v=20261004-preview-geometry-2";
 
 const state = {
   currentUser: null,

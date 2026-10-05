@@ -255,6 +255,12 @@ public sealed class DrawingJobProcessorTests
                 cancellationToken);
         }
 
+        public Task<(DrawingJobEnqueueResult Result, DrawingJob? Job, bool Enqueued)> TryCreatePreviewAsync(
+            DrawingJob job, int maxActiveJobs, int maxActiveJobsPerUser, CancellationToken cancellationToken = default)
+        {
+            return inner.TryCreatePreviewAsync(job, maxActiveJobs, maxActiveJobsPerUser, cancellationToken);
+        }
+
         public Task<DrawingJob?> GetAsync(
             string id,
             CancellationToken cancellationToken = default)

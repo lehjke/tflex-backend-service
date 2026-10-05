@@ -138,6 +138,27 @@ test("recalculates automatic headroom and pit for LEHY-L-PRO 1050-2500 speed cha
     { OH: 5350, PD: 2300 });
 });
 
+test("keeps K-II-TYPE calculated landing plates consistent with manual and automatic modes", () => {
+  const template = catalog.templates.find(item => item.id === "k_ii_type");
+  const manual = resolveDrawingConfigurationValues({ parameters: { HE: 3900, Handmade: true } }, template, {
+    TK_v: 2253,
+    TJ_v: 2625
+  });
+
+  assert.equal(manual.TK, 2253);
+  assert.equal(manual.TJ, 2625);
+  assert.ok(Math.abs(manual.TG - (3900 / Math.tan(Math.PI / 6) + 2625 + 2253)) < 0.01);
+  assert.equal(manual.LL, manual.TG + 240);
+
+  const automatic = resolveDrawingConfigurationValues({ parameters: { HE: 3900, Handmade: false } }, template);
+  assert.equal(automatic.TK, automatic.TKmin);
+  assert.equal(automatic.TJ, automatic.TJmin);
+  assert.equal(automatic.TKmin, 2178);
+  assert.equal(automatic.TJmin, 2435);
+  assert.ok(Math.abs(automatic.TG - (3900 / Math.tan(Math.PI / 6) + automatic.TJ + automatic.TK)) < 0.01);
+  assert.equal(automatic.LL, automatic.TG + 240);
+});
+
 test("normalizes drawing travel height to pricing millimeters", () => {
   assert.equal(toTravelHeightMillimeters(30), 30000);
   assert.equal(toTravelHeightMillimeters("30,5"), 30500);
@@ -328,4 +349,12 @@ test("CWT safety gear changes calculated shaft constraints for every applicable 
       dimensionNames.some(name => disabled[name] !== enabled[name]),
       `${templateId}: CWT safety gear does not affect shaft constraints`);
   }
+});
+
+
+test("preserves cabin unfolding source offsets instead of legacy shaft-door defaults", () => {
+  const template = catalog.templates.find(item => item.id === "razvertki_lehy");
+  assert.equal(resolveDrawingConfigurationValues({parameters:{}},template).A4,75);
+  assert.equal(resolveDrawingConfigurationValues({parameters:{AA:2100,JJ:900}},template).A4,575);
+  assert.equal(resolveDrawingConfigurationValues({parameters:{$Opening:"CO",A4_v:-40}},template).A4,-40);
 });

@@ -7,7 +7,7 @@
   <title>Создание чертежей — МЛТ</title>
   <link rel="icon" href="/assets/mlt-mark-favicon.svg?v=20260825-mlt-mark-1" type="image/svg+xml">
   <script src="/sidebar-init.js?v=20260924-sidebar-collapse-1"></script>
-  <link rel="stylesheet" href="/styles.css?v=20261001-engineer-global-projects-1">
+  <link rel="stylesheet" href="/styles.css?v=20261005-preview-design-1">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Перейти к основному содержимому</a>
@@ -258,7 +258,7 @@
           </form>
         </section>
 
-        <aside class="preview-stack">
+        <aside class="preview-stack" tabindex="0" aria-label="Генерация и предпросмотр">
           <section class="panel panel--status">
             <div class="panel__header">
               <h2>Генерация</h2>
@@ -285,19 +285,25 @@
           </section>
 
           <section class="panel panel--preview">
-            <div class="panel__header">
-              <div>
-                <h2 id="previewPanelTitle">План шахты</h2>
-                <p id="shaftPreviewSubtitle" class="panel__subtitle">Live preview по текущим параметрам</p>
+            <div class="preview-toolbar">
+              <div class="panel__header">
+                <div>
+                  <h2 id="previewPanelTitle">Предпросмотр плана</h2>
+                  <p id="shaftPreviewSubtitle" class="panel__subtitle">План из оригинального чертежа</p>
+                </div>
+              </div>
+              <div class="preview-mode-switch" role="group" aria-label="Режим предпросмотра">
+                <button id="previewModeSvg" class="secondary" type="button" aria-pressed="false"><span>SVG</span><span>Быстрая схема</span></button>
+                <button id="previewModePdf" class="secondary" type="button" aria-pressed="true"><span>PDF</span><span>Точный чертёж</span></button>
               </div>
             </div>
-            <div id="shaftPreviewUnavailable" class="preview-unavailable" hidden>
-              Предпросмотр доступен для шаблонов LEHY-L-PRO, LEHY-PRO и K-II-TYPE.
-            </div>
-            <div id="shaftPreviewContent" class="shaft-preview">
-              <div id="shaftPreviewCanvas" class="shaft-preview__canvas"></div>
-              <div id="shaftCollisionStatus" class="preview-collision-status" role="alert" aria-live="assertive" hidden></div>
-              <dl id="shaftPreviewMetrics" class="shaft-preview__metrics"></dl>
+            <div id="svgPreviewStatus" class="native-preview-status" role="status" aria-live="polite" hidden></div>
+            <div id="svgPreviewCanvas" class="svg-preview-canvas" hidden></div>
+            <div id="nativePreviewStatus" class="native-preview-status" role="status" aria-live="polite" aria-atomic="true">Выберите шаблон, чтобы увидеть предпросмотр PDF.</div>
+            <button id="nativePreviewRetry" class="secondary native-preview-retry" type="button" hidden>Повторить</button>
+            <div class="native-preview-viewer">
+              <iframe id="nativePreviewFrame" title="Предпросмотр плана чертежа" hidden></iframe>
+              <a id="nativePreviewOpen" class="button-link native-preview-open" target="_blank" rel="noopener" hidden>Открыть весь лист</a>
             </div>
           </section>
         </aside>
@@ -329,6 +335,6 @@
   </div>
 
   <script type="module" src="/shell.js?v=20260924-sidebar-collapse-2"></script>
-  <script type="module" src="/app.js?v=20261001-engineer-global-projects-1"></script>
+  <script type="module" src="/app.js?v=20261005-preview-design-1"></script>
 </body>
 </html>

@@ -29,6 +29,93 @@ public sealed class DrawingJobQueueTests
     }
 
     [Fact]
+    public async Task PreviewQueue_ReusesMatchingJobsAndKeepsOnlyLatestPendingPerOwner()
+    {
+        var (repository, _, _) = await CreateQueueAsync();
+        var first = CreateJob("owner"); first.IsPreview = true;
+        var created = await repository.TryCreatePreviewAsync(first, 10, 5);
+        Assert.True(created.Enqueued);
+        var duplicate = CreateJob("owner"); duplicate.IsPreview = true;
+        var reused = await repository.TryCreatePreviewAsync(duplicate, 10, 5);
+        Assert.False(reused.Enqueued);
+        Assert.Equal(first.Id, reused.Job!.Id);
+
+        var running = await repository.TryClaimNextPendingAsync("lease", DateTimeOffset.UtcNow.AddMinutes(1));
+        Assert.Equal(first.Id, running!.Id);
+        var next = CreateJob("owner"); next.IsPreview = true; next.InputParametersJson = "{\"size\":2}";
+        var queued = await repository.TryCreatePreviewAsync(next, 10, 5);
+        Assert.True(queued.Enqueued);
+        var latest = CreateJob("owner"); latest.IsPreview = true; latest.InputParametersJson = "{\"size\":3}";
+        Assert.True((await repository.TryCreatePreviewAsync(latest, 10, 5)).Enqueued);
+        Assert.Equal(DrawingJobStatus.Cancelled, (await repository.GetAsync(next.Id))!.Status);
+        Assert.Null(await repository.TryClaimNextPendingAsync("second-lease", DateTimeOffset.UtcNow.AddMinutes(1)));
+        Assert.Equal(2, await repository.CountActiveAsync("owner"));
+        Assert.Empty(await repository.ListAsync(50, "owner"));
+    }
+
+    [Fact]
+    public async Task PreviewQueue_ReusingRunningPreviewCancelsOtherPendingPreviews()
+    {
+        var (repository, _, _) = await CreateQueueAsync();
+        var runningPreview = CreateJob("owner");
+        runningPreview.IsPreview = true;
+        Assert.True((await repository.TryCreatePreviewAsync(runningPreview, 10, 5)).Enqueued);
+        Assert.Equal(runningPreview.Id,
+            (await repository.TryClaimNextPendingAsync("lease", DateTimeOffset.UtcNow.AddMinutes(1)))!.Id);
+
+        var otherPendingPreview = CreateJob("owner");
+        otherPendingPreview.IsPreview = true;
+        otherPendingPreview.InputParametersJson = "{\"size\":2}";
+        Assert.True((await repository.TryCreatePreviewAsync(otherPendingPreview, 10, 5)).Enqueued);
+
+        var requestForRunningPreview = CreateJob("owner");
+        requestForRunningPreview.IsPreview = true;
+        var reused = await repository.TryCreatePreviewAsync(requestForRunningPreview, 10, 5);
+
+        Assert.False(reused.Enqueued);
+        Assert.Equal(runningPreview.Id, reused.Job!.Id);
+        Assert.Equal(DrawingJobStatus.Running, (await repository.GetAsync(runningPreview.Id))!.Status);
+        Assert.Equal(DrawingJobStatus.Cancelled, (await repository.GetAsync(otherPendingPreview.Id))!.Status);
+        Assert.Null(await repository.TryClaimNextPendingAsync("second-lease", DateTimeOffset.UtcNow.AddMinutes(1)));
+    }
+
+    [Fact]
+    public async Task PreviewQueue_DoesNotReuseCompletedOutput()
+    {
+        var (repository, _, _) = await CreateQueueAsync();
+        var first = CreateJob("owner"); first.IsPreview = true;
+        await repository.TryCreatePreviewAsync(first, 10, 5);
+        var claimed = await repository.TryClaimNextPendingAsync("lease", DateTimeOffset.UtcNow.AddMinutes(1));
+        Assert.True(await repository.MarkCompletedAsync(first.Id, DateTimeOffset.UtcNow, leaseToken: claimed!.LeaseToken));
+
+        var next = CreateJob("owner"); next.IsPreview = true;
+        var result = await repository.TryCreatePreviewAsync(next, 10, 5);
+
+        Assert.True(result.Enqueued);
+        Assert.Equal(next.Id, result.Job!.Id);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_AddsPreviewColumnToExistingDatabase()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        var options = Options.Create(new DrawingStorageOptions { RootPath = root, DatabasePath = Path.Combine(root, "old.db") });
+        Directory.CreateDirectory(root);
+        await using (var connection = new SqliteConnection($"Data Source={options.Value.DatabasePath}"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TABLE DrawingJobs (Id TEXT PRIMARY KEY, TemplateId TEXT NOT NULL, Status TEXT NOT NULL, InputParametersJson TEXT NOT NULL, OutputFormat TEXT NOT NULL, OwnerUserName TEXT NOT NULL DEFAULT 'legacy', CreatedAt TEXT NOT NULL, StartedAt TEXT NULL, FinishedAt TEXT NULL, ErrorMessage TEXT NULL, WorkingDirectory TEXT NULL, LeaseToken TEXT NULL, LeaseExpiresAt TEXT NULL);";
+            await command.ExecuteNonQueryAsync();
+        }
+        var repository = new SqliteDrawingJobRepository(options, NullLogger<SqliteDrawingJobRepository>.Instance);
+        await repository.InitializeAsync();
+        var job = CreateJob("owner"); job.IsPreview = true;
+        await repository.CreateAsync(job);
+        Assert.True((await repository.GetAsync(job.Id))!.IsPreview);
+    }
+
+    [Fact]
     public async Task TryCancelPendingAsync_CancelsOnlyUnclaimedJobs()
     {
         var (repository, _, _) = await CreateQueueAsync();

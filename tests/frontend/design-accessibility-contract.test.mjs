@@ -148,7 +148,7 @@ test("editor exposes labels, preserves text selection, announces collisions, and
 
   assert.match(source, /showAllParameters: true/u);
   assert.match(html, /id="showAllParametersToggle"[^>]*checked/u);
-  assert.match(html, /\/app\.js\?v=20261001-engineer-global-projects-1/u);
+  assert.match(html, /\/app\.js\?v=20261004-restored-svg-1/u);
   assert.doesNotMatch(html, /id="createTopButton"/u);
   assert.ok(
     html.indexOf('class="panel panel--status"') < html.indexOf('class="panel panel--preview"'),
@@ -170,10 +170,10 @@ test("editor exposes labels, preserves text selection, announces collisions, and
   assert.match(source, /function setJobSubmitDisabled\(disabled\)/u);
   assert.match(source, /parameterTabs\.scrollBy/u);
   assert.match(source, /new ResizeObserver\(updateParameterTabScrollControls\)/u);
-  assert.match(html, /id="shaftCollisionStatus"[^>]*role="alert"/u);
-  assert.match(source, /\.shaft-preview-svg__door--collision/u);
-  assert.match(source, /previewImage\?\.setAttribute\("aria-describedby", "shaftCollisionStatus"\)/u);
-  assert.match(source, /shaftPreviewContent\.hidden = false;\s*updatePreviewCollisionStatus\(\)/u);
+  assert.match(html, /id="nativePreviewFrame" title="Предпросмотр плана чертежа"/u);
+  assert.match(html, /id="nativePreviewStatus" class="native-preview-status" role="status" aria-live="polite"/u);
+  assert.match(html, /id="nativePreviewOpen"[^>]*target="_blank" rel="noopener"/u);
+  assert.match(source, /createNativePreviewController/u);
   assert.match(html, /id="pageLoadError"[^>]*role="alert"/u);
   assert.match(html, /id="pageLoadErrorTitle"/u);
   assert.match(html, /id="pageLoadErrorMessage"/u);
@@ -337,9 +337,10 @@ test("SMEC drawing templates expose the same inline dimension units as XIZI temp
 test("all frontend pages share the current stylesheet cache key", () => {
   const pageNames = ["index.html", "drawings.html", "pricing.html", "account.html"];
   for (const pageName of pageNames) {
+    const expectedKey = pageName === "drawings.html" ? "restored-svg-1" : "preview-geometry-2";
     assert.match(
       readWebSource(pageName),
-      /\/styles\.css\?v=20261001-engineer-global-projects-1/u,
+      new RegExp(`/styles\\.css\\?v=20261004-${expectedKey}`, "u"),
       `${pageName} must load the current stylesheet`);
   }
 });
