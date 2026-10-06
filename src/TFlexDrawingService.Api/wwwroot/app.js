@@ -1146,8 +1146,8 @@ function updateShaftPreview(context = null) {
         ? `<div class="shaft-preview"><div class="shaft-preview__canvas">${svg}</div><details class="shaft-preview__parameters"${parametersOpen ? " open" : ""}><summary>Параметры превью</summary><dl class="shaft-preview__metrics">${metrics}</dl></details></div>`
         : "";
       svgPreviewCanvas.hidden = !svg;
-      svgPreviewStatus.hidden = false;
-      svgPreviewStatus.textContent = svg ? "Обновляется при изменении параметров." : "Схема недоступна: проверьте параметры геометрии.";
+      svgPreviewStatus.hidden = Boolean(svg);
+      svgPreviewStatus.textContent = svg ? "" : "Схема недоступна: проверьте параметры геометрии.";
       if (shaftPreviewSubtitle) shaftPreviewSubtitle.textContent = "Схема по текущим параметрам";
     }
     return;

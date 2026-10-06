@@ -5851,6 +5851,8 @@ summary:focus-visible,
   z-index: 2;
   top: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
   margin: calc(-1 * var(--panel-padding)) calc(-1 * var(--panel-padding)) 0;
   padding: var(--panel-padding) var(--panel-padding) 10px;
@@ -5869,7 +5871,7 @@ summary:focus-visible,
 .panel--preview .panel__subtitle { margin-top: 3px; }
 
 .preview-mode-switch {
-  display: grid;
+  display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
   margin: 0;
@@ -5878,12 +5880,12 @@ summary:focus-visible,
   border-radius: var(--control-radius, 8px);
 }
 .preview-mode-switch button {
-  display: grid;
-  align-content: center;
-  gap: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
-  min-height: 44px;
-  padding: 5px 8px;
+  min-height: 40px;
+  padding: 5px 12px;
   border: 0;
   border-radius: 0;
   background: var(--surface);
@@ -5893,12 +5895,10 @@ summary:focus-visible,
 }
 .preview-mode-switch button + button { border-left: 1px solid var(--line-strong); }
 .preview-mode-switch button:hover { background: var(--surface-soft); transform: none; box-shadow: none; }
-.preview-mode-switch button[aria-pressed="true"]:hover { background: var(--brand); color: #fff; }
-.preview-mode-switch button span:first-child { font-size: 13px; font-weight: 700; }
-.preview-mode-switch button span:last-child { font-size: 12px; font-weight: 650; }
-.preview-mode-switch button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.preview-mode-switch button[aria-pressed="true"]:hover { background: var(--navy); color: #fff; }
+.preview-mode-switch button[aria-pressed="true"] { background: var(--navy); color: #fff; }
 .preview-mode-switch button:active { background: var(--surface-soft); color: var(--ink); transform: none; box-shadow: none; transition: none; }
-.preview-mode-switch button[aria-pressed="true"]:active { background: var(--brand); color: #fff; opacity: .82; }
+.preview-mode-switch button[aria-pressed="true"]:active { background: var(--navy); color: #fff; opacity: .82; }
 .preview-mode-switch button:focus-visible,
 .panel--preview :is(summary, .native-preview-retry, .native-preview-open):focus-visible {
   position: relative;
@@ -5945,6 +5945,7 @@ summary:focus-visible,
 .panel--preview .shaft-preview__metric dt { font-size: 12px; font-weight: 650; }
 .panel--preview .shaft-preview__metric dd { display: grid; gap: 2px; font-size: 13px; font-weight: 700; }
 .native-preview-status { min-height: 2.8em; margin: 0; }
+.panel--preview:has(#previewModePdf[aria-pressed="true"]):has(#nativePreviewFrame:not([hidden])) #nativePreviewStatus { display: none; }
 .panel--preview:has(#previewModePdf[aria-pressed="true"]):has(#nativePreviewFrame[hidden]) #nativePreviewStatus {
   display: grid;
   place-items: center;
@@ -5957,6 +5958,7 @@ summary:focus-visible,
   text-align: center;
 }
 .native-preview-viewer iframe { min-height: clamp(22rem, 55dvh, 38rem); }
+.native-preview-open { display: inline-flex; align-items: center; justify-content: center; line-height: 1.25; padding: 8px 12px; }
 .native-preview-retry,
 .native-preview-open { min-height: 44px; }
 .native-preview-retry { margin: 0; }
@@ -5965,6 +5967,11 @@ summary:focus-visible,
   .preview-stack { scroll-padding-block-start: 0; }
   .preview-toolbar { position: static; margin: 0; padding: 0 0 10px; }
   .panel--preview :is(summary, .native-preview-retry, .native-preview-open) { scroll-margin-block-start: 0; }
+}
+
+@media (max-width: 560px) {
+  .preview-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .preview-mode-switch { justify-self: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
