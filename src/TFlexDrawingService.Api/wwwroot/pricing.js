@@ -729,7 +729,9 @@ function getVisualOptionMeta(code, select) {
   return {
     code,
     imageUrl: item?.imageUrl || "",
-    description: item?.description || select?.dataset?.description || select?.closest(".field")?.querySelector(".field__label")?.textContent || ""
+    description: select?.id === "smecCopFaceplateSelect" && /(?:^| )SUS-[IS]$/.test(code)
+      ? "Цена по запросу"
+      : item?.description || select?.dataset?.description || select?.closest(".field")?.querySelector(".field__label")?.textContent || ""
   };
 }
 

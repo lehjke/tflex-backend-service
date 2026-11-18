@@ -541,7 +541,7 @@ public sealed class PricingCatalogStoreTests
                 "basePrices": [
                   {
                     "series": "LEHY-L-Pro",
-                    "capacity": 1050,
+                    "capacity": 1350,
                     "speed": 1.0,
                     "basicStops": 5,
                     "basicPrice": 100000,
@@ -551,12 +551,16 @@ public sealed class PricingCatalogStoreTests
                   }
                 ],
                 "decorations": [
-                  { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1050, "variant": "P13W", "price": 16830 },
-                  { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1050, "variant": "P14D", "price": 20200 },
-                  { "category": "FrontPanel", "code": "SUS-H", "capacity": 1050, "variant": null, "price": 620 },
-                  { "category": "CarDoor", "code": "SUS-H", "capacity": 1050, "variant": null, "price": 790 },
-                  { "category": "Ceiling", "code": "ZCL-GS06", "capacity": 1050, "variant": null, "price": 7520 },
-                  { "category": "Floor", "code": "Parquet PVC", "capacity": 1050, "variant": null, "price": 990 }
+                  { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1350, "variant": "P13W", "price": 16830 },
+                  { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1350, "variant": "P14D", "price": 20200 },
+                  { "category": "FrontPanel", "code": "SUS-H", "capacity": 1350, "variant": null, "price": 620 },
+                  { "category": "CarDoor", "code": "SUS-H", "capacity": 1350, "variant": null, "price": 790 },
+                  { "category": "FrontPanel", "code": "SUS-I", "capacity": 1350, "variant": null, "price": 1760 },
+                  { "category": "FrontPanel", "code": "ZDT-505 SUS-I", "capacity": 1350, "variant": null, "price": 2450 },
+                  { "category": "CarDoor", "code": "SUS-I", "capacity": 1350, "variant": null, "price": 2170 },
+                  { "category": "CarDoor", "code": "ZDT-505 SUS-I", "capacity": 1350, "variant": null, "price": 2980 },
+                  { "category": "Ceiling", "code": "ZCL-GS06", "capacity": 1350, "variant": null, "price": 7520 },
+                  { "category": "Floor", "code": "Parquet PVC", "capacity": 1350, "variant": null, "price": 990 }
                 ]
               }
             }
@@ -571,7 +575,7 @@ public sealed class PricingCatalogStoreTests
                 new PricingCalculationRequest(
                     "SMEC",
                     "LEHY-L-Pro",
-                    1050,
+                    1350,
                     1m,
                     5,
                     900,
@@ -592,7 +596,7 @@ public sealed class PricingCatalogStoreTests
                         ["BB"] = "2100",
                         ["Car Design"] = "ZCD-020X",
                         ["Wall"] = "SUS-H",
-                        ["Car Door"] = "SUS-H",
+                        ["Car Door"] = "ZDT-505 SUS-I",
                         ["Ceiling"] = "ZCL-GS06",
                         ["Floor Type"] = "Parquet PVC",
                         ["Mirror"] = "None"
@@ -600,10 +604,12 @@ public sealed class PricingCatalogStoreTests
                     null));
 
             Assert.Equal("ready", result.Status);
-            Assert.Equal(130120m, result.TotalCny);
+            Assert.Equal(134140m, result.TotalCny);
             Assert.Contains(result.Lines, line => line.Label == "Дизайн кабины ZCD-020X" && line.AmountCny == 20200m);
-            Assert.Contains(result.Lines, line => line.Label == "Передняя панель кабины SUS-H" && line.AmountCny == 620m);
-            Assert.Contains(result.Lines, line => line.Label == "Дверь кабины SUS-H" && line.AmountCny == 790m);
+            Assert.Contains(result.Lines, line => line.Label == "Передняя панель кабины ZDT-505 SUS-I: нержавеющая сталь Irregular Line" && line.AmountCny == 1760m);
+            Assert.Contains(result.Lines, line => line.Label == "Передняя панель кабины ZDT-505 SUS-I: титановое покрытие ZDT-505" && line.AmountCny == 690m);
+            Assert.Contains(result.Lines, line => line.Label == "Дверь кабины ZDT-505 SUS-I: нержавеющая сталь Irregular Line" && line.AmountCny == 2170m);
+            Assert.Contains(result.Lines, line => line.Label == "Дверь кабины ZDT-505 SUS-I: титановое покрытие ZDT-505" && line.AmountCny == 810m);
             Assert.Contains(result.Lines, line => line.Label == "Потолок" && line.AmountCny == 7520m);
             Assert.Contains(result.Lines, line => line.Label == "Пол" && line.AmountCny == 990m);
         }
@@ -1755,10 +1761,24 @@ public sealed class PricingCatalogStoreTests
         PricingLine Line(string label) => Assert.Single(result.Lines, line => line.Label.StartsWith(label, StringComparison.Ordinal));
         Assert.Equal(1760m, Line("UV disinfection").AmountCny);
         Assert.Equal(16000m, Line("Reduced overhead").AmountCny);
-        Assert.Equal(1000m, Line("Kickplate finish").AmountCny);
-        Assert.Equal(700m, Line("Handrail finish").AmountCny);
-        Assert.Equal(1500m, Line("Button finish").AmountCny);
-        Assert.Equal(490m, Line("COP Faceplate").AmountCny);
+        Assert.Equal((1000m, 1000m, 1, "ready"), (Line("Плинтус кабины").UnitPriceCny, Line("Плинтус кабины").AmountCny, Line("Плинтус кабины").Quantity, Line("Плинтус кабины").Status));
+        Assert.Equal((700m, 700m, 1, "ready"), (Line("Поручень: титановое покрытие ZDT-501").UnitPriceCny, Line("Поручень: титановое покрытие ZDT-501").AmountCny, Line("Поручень: титановое покрытие ZDT-501").Quantity, Line("Поручень: титановое покрытие ZDT-501").Status));
+        Assert.Equal((300m, 1500m, 5, "ready"), (Line("Кнопки: титановое покрытие ZDT-501").UnitPriceCny, Line("Кнопки: титановое покрытие ZDT-501").AmountCny, Line("Кнопки: титановое покрытие ZDT-501").Quantity, Line("Кнопки: титановое покрытие ZDT-501").Status));
+        Assert.Equal((490m, 490m, 1, "ready"), (Line("Панель COP: нержавеющая сталь Hairline, титановое покрытие ZDT-001").UnitPriceCny, Line("Панель COP: нержавеющая сталь Hairline, титановое покрытие ZDT-001").AmountCny, Line("Панель COP: нержавеющая сталь Hairline, титановое покрытие ZDT-001").Quantity, Line("Панель COP: нержавеющая сталь Hairline, титановое покрытие ZDT-001").Status));
+        var plainFinish = await store.CalculateAsync(request with
+        {
+            SpecificationFields = request.SpecificationFields!
+                .Where(item => item.Key is not ("Kickplate Finish" or "Handrail Finish" or "Button Finish"))
+                .Concat(new[]
+                {
+                    new KeyValuePair<string, string>("Kickplate Finish", "SUS-H"),
+                    new KeyValuePair<string, string>("Handrail Finish", "SUS-H"),
+                    new KeyValuePair<string, string>("Button Finish", "SUS-H")
+                }).ToDictionary(item => item.Key, item => item.Value)
+        });
+        Assert.Equal((0m, 0m, "ready"), (Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Плинтус кабины: SUS-H", StringComparison.Ordinal)).UnitPriceCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Плинтус кабины: SUS-H", StringComparison.Ordinal)).AmountCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Плинтус кабины: SUS-H", StringComparison.Ordinal)).Status));
+        Assert.Equal((0m, 0m, "ready"), (Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Поручень: SUS-H", StringComparison.Ordinal)).UnitPriceCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Поручень: SUS-H", StringComparison.Ordinal)).AmountCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Поручень: SUS-H", StringComparison.Ordinal)).Status));
+        Assert.Equal((0m, 0m, "ready"), (Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Кнопки: SUS-H", StringComparison.Ordinal)).UnitPriceCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Кнопки: SUS-H", StringComparison.Ordinal)).AmountCny, Assert.Single(plainFinish.Lines, line => line.Label.StartsWith("Кнопки: SUS-H", StringComparison.Ordinal)).Status));
         Assert.Equal(60m, Line("Main LOP Faceplate").AmountCny);
         Assert.Equal(1920m, Line("Other LOP Faceplate").AmountCny);
         Assert.Equal(5, Line("Fire-rated landing doors").Quantity);
@@ -1766,6 +1786,42 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal(6, Line("Glass doors").Quantity);
         Assert.True(Line("Glass doors").AmountCny > 0);
         Assert.Equal(9280m, Line("CWT Safety Gear").AmountCny);
+        var unpricedRequest = request with
+        {
+            SpecificationFields = request.SpecificationFields!
+                .Where(item => item.Key != "COP Faceplate")
+                .Append(new KeyValuePair<string, string>("COP Faceplate", "ZDT-001 SUS-I"))
+                .ToDictionary(item => item.Key, item => item.Value)
+        };
+        var unpriced = await store.CalculateAsync(unpricedRequest);
+        var unpricedLine = Assert.Single(unpriced.Lines, line => line.Label.Contains("COP Faceplate: ZDT-001 SUS-I", StringComparison.Ordinal));
+        Assert.Null(unpricedLine.AmountCny);
+        Assert.Contains("цена по запросу", unpricedLine.Label, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("blocked", unpricedLine.Status);
+        Assert.Equal("blocked", unpriced.Status);
+        var copChoices = store.GetSummary().SmecChoiceGroups.Single(group => group.Name == "CopFaceplate").Options;
+        Assert.Contains("SUS-I", copChoices);
+        Assert.Contains("SUS-S", copChoices);
+        Assert.Contains("ZDT-506 SUS-I", copChoices);
+        Assert.Contains("ZDT-506 SUS-S", copChoices);
+        var mirrorCop = await store.CalculateAsync(request with
+        {
+            SpecificationFields = request.SpecificationFields!.Where(item => item.Key != "COP Faceplate")
+                .Append(new KeyValuePair<string, string>("COP Faceplate", "ZDT-505 SUS-M"))
+                .ToDictionary(item => item.Key, item => item.Value)
+        });
+        var mirrorCopLine = Assert.Single(mirrorCop.Lines, line => line.Label.StartsWith("Панель COP: зеркальная нержавеющая сталь, титановое покрытие ZDT-505", StringComparison.Ordinal));
+        Assert.Equal((1200m, 1200m, 1, "ready"), (mirrorCopLine.UnitPriceCny, mirrorCopLine.AmountCny, mirrorCopLine.Quantity, mirrorCopLine.Status));
+        var unsupportedKickplate = await store.CalculateAsync(request with
+        {
+            SpecificationFields = request.SpecificationFields!.Where(item => item.Key != "Kickplate Finish")
+                .Append(new KeyValuePair<string, string>("Kickplate Finish", "ZDT-505"))
+                .ToDictionary(item => item.Key, item => item.Value)
+        });
+        var unsupportedLine = Assert.Single(unsupportedKickplate.Lines, line => line.Label.Contains("Плинтус кабины: ZDT-505", StringComparison.Ordinal));
+        Assert.Null(unsupportedLine.AmountCny);
+        Assert.Equal("blocked", unsupportedLine.Status);
+        Assert.Equal("blocked", unsupportedKickplate.Status);
         Assert.Equal(6000m, Line("Функция Roller guide shoe").AmountCny);
         Assert.DoesNotContain(result.Warnings, warning => warning.Contains("EI60") && warning.Contains("EI120"));
 

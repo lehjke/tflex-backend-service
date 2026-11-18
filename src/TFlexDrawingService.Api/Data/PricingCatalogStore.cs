@@ -70,7 +70,9 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 Options = group.Options.Where(option => !ExcludedSmecSeries.Contains(option)).ToArray()
             }).Concat(new[] { "CopFaceplate", "LopFaceplate" }.Select(category =>
                 new SpecificationChoiceGroup(category, "", [], catalog.Smec.Decorations
-                    .Where(item => item.Category == category).Select(item => item.Code).Distinct().ToArray())))
+                    .Where(item => item.Category == category).Select(item => item.Code)
+                    .Concat(category == "CopFaceplate" ? UnpricedCopFaceplateChoices : [])
+                    .Distinct().ToArray())))
                 .ToArray(),
             catalog.Smec.FloorPatterns);
     }
@@ -1262,7 +1264,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         AddSmecDoorMode(catalog, request, lines, warnings);
         var components = AddSmecEquipmentLines(catalog, request, lines, warnings, blockers);
         AddSmecOptionalFunctions(catalog, request, lines, warnings);
-        var doorAddonPrice = AddSmecOtherRequirements(catalog, request, components.HandrailQuantity, lines, warnings);
+        var doorAddonPrice = AddSmecOtherRequirements(catalog, request, components.HandrailQuantity, lines, warnings, blockers);
         AddSmecSpecialConditions(
             catalog,
             request,
@@ -1360,8 +1362,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         {
             frontWall = FindSmecDecoration(catalog.Decorations, request, "FrontPanel", carDoor!, null);
             cabinDoor = FindSmecDecoration(catalog.Decorations, request, "CarDoor", carDoor!, null);
-            AddSmecResolvedDecoration(lines, warnings, blockers, "cabin-front", $"Передняя панель кабины {carDoor}", frontWall);
-            AddSmecResolvedDecoration(lines, warnings, blockers, "cabin-door", $"Дверь кабины {carDoor}", cabinDoor);
+            AddSmecMaterialBreakdown(catalog, request, lines, warnings, blockers, "FrontPanel", "cabin-front", $"Передняя панель кабины {carDoor}", carDoor!, frontWall);
+            AddSmecMaterialBreakdown(catalog, request, lines, warnings, blockers, "CarDoor", "cabin-door", $"Дверь кабины {carDoor}", carDoor!, cabinDoor);
         }
 
         var ceilingCode = GetSpecificationField(request, "Ceiling");
@@ -1480,6 +1482,35 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         int quantity = 1)
     {
         AddCatalogValue(lines, warnings, blockers, code, label, entry?.Price, false, quantity);
+    }
+
+    private static void AddSmecMaterialBreakdown(
+        SmecCatalog catalog,
+        PricingCalculationRequest request,
+        List<PricingLine> lines,
+        List<string> warnings,
+        List<string> blockers,
+        string category,
+        string lineCode,
+        string label,
+        string materialCode,
+        SmecDecorationPrice? entry)
+    {
+        if (!EqualsText(materialCode, "ZDT-505 SUS-I") || request.CapacityKg != 1350 || entry?.Price is null)
+        {
+            AddSmecResolvedDecoration(lines, warnings, blockers, lineCode, label, entry);
+            return;
+        }
+
+        var basePrice = FindSmecDecoration(catalog.Decorations, request, category, "SUS-I", null)?.Price;
+        if (basePrice is null || entry.Price < basePrice)
+        {
+            AddSmecResolvedDecoration(lines, warnings, blockers, lineCode, label, entry);
+            return;
+        }
+
+        AddCatalogValue(lines, warnings, blockers, $"{lineCode}-material", $"{label}: нержавеющая сталь Irregular Line", basePrice, false);
+        AddCatalogValue(lines, warnings, blockers, $"{lineCode}-coating", $"{label}: титановое покрытие ZDT-505", entry.Price - basePrice, false);
     }
 
     private static void AddSmecSillLine(
@@ -1642,7 +1673,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         PricingCalculationRequest request,
         int handrailQuantity,
         List<PricingLine> lines,
-        List<string> warnings)
+        List<string> warnings,
+        List<string> blockers)
     {
         decimal doorAddonPrice = 0;
         string Field(string key) => GetSpecificationField(request, key) ?? "";
@@ -1684,18 +1716,38 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
                 request.DoorCount + carDoorCount);
         }
         if (Selected("Kickplate Finish"))
-            Add("kickplate-finish", $"Kickplate finish: {Field("Kickplate Finish")}", 1000, 1);
+        {
+            var code = Field("Kickplate Finish");
+            if (EqualsText(code, "SUS-H"))
+                Add("kickplate-finish", "Плинтус кабины: SUS-H, без надбавки по прайсу", 0, 1);
+            else if (Regex.IsMatch(code, @"^ZDT-00[1-6]$", RegexOptions.IgnoreCase))
+                Add("kickplate-finish", $"Плинтус кабины: титановое покрытие {code}, за кабину", 1000, 1);
+            else
+                AddSmecPriceOnRequest("kickplate-finish", $"Плинтус кабины: {code}", 1);
+        }
         if (Selected("Handrail Finish"))
         {
             var code = Field("Handrail Finish");
             var quantity = Selected("Handrail") ? handrailQuantity : 0;
             if (quantity == 0) warnings.Add("Отделка поручня выбрана без поручня: надбавка не начислена.");
-            Add("handrail-finish", $"Handrail finish: {code}", code.Contains("ZDT-500", StringComparison.OrdinalIgnoreCase) ? 400
-                : code.Contains("ZDT-50", StringComparison.OrdinalIgnoreCase) ? 700 : 300, quantity);
+            var price = Regex.Match(code, @"^ZDT-(\d{3})$", RegexOptions.IgnoreCase) is { Success: true } match
+                ? match.Groups[1].Value switch { "001" or "002" or "003" or "004" or "005" or "006" => 300, "500" => 400, "501" or "502" or "503" or "504" or "505" or "506" => 700, _ => (int?)null }
+                : EqualsText(code, "SUS-H") ? 0 : null;
+            var label = price == 0 ? "Поручень: SUS-H, без надбавки по прайсу" : $"Поручень: титановое покрытие {code}, за поручень";
+            if (price is null) AddSmecPriceOnRequest("handrail-finish", $"Отделка поручня: {code}", quantity);
+            else Add("handrail-finish", label, price, quantity);
         }
         if (Selected("Button Finish"))
-            Add("button-finish", $"Button finish: {Field("Button Finish")}",
-                Field("Button Finish").Contains("ZDT-50", StringComparison.OrdinalIgnoreCase) ? 300 : 200, request.Stops);
+        {
+            var code = Field("Button Finish");
+            var price = Regex.Match(code, @"^ZDT-(\d{3})$", RegexOptions.IgnoreCase) is { Success: true } match
+                ? match.Groups[1].Value is "500" or "501" or "502" or "503" or "504" or "505" or "506" ? 300 :
+                    match.Groups[1].Value is "001" or "002" or "003" or "004" or "005" or "006" ? 200 : (int?)null
+                : EqualsText(code, "SUS-H") ? 0 : null;
+            var label = price == 0 ? "Кнопки: SUS-H, без надбавки по прайсу" : $"Кнопки: титановое покрытие {code}, за этаж";
+            if (price is null) AddSmecPriceOnRequest("button-finish", $"Отделка кнопок: {code}", request.Stops);
+            else Add("button-finish", label, price, request.Stops);
+        }
         foreach (var (field, category, quantity) in new[]
         {
             ("COP Faceplate", "CopFaceplate", (Selected("COP") ? 1 : 0) + (Selected("COP 2") ? 1 : 0)),
@@ -1705,7 +1757,15 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         {
             if (!Selected(field)) continue;
             if (quantity == 0) warnings.Add($"{field}: нет соответствующих панелей; надбавка не начислена.");
-            Add(field, $"{field}: {Field(field)}",
+            if (category == "CopFaceplate" && quantity > 0 && IsUnpricedCopFaceplate(Field(field)))
+            {
+                var requestPriceLabel = $"{field}: {Field(field)} (цена по запросу)";
+                blockers.Add($"{requestPriceLabel}: требуется запросить цену у SMEC.");
+                lines.Add(new PricingLine($"requirement-{NormalizeCode(field)}", requestPriceLabel, quantity, null, null, "blocked"));
+                continue;
+            }
+            var label = field == "COP Faceplate" ? CopFaceplatePriceLabel(Field(field)) : $"{field}: {Field(field)}";
+            Add(field, label,
                 FindSmecDecoration(catalog.Decorations, request, category, Field(field), null)?.Price, quantity);
         }
         var options = (request.Options ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1715,7 +1775,30 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         foreach (var note in Field("Other Requirements").Split(['\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             warnings.Add($"Сохранённое требование «{note}» не распознано; необходима ручная проверка SMEC.");
         return doorAddonPrice;
+
+        void AddSmecPriceOnRequest(string key, string label, int quantity)
+        {
+            if (quantity <= 0) return;
+            var requestLabel = $"{label} (цена по запросу)";
+            blockers.Add($"{requestLabel}: требуется запросить цену у SMEC.");
+            lines.Add(new PricingLine($"requirement-{NormalizeCode(key)}", requestLabel, quantity, null, null, "blocked"));
+        }
     }
+
+    private static string CopFaceplatePriceLabel(string code)
+    {
+        var match = Regex.Match(code, @"^ZDT-(\d{3}) (SUS-[HM])$", RegexOptions.IgnoreCase);
+        if (!match.Success) return $"Панель COP: {code}, за панель";
+        var material = EqualsText(match.Groups[2].Value, "SUS-M") ? "зеркальная нержавеющая сталь" : "нержавеющая сталь Hairline";
+        return $"Панель COP: {material}, титановое покрытие ZDT-{match.Groups[1].Value}, за панель";
+    }
+
+    private static readonly string[] UnpricedCopFaceplateChoices =
+        ["SUS-I", "SUS-S", .. new[] { "001", "002", "003", "004", "005", "006", "500", "501", "502", "503", "504", "505", "506" }
+            .SelectMany(code => new[] { $"ZDT-{code} SUS-I", $"ZDT-{code} SUS-S" })];
+
+    private static bool IsUnpricedCopFaceplate(string code) =>
+        UnpricedCopFaceplateChoices.Contains(code, StringComparer.OrdinalIgnoreCase);
 
     private static void AddSmecSpecialConditions(
         SmecCatalog catalog,

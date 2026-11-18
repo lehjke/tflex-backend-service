@@ -132,7 +132,8 @@ def append_materials(entries, worksheet, category, columns, base_rows, etching_r
                         "code": f"ZDT-{titanium} {material}",
                         "capacity": capacity,
                         "variant": variant,
-                        "price": base + etching + extra,
+                        # shortcut: only this 1350 kg finish is confirmed without etching; verify other sizes before extending.
+                        "price": base + extra + (0 if category in {"FrontPanel", "CarDoor"} and capacity == 1350 and titanium == "505" and material == "SUS-I" else etching),
                     })
 
 

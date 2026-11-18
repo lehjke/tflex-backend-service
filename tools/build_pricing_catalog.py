@@ -768,7 +768,8 @@ def append_smec_material_prices(
                         "code": f"ZDT-{titanium_code} {material_code}",
                         "capacity": capacity,
                         "variant": variant,
-                        "price": base_price + etching_price + titanium_price,
+                        # shortcut: only this 1350 kg finish is confirmed without etching; verify other sizes before extending.
+                        "price": base_price + titanium_price + (0 if category in {"FrontPanel", "CarDoor"} and capacity == 1350 and titanium_code == "505" and material_code == "SUS-I" else etching_price),
                     }
                 )
 
