@@ -687,7 +687,7 @@ public sealed class WindowsDeploymentScriptContractTests
     [Fact]
     public void AutomaticUpdateSupportsNativeServiceDeployment()
     {
-        var installer = File.ReadAllText(AutomaticUpdateInstallerPath);
+        var installer = File.ReadAllText(AutomaticUpdateInstallerPath).Replace("\r\n", "\n");
         var updater = File.ReadAllText(AutomaticUpdateRunnerPath);
 
         Assert.Contains("[ValidateSet(\"Hybrid\", \"Native\")]", installer, StringComparison.Ordinal);
