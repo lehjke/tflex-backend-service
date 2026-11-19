@@ -126,6 +126,10 @@ $sourceRoot = [IO.Path]::GetFullPath([string](Get-ConfigValue $config "sourceRoo
 $installRoot = [IO.Path]::GetFullPath([string](Get-ConfigValue $config "installRoot" -Required))
 $repositoryUrl = [string](Get-ConfigValue $config "repositoryUrl" -Required)
 $branch = [string](Get-ConfigValue $config "branch" -Required)
+$deploymentMode = [string](Get-ConfigValue $config "deploymentMode" "Hybrid")
+if ($deploymentMode -notin @("Hybrid", "Native")) {
+    throw "Unsupported automatic deployment mode '$deploymentMode'."
+}
 $taskName = [string](Get-ConfigValue $config "taskName" "TFlexDrawingService.AutoUpdate")
 $updateTime = [string](Get-ConfigValue $config "dailyAt" "00:00")
 $updateIntervalMinutes = [int](Get-ConfigValue $config "automaticUpdateIntervalMinutes" 0)
@@ -170,9 +174,15 @@ try {
         throw "SourceRoot '$sourceRoot' is not a Git checkout."
     }
 
-    $deployScript = Join-Path $sourceRoot "scripts\Deploy-TFlexHybridServer2022.ps1"
+    $deployScriptName = if ($deploymentMode -eq "Native") {
+        "Install-TFlexDrawingService.ps1"
+    }
+    else {
+        "Deploy-TFlexHybridServer2022.ps1"
+    }
+    $deployScript = Join-Path $sourceRoot "scripts\$deployScriptName"
     if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
-        throw "Hybrid deployment script was not found at '$deployScript'."
+        throw "Deployment script was not found at '$deployScript'."
     }
 
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
@@ -271,8 +281,6 @@ try {
     }
 
     $deployParameters = @{
-        RepositoryUrl = $repositoryUrl
-        Branch = $branch
         InstallRoot = $installRoot
         SourceRoot = $sourceRoot
         UseExistingSource = $true
@@ -284,26 +292,38 @@ try {
         FinishedJobRetentionDays = [int](Get-ConfigValue $config "finishedJobRetentionDays" 30)
         HealthCheckAttempts = [int](Get-ConfigValue $config "healthCheckAttempts" 12)
         HealthCheckDelaySeconds = [int](Get-ConfigValue $config "healthCheckDelaySeconds" 5)
-        ApiHostPort = [int](Get-ConfigValue $config "apiHostPort" 5011)
-        CandidateHostPort = [int](Get-ConfigValue $config "candidateHostPort" 5012)
-        ContainerName = [string](Get-ConfigValue $config "containerName" "tflex-drawing-api")
-        ApiImageRepository = [string](Get-ConfigValue $config "apiImageRepository" "tflex-drawing-service-api")
-        Domain = [string](Get-ConfigValue $config "domain" "")
-        AcmeEmail = [string](Get-ConfigValue $config "acmeEmail" "")
-        AutomaticUpdateTaskName = $taskName
-        AutomaticUpdateTime = $updateTime
-        AutomaticUpdateIntervalMinutes = $updateIntervalMinutes
-        SkipCaddy = $true
+    }
+    if ($deploymentMode -eq "Native") {
+        $deployParameters.Urls = "http://127.0.0.1:$([int](Get-ConfigValue $config 'apiHostPort' 5011))"
+    }
+    else {
+        $deployParameters.RepositoryUrl = $repositoryUrl
+        $deployParameters.Branch = $branch
+        $deployParameters.ApiHostPort = [int](Get-ConfigValue $config "apiHostPort" 5011)
+        $deployParameters.CandidateHostPort = [int](Get-ConfigValue $config "candidateHostPort" 5012)
+        $deployParameters.ContainerName = [string](Get-ConfigValue $config "containerName" "tflex-drawing-api")
+        $deployParameters.ApiImageRepository = [string](Get-ConfigValue $config "apiImageRepository" "tflex-drawing-service-api")
+        $deployParameters.Domain = [string](Get-ConfigValue $config "domain" "")
+        $deployParameters.AcmeEmail = [string](Get-ConfigValue $config "acmeEmail" "")
+        $deployParameters.AutomaticUpdateTaskName = $taskName
+        $deployParameters.AutomaticUpdateTime = $updateTime
+        $deployParameters.AutomaticUpdateIntervalMinutes = $updateIntervalMinutes
+        $deployParameters.SkipCaddy = $true
     }
     if ([bool](Get-ConfigValue $config "skipFirewall" $false)) {
         $deployParameters.SkipFirewall = $true
     }
 
-    Write-Host "Deploying revision $targetRevision." -ForegroundColor Cyan
+    Write-Host "Deploying revision $targetRevision in $deploymentMode mode." -ForegroundColor Cyan
     $deploymentStarted = $true
     & $deployScript @deployParameters
     if (-not $?) {
-        throw "Hybrid deployment returned an unsuccessful result."
+        throw "$deploymentMode deployment returned an unsuccessful result."
+    }
+    if ($deploymentMode -eq "Native") {
+        $markerTemporaryPath = "$successMarkerPath.tmp"
+        Set-Content -LiteralPath $markerTemporaryPath -Value $targetRevision -Encoding UTF8
+        Move-Item -LiteralPath $markerTemporaryPath -Destination $successMarkerPath -Force
     }
 
     $recordedRevision = if (Test-Path -LiteralPath $successMarkerPath -PathType Leaf) {

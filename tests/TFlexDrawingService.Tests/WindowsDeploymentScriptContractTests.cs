@@ -21,6 +21,14 @@ public sealed class WindowsDeploymentScriptContractTests
         RepositoryRoot,
         "scripts",
         "Deploy-TFlexHybridServer2022.ps1");
+    private static readonly string AutomaticUpdateInstallerPath = Path.Combine(
+        RepositoryRoot,
+        "scripts",
+        "Install-TFlexAutomaticUpdate.ps1");
+    private static readonly string AutomaticUpdateRunnerPath = Path.Combine(
+        RepositoryRoot,
+        "scripts",
+        "Invoke-TFlexAutomaticUpdate.ps1");
     private static readonly string LinuxApiDockerfilePath = Path.Combine(
         RepositoryRoot,
         "Dockerfile.api");
@@ -674,6 +682,25 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.True(candidateCheck > serviceUpdate);
         Assert.True(nativeDisable > candidateCheck);
         Assert.True(finalHealth > nativeDisable);
+    }
+
+    [Fact]
+    public void AutomaticUpdateSupportsNativeServiceDeployment()
+    {
+        var installer = File.ReadAllText(AutomaticUpdateInstallerPath);
+        var updater = File.ReadAllText(AutomaticUpdateRunnerPath);
+
+        Assert.Contains("[ValidateSet(\"Hybrid\", \"Native\")]", installer, StringComparison.Ordinal);
+        Assert.Contains("DeployedRevision must match the current SourceRoot HEAD", installer, StringComparison.Ordinal);
+        Assert.Contains("$DeploymentMode -ne \"Native\"", installer, StringComparison.Ordinal);
+        Assert.Contains("deploymentMode = $DeploymentMode", installer, StringComparison.Ordinal);
+        Assert.Contains("Get-ConfigValue $config \"deploymentMode\" \"Hybrid\"", updater, StringComparison.Ordinal);
+        Assert.Contains("\"Install-TFlexDrawingService.ps1\"", updater, StringComparison.Ordinal);
+        Assert.Contains("$deployParameters.Urls =", updater, StringComparison.Ordinal);
+        Assert.Contains("UseExistingSource = $true", updater, StringComparison.Ordinal);
+        Assert.Contains("Install-TFlexDrawingService.ps1", updater, StringComparison.Ordinal);
+        Assert.Contains("$deploymentMode -eq \"Native\"", updater, StringComparison.Ordinal);
+        Assert.Contains("Move-Item -LiteralPath $markerTemporaryPath -Destination $successMarkerPath -Force", updater, StringComparison.Ordinal);
     }
 
     [Fact]

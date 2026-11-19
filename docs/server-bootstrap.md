@@ -140,6 +140,23 @@ Invoke-WebRequest `
 identity. Caddy не переустанавливается при каждой проверке; он
 продолжает проксировать стабильный внутренний порт `5011`.
 
+Для существующей установки API и Worker как Windows-служб зарегистрируйте ту
+же проверку отдельно, запустив PowerShell от администратора:
+
+```powershell
+& "C:\Services\TFlexDrawingService\_src\scripts\Install-TFlexAutomaticUpdate.ps1" `
+  -DeploymentMode Native `
+  -SourceRoot "C:\Services\TFlexDrawingService\_src" `
+  -InstallRoot "C:\Services\TFlexDrawingService" `
+  -TFlexCadProgramDir "C:\Program Files\T-FLEX CAD 17\Program" `
+  -DeployedRevision (git -C "C:\Services\TFlexDrawingService\_src" rev-parse HEAD)
+```
+
+Режим `Native` обновляет обе Windows-службы штатным транзакционным installer;
+Docker и Caddy не затрагиваются. `DeployedRevision` задавайте только после
+успешной установки именно этого checkout; значение сверяется с его Git HEAD
+перед записью маркера.
+
 Перед обновлением выполняются обязательные проверки:
 
 - для точного commit проверяется последний запуск публичного GitHub Actions workflow

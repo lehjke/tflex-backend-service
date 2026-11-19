@@ -14,6 +14,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 param(
     [string]$RepositoryUrl = "https://github.com/lehjke/tflex-backend-service.git",
     [string]$Branch = "main",
+    [ValidateSet("Hybrid", "Native")]
+    [string]$DeploymentMode = "Hybrid",
+    [string]$DeployedRevision = "",
     [string]$InstallRoot = "C:\Services\TFlexDrawingService",
     [Parameter(Mandatory = $true)]
     [string]$SourceRoot,
@@ -73,7 +76,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 if (-not (Test-IsAdmin)) {
     throw "Run PowerShell as Administrator."
 }
-if ($ApiHostPort -eq $CandidateHostPort) {
+if ($DeploymentMode -eq "Hybrid" -and $ApiHostPort -eq $CandidateHostPort) {
     throw "CandidateHostPort must differ from ApiHostPort."
 }
 if ($TaskName.Contains('"') -or $SourceRoot.Contains('"') -or $InstallRoot.Contains('"')) {
@@ -97,6 +100,20 @@ $configPath = Join-Path $autoUpdateRoot "config.json"
 $successMarkerPath = Join-Path $autoUpdateRoot "last-successful-revision.txt"
 New-Item -ItemType Directory -Path $autoUpdateRoot -Force | Out-Null
 
+$verifiedDeployedRevision = ""
+if (-not [string]::IsNullOrWhiteSpace($DeployedRevision)) {
+    if ($DeploymentMode -ne "Native" -or $DeployedRevision -notmatch "^[0-9a-fA-F]{40}$") {
+        throw "DeployedRevision must be a full Git SHA and can only seed a Native deployment."
+    }
+    $git = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($null -eq $git) { $git = Get-Command git -ErrorAction Stop }
+    $sourceRevision = (@(& $git.Source -C $SourceRoot rev-parse HEAD 2>&1) -join "").Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $sourceRevision.Equals($DeployedRevision, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "DeployedRevision must match the current SourceRoot HEAD before it can seed the success marker."
+    }
+    $verifiedDeployedRevision = $DeployedRevision
+}
+
 $runnerTemporaryPath = "$runnerPath.tmp"
 Copy-Item -LiteralPath $sourceRunnerPath -Destination $runnerTemporaryPath -Force
 Move-Item -LiteralPath $runnerTemporaryPath -Destination $runnerPath -Force
@@ -105,6 +122,7 @@ $config = [ordered]@{
     schemaVersion = 1
     repositoryUrl = $RepositoryUrl
     branch = $Branch
+    deploymentMode = $DeploymentMode
     installRoot = $InstallRoot
     sourceRoot = $SourceRoot
     tFlexCadProgramDir = $TFlexCadProgramDir
@@ -176,13 +194,18 @@ $task = New-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Checks origin/$Branch $scheduleDescription and transactionally updates TFlexDrawingService when a new revision is available."
+    -Description "Checks origin/$Branch $scheduleDescription and transactionally updates TFlexDrawingService in $DeploymentMode mode when a new revision is available."
 
 Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
 $registeredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
 if ($registeredTask.State -eq "Disabled") {
     Enable-ScheduledTask -TaskName $TaskName | Out-Null
+}
+if (-not [string]::IsNullOrWhiteSpace($verifiedDeployedRevision)) {
+    $markerTemporaryPath = "$successMarkerPath.tmp"
+    Set-Content -LiteralPath $markerTemporaryPath -Value $verifiedDeployedRevision -Encoding UTF8
+    Move-Item -LiteralPath $markerTemporaryPath -Destination $successMarkerPath -Force
 }
 
 Write-Host "Automatic update task '$TaskName' is installed." -ForegroundColor Green
