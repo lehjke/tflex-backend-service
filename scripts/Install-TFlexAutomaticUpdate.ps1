@@ -157,6 +157,26 @@ Invoke-Native -FilePath "icacls.exe" -Arguments @(
     "*S-1-5-18:(OI)(CI)F",
     "*S-1-5-32-544:(OI)(CI)F"
 ) | Out-Null
+# The SYSTEM task executes deployment scripts from SourceRoot, so regular users
+# must not be able to replace them or modify Git configuration.
+if ($DeploymentMode -eq "Native") {
+    Invoke-Native -FilePath "icacls.exe" -Arguments @(
+        $InstallRoot,
+        "/inheritance:r",
+        "/grant:r",
+        "*S-1-5-18:(OI)(CI)F",
+        "*S-1-5-32-544:(OI)(CI)F",
+        "*S-1-5-32-545:(OI)(CI)RX"
+    ) | Out-Null
+}
+Invoke-Native -FilePath "icacls.exe" -Arguments @(
+    $SourceRoot,
+    "/inheritance:r",
+    "/grant:r",
+    "*S-1-5-18:(OI)(CI)F",
+    "*S-1-5-32-544:(OI)(CI)F",
+    "*S-1-5-32-545:(OI)(CI)RX"
+) | Out-Null
 foreach ($path in @($runnerPath, $configPath, $successMarkerPath)) {
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         Invoke-Native -FilePath "icacls.exe" -Arguments @($path, "/reset") | Out-Null

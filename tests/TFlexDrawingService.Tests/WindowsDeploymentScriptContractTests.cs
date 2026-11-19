@@ -694,6 +694,9 @@ public sealed class WindowsDeploymentScriptContractTests
         Assert.Contains("DeployedRevision must match the current SourceRoot HEAD", installer, StringComparison.Ordinal);
         Assert.Contains("$DeploymentMode -ne \"Native\"", installer, StringComparison.Ordinal);
         Assert.Contains("deploymentMode = $DeploymentMode", installer, StringComparison.Ordinal);
+        Assert.Contains("$SourceRoot,\n    \"/inheritance:r\"", installer, StringComparison.Ordinal);
+        Assert.Contains("$InstallRoot,\n        \"/inheritance:r\"", installer, StringComparison.Ordinal);
+        Assert.Contains("*S-1-5-32-545:(OI)(CI)RX", installer, StringComparison.Ordinal);
         Assert.Contains("Get-ConfigValue $config \"deploymentMode\" \"Hybrid\"", updater, StringComparison.Ordinal);
         Assert.Contains("\"Install-TFlexDrawingService.ps1\"", updater, StringComparison.Ordinal);
         Assert.Contains("$deployParameters.Urls =", updater, StringComparison.Ordinal);
