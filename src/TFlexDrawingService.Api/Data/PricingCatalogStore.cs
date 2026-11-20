@@ -1468,8 +1468,7 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             otherJamb?.Price ?? 0,
             mainShaftDoor?.Price ?? 0,
             otherShaftDoor?.Price ?? 0,
-            handrailQuantity,
-            false);
+            handrailQuantity);
     }
 
     private static void AddSmecResolvedDecoration(
@@ -1849,12 +1848,12 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             AddReadyLine(lines, "door-height", $"Высота дверей HH {doorHeight:0} мм", amount, amount);
         }
 
-        if (components.CageIsPxx
+        if (EqualsText(GetSpecificationField(request, "Car Size"), "PXX")
             && baseEntry?.BasicPrice is not null
             && TryReadDecimal(baseEntry.BasicPrice, out var basePrice))
         {
-            var amount = basePrice * 0.04m;
-            AddReadyLine(lines, "pxx", "Нестандартная кабина PXX", amount, amount);
+            var amount = Math.Round(basePrice * 0.04m, 2);
+            AddReadyLine(lines, "pxx", "Нестандартная кабина PXX (+4% от базовой цены)", amount, amount);
         }
     }
 
@@ -2380,8 +2379,7 @@ internal sealed record SmecCalculationComponents(
     decimal OtherJamb,
     decimal MainShaftDoor,
     decimal OtherShaftDoor,
-    int HandrailQuantity,
-    bool CageIsPxx);
+    int HandrailQuantity);
 
 internal static class MinimalDocx
 {

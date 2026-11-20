@@ -181,6 +181,7 @@ internal static class SmecPricingRequestXlsxBuilder
 
         AddLine(lines, "Ele Series", field(["Ele Series"]));
         AddLine(lines, "Model", specification.Series);
+        AddLine(lines, "Car Size", field(["Car Size"]));
 
         var shaft = JoinLabeledDimensions(
             ("AH", field(["AH", "Shaft Width"])),

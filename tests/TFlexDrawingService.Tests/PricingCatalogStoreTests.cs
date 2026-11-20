@@ -1743,6 +1743,32 @@ public sealed class PricingCatalogStoreTests
     }
 
     [Fact]
+    public async Task SmecNonstandardCar_AddsFourPercentOfBasePriceBeforeOtherAdjustments()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["AA"] = "1400", ["BB"] = "2100", ["HL"] = "2200", ["TR"] = "11400",
+            ["Door mode"] = "Side opening"
+        };
+        var request = new PricingCalculationRequest(
+            "SMEC", "LEHY-L-Pro", 1350, 1m, 2, 1200, null, null, 2, 0, null,
+            [], false, false, "CNY", null, null, fields, "L14.1");
+        var store = CreateSupplierCatalogStore();
+        var standard = await store.CalculateAsync(request);
+        Assert.DoesNotContain(standard.Lines, line => line.Code == "pxx");
+        Assert.Equal(182910m, Assert.Single(standard.Lines, line => line.Code == "base").AmountCny);
+
+        var nonstandard = await store.CalculateAsync(request with
+        {
+            SpecificationFields = new Dictionary<string, string>(fields) { ["Car Size"] = "PXX" }
+        });
+        var surcharge = Assert.Single(nonstandard.Lines, line => line.Code == "pxx");
+        Assert.Equal((7316.40m, 7316.40m, 1, "ready"),
+            (surcharge.UnitPriceCny, surcharge.AmountCny, surcharge.Quantity, surcharge.Status));
+        Assert.Equal(7316.40m, nonstandard.TotalCny - standard.TotalCny);
+    }
+
+    [Fact]
     public async Task SmecStructuredRequirements_PriceEverySelectionAndSplitLopQuantities()
     {
         var request = new PricingCalculationRequest(
