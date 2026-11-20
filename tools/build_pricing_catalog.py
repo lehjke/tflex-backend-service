@@ -26,6 +26,28 @@ XIZI_FINISHES = ROOT / "Otdelki_XIZI.xlsx"
 XIZI_ASSET_OUT = Path("src/TFlexDrawingService.Api/wwwroot/assets/xizi")
 
 
+def parse_smec_standard_car_sizes() -> list[dict[str, Any]]:
+    templates = Path(__file__).resolve().parents[1] / "templates"
+    sources = {
+        "LEHY-L-Pro": ("LEHY-L-PRO [320-1050]/0. ТХ.xlsx", "LEHY-L-PRO [1050-2500]/0. ТХ.xlsx"),
+        "LEHY-Pro": ("LEHY-PRO [SIDE CWT]/0. ТH.xlsx", "LEHY-PRO [REAR CWT]/0. ТH.xlsx"),
+    }
+    sizes = set()
+    for series, files in sources.items():
+        for file in files:
+            workbook = load_workbook(templates / file, data_only=True, read_only=True)
+            try:
+                for capacity, code, width, depth in workbook.active.iter_rows(min_row=2, values_only=True):
+                    if code and code != "PXX":
+                        sizes.add((series, capacity, width, depth))
+            finally:
+                workbook.close()
+    return [
+        {"series": series, "capacity": capacity, "widthMm": width, "depthMm": depth}
+        for series, capacity, width, depth in sorted(sizes)
+    ]
+
+
 def clean(value: Any) -> Any:
     if value is None:
         return None
@@ -1378,6 +1400,7 @@ def main() -> None:
         "smec": {
             "series": smec_series,
             "basePrices": parse_lehy_base(lehy),
+            "standardCarSizes": parse_smec_standard_car_sizes(),
             "decorations": parse_smec_decorations(lehy),
             "functions": enrich_entries(parse_lehy_functions(lehy), smec_option_descriptions, smec_image_map),
             "groupControl": enrich_entries(parse_lehy_group_control(lehy), smec_option_descriptions, smec_image_map),

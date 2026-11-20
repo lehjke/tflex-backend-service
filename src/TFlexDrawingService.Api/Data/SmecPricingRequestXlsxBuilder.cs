@@ -13,7 +13,8 @@ internal static class SmecPricingRequestXlsxBuilder
         string templatePath,
         PricingSpecification specification,
         UserProject? project,
-        PricingCalculationRequest? request)
+        PricingCalculationRequest? request,
+        bool nonstandardCarSize)
     {
         using var buffer = new MemoryStream();
         buffer.Write(File.ReadAllBytes(templatePath));
@@ -28,7 +29,7 @@ internal static class SmecPricingRequestXlsxBuilder
             }
 
             ClearReferenceConfiguration(worksheet);
-            FillConfiguration(worksheet, specification, project, request);
+            FillConfiguration(worksheet, specification, project, request, nonstandardCarSize);
 
             using (var output = worksheetEntry.Open())
             {
@@ -133,7 +134,8 @@ internal static class SmecPricingRequestXlsxBuilder
         XDocument worksheet,
         PricingSpecification specification,
         UserProject? project,
-        PricingCalculationRequest? request)
+        PricingCalculationRequest? request,
+        bool nonstandardCarSize)
     {
         string Field(params string[] names)
         {
@@ -169,19 +171,20 @@ internal static class SmecPricingRequestXlsxBuilder
             Field("Door type"),
             Field("Door mode", "Door Opening")));
         SetCellNumber(worksheet, "E34", ParseNumber(Field("PD", "Pit")));
-        SetCellText(worksheet, "E59", BuildEngineeringRequest(specification, request, Field));
+        SetCellText(worksheet, "E59", BuildEngineeringRequest(specification, request, Field, nonstandardCarSize));
     }
 
     private static string BuildEngineeringRequest(
         PricingSpecification specification,
         PricingCalculationRequest? request,
-        Func<string[], string> field)
+        Func<string[], string> field,
+        bool nonstandardCarSize)
     {
         var lines = new List<string>();
 
         AddLine(lines, "Ele Series", field(["Ele Series"]));
         AddLine(lines, "Model", specification.Series);
-        AddLine(lines, "Car Size", field(["Car Size"]));
+        if (nonstandardCarSize) AddLine(lines, "Car Size", "PXX");
 
         var shaft = JoinLabeledDimensions(
             ("AH", field(["AH", "Shaft Width"])),

@@ -144429,6 +144429,272 @@
         "pricePerDoor2D2G": 4851.3
       }
     ],
+    "standardCarSizes": [
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 320,
+        "widthMm": 850,
+        "depthMm": 1100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 450,
+        "widthMm": 950,
+        "depthMm": 1300
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 450,
+        "widthMm": 1000,
+        "depthMm": 1200
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 550,
+        "widthMm": 1100,
+        "depthMm": 1300
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 630,
+        "widthMm": 1100,
+        "depthMm": 1400
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 825,
+        "widthMm": 1400,
+        "depthMm": 1400
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1050,
+        "widthMm": 1100,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1050,
+        "widthMm": 1600,
+        "depthMm": 1400
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1050,
+        "widthMm": 1600,
+        "depthMm": 1500
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1050,
+        "widthMm": 2100,
+        "depthMm": 1100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1200,
+        "widthMm": 1300,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1200,
+        "widthMm": 1500,
+        "depthMm": 1800
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1200,
+        "widthMm": 1800,
+        "depthMm": 1450
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1350,
+        "widthMm": 1600,
+        "depthMm": 1800
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1350,
+        "widthMm": 2000,
+        "depthMm": 1500
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1600,
+        "widthMm": 1400,
+        "depthMm": 2400
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1600,
+        "widthMm": 1600,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1600,
+        "widthMm": 2000,
+        "depthMm": 1750
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1600,
+        "widthMm": 2100,
+        "depthMm": 1600
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1800,
+        "widthMm": 1500,
+        "depthMm": 2500
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 1800,
+        "widthMm": 1800,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 2000,
+        "widthMm": 1500,
+        "depthMm": 2700
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 2000,
+        "widthMm": 2000,
+        "depthMm": 2000
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 2250,
+        "widthMm": 2100,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-L-Pro",
+        "capacity": 2500,
+        "widthMm": 2100,
+        "depthMm": 2300
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 630,
+        "widthMm": 1100,
+        "depthMm": 1400
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 630,
+        "widthMm": 1400,
+        "depthMm": 1100
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 825,
+        "widthMm": 1100,
+        "depthMm": 1700
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 825,
+        "widthMm": 1400,
+        "depthMm": 1400
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1050,
+        "widthMm": 1100,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1050,
+        "widthMm": 1600,
+        "depthMm": 1500
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1050,
+        "widthMm": 2100,
+        "depthMm": 1100
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1200,
+        "widthMm": 1250,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1200,
+        "widthMm": 1800,
+        "depthMm": 1450
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1350,
+        "widthMm": 1400,
+        "depthMm": 2100
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1350,
+        "widthMm": 2000,
+        "depthMm": 1500
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1600,
+        "widthMm": 1400,
+        "depthMm": 2400
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1600,
+        "widthMm": 2000,
+        "depthMm": 1700
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1800,
+        "widthMm": 1500,
+        "depthMm": 2500
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 1800,
+        "widthMm": 2100,
+        "depthMm": 1800
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 2025,
+        "widthMm": 1500,
+        "depthMm": 2700
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 2025,
+        "widthMm": 2100,
+        "depthMm": 1950
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 2250,
+        "widthMm": 2300,
+        "depthMm": 1950
+      },
+      {
+        "series": "LEHY-Pro",
+        "capacity": 2500,
+        "widthMm": 2300,
+        "depthMm": 2100
+      }
+    ],
     "decorations": [
       {
         "category": "CarWall",

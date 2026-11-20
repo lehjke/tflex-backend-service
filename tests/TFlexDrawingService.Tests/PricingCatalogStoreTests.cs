@@ -550,6 +550,9 @@ public sealed class PricingCatalogStoreTests
                     "pricePerDoor2D2G": 0
                   }
                 ],
+                "standardCarSizes": [
+                  { "series": "LEHY-L-Pro", "capacity": 1350, "widthMm": 1600, "depthMm": 1800 }
+                ],
                 "decorations": [
                   { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1350, "variant": "P13W", "price": 16830 },
                   { "category": "CarDesign", "code": "ZCD-020X", "capacity": 1350, "variant": "P14D", "price": 20200 },
@@ -604,7 +607,8 @@ public sealed class PricingCatalogStoreTests
                     null));
 
             Assert.Equal("ready", result.Status);
-            Assert.Equal(134140m, result.TotalCny);
+            Assert.Equal(138140m, result.TotalCny);
+            Assert.Contains(result.Lines, line => line.Code == "pxx" && line.AmountCny == 4000m);
             Assert.Contains(result.Lines, line => line.Label == "Дизайн кабины ZCD-020X" && line.AmountCny == 20200m);
             Assert.Contains(result.Lines, line => line.Label == "Передняя панель кабины ZDT-505 SUS-I: нержавеющая сталь Irregular Line" && line.AmountCny == 1760m);
             Assert.Contains(result.Lines, line => line.Label == "Передняя панель кабины ZDT-505 SUS-I: титановое покрытие ZDT-505" && line.AmountCny == 690m);
@@ -1016,8 +1020,13 @@ public sealed class PricingCatalogStoreTests
                     AppContext.BaseDirectory,
                     "../../../../../src/TFlexDrawingService.Api/Data/Templates/smec_request.xlsx")),
                 Path.Combine(templateDirectory, "smec_request.xlsx"));
+            File.Copy(
+                Path.GetFullPath(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../src/TFlexDrawingService.Api/Data/pricing-catalog.json")),
+                Path.Combine(root, "Data", "pricing-catalog.json"));
             var request = new PricingCalculationRequest(
-                "SMEC", "LEHY-III", 1600, 2.5m, 8, 1100, null, null, 8,
+                "SMEC", "LEHY-L-Pro", 1600, 2.5m, 8, 1100, null, null, 8,
                 0, null, ["CWT WITH SAFETY", "FER"], false, false, "CNY", "project-smec", null,
                 new Dictionary<string, string>
                 {
@@ -1047,7 +1056,7 @@ public sealed class PricingCatalogStoreTests
                 },
                 "L1");
             var specification = new PricingSpecification(
-                "specification-smec", "project-smec", null, "L1", "SMEC", "LEHY-III", "ready",
+                "specification-smec", "project-smec", null, "L1", "SMEC", "LEHY-L-Pro", "ready",
                 195900m, "CNY", 195900m,
                 JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
                 "{}", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
@@ -1082,6 +1091,7 @@ public sealed class PricingCatalogStoreTests
             Assert.Equal("1500", ReadCell(worksheet, "E34"));
             Assert.Contains("Shaft: AH 2265 x BH 1900", ReadCell(worksheet, "E59"));
             Assert.Contains("Options: CWT WITH SAFETY, FER", ReadCell(worksheet, "E59"));
+            Assert.Contains("Car Size: PXX", ReadCell(worksheet, "E59"));
             Assert.Equal("", ReadCell(worksheet, "G2"));
             Assert.Equal("", ReadCell(worksheet, "M59"));
             Assert.Contains("COP Faceplate: ZDT-501 SUS-M", ReadCell(worksheet, "E59"));
@@ -1742,30 +1752,52 @@ public sealed class PricingCatalogStoreTests
         Assert.Equal((calculation.TotalCny * 6).ToString(System.Globalization.CultureInfo.InvariantCulture), ReadCell(priceSheet, "J4"));
     }
 
-    [Fact]
-    public async Task SmecNonstandardCar_AddsFourPercentOfBasePriceBeforeOtherAdjustments()
+    [Theory]
+    [InlineData("1400", "2100", "", true)]
+    [InlineData("2000", "1800", "", true)]
+    [InlineData("1600", "1800", "PXX", false)]
+    [InlineData("2000", "1500", "", false)]
+    [InlineData("1400", "", "PXX", false)]
+    public async Task SmecNonstandardCar_UsesBothDimensionsInsteadOfTheLegacySelection(
+        string width, string depth, string legacySize, bool expectSurcharge)
     {
         var fields = new Dictionary<string, string>
         {
-            ["AA"] = "1400", ["BB"] = "2100", ["HL"] = "2200", ["TR"] = "11400",
-            ["Door mode"] = "Side opening"
+            ["AA"] = width, ["BB"] = depth, ["HL"] = "2200", ["TR"] = "11400",
+            ["Door mode"] = "Side opening", ["Car Size"] = legacySize
         };
         var request = new PricingCalculationRequest(
             "SMEC", "LEHY-L-Pro", 1350, 1m, 2, 1200, null, null, 2, 0, null,
             [], false, false, "CNY", null, null, fields, "L14.1");
         var store = CreateSupplierCatalogStore();
-        var standard = await store.CalculateAsync(request);
-        Assert.DoesNotContain(standard.Lines, line => line.Code == "pxx");
-        Assert.Equal(182910m, Assert.Single(standard.Lines, line => line.Code == "base").AmountCny);
-
-        var nonstandard = await store.CalculateAsync(request with
+        var result = await store.CalculateAsync(request);
+        Assert.Equal(182910m, Assert.Single(result.Lines, line => line.Code == "base").AmountCny);
+        if (expectSurcharge)
         {
-            SpecificationFields = new Dictionary<string, string>(fields) { ["Car Size"] = "PXX" }
-        });
-        var surcharge = Assert.Single(nonstandard.Lines, line => line.Code == "pxx");
-        Assert.Equal((7316.40m, 7316.40m, 1, "ready"),
-            (surcharge.UnitPriceCny, surcharge.AmountCny, surcharge.Quantity, surcharge.Status));
-        Assert.Equal(7316.40m, nonstandard.TotalCny - standard.TotalCny);
+            var surcharge = Assert.Single(result.Lines, line => line.Code == "pxx");
+            Assert.Equal((7316.40m, 7316.40m, 1, "ready"),
+                (surcharge.UnitPriceCny, surcharge.AmountCny, surcharge.Quantity, surcharge.Status));
+            Assert.Equal(7316.40m, result.TotalCny - result.Lines.Where(line => line.Code != "pxx").Sum(line => line.AmountCny ?? 0m));
+        }
+        else
+        {
+            Assert.DoesNotContain(result.Lines, line => line.Code == "pxx");
+        }
+    }
+
+    [Fact]
+    public async Task SmecNonstandardCar_RequiresConfirmationWithoutSizesForSelectedSeries()
+    {
+        var request = new PricingCalculationRequest(
+            "SMEC", "LEHY-III", 1350, 1m, 2, 1200, null, null, 2, 0, null,
+            [], false, false, "CNY", null, null,
+            new Dictionary<string, string> { ["AA"] = "1400", ["BB"] = "2100" }, null);
+
+        var result = await CreateSupplierCatalogStore().CalculateAsync(request);
+
+        Assert.DoesNotContain(result.Lines, line => line.Code == "pxx");
+        Assert.Contains(result.Blockers, blocker => blocker.StartsWith("PXX: для LEHY-III", StringComparison.Ordinal));
+        Assert.Equal("blocked", result.Status);
     }
 
     [Fact]

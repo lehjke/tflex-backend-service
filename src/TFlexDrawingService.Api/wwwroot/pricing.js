@@ -145,7 +145,6 @@ const pdInput = document.querySelector("#pdInput");
 const carWidthInput = document.querySelector("#carWidthInput");
 const carDepthInput = document.querySelector("#carDepthInput");
 const carHeightInput = document.querySelector("#carHeightInput");
-const smecCarSizeSelect = document.querySelector("#smecCarSizeSelect");
 const doorModeSelect = document.querySelector("#doorModeSelect");
 const smecDoorWidthInput = document.querySelector("#smecDoorWidthInput");
 const doorHeightInput = document.querySelector("#doorHeightInput");
@@ -1803,8 +1802,6 @@ function applyStoredSpecificationFields(fields = {}) {
   }
 
   if (supplierSelect.value === "SMEC") {
-    smecCarSizeSelect.value = "";
-    setStoredControlValue(smecCarSizeSelect, fields["Car Size"]);
     updateSmecFloorPatterns(fields["Floor Pattern"] || null);
     const designInput = [...(carDesignPicker?.querySelectorAll("input") || [])]
       .find(input => codeMatches(input.value, fields["Car Design"]));
@@ -1967,7 +1964,6 @@ function collectSpecificationFields() {
     "AA": carWidthInput?.value || "",
     "BB": carDepthInput?.value || "",
     "HL": carHeightInput?.value || "",
-    "Car Size": smecCarSizeSelect.value,
     "Car Design": selectedDesign?.code || "",
     "Car Design Wall": selectedDesign?.wallDescription || "",
     "Car Design Door": selectedDesign?.doorDescription || "",

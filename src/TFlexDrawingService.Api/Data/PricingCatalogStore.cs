@@ -221,7 +221,10 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             "Templates",
             isSmec ? "smec_request.xlsx" : "shablon_zaprosa.xlsx");
         return isSmec
-            ? SmecPricingRequestXlsxBuilder.Build(templatePath, specification, project, request is null ? null : SmecRequirements.Normalize(request))
+            ? SmecPricingRequestXlsxBuilder.Build(
+                templatePath, specification, project,
+                request is null ? null : SmecRequirements.Normalize(request),
+                request is not null && IsSmecNonstandardCarSize(Catalog.Smec, request))
             : PricingRequestXlsxBuilder.Build(templatePath, specification, project, request, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.Options : null, File.Exists(Path.Combine(environment.ContentRootPath, "Data", "pricing-catalog.json")) ? Catalog.Xizi.VisualItems : null);
     }
 
@@ -1272,7 +1275,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             components,
             doorAddonPrice,
             lines,
-            warnings);
+            warnings,
+            blockers);
 
         var containerEntry = catalog.Containers.FirstOrDefault(item =>
             item.Capacity == request.CapacityKg
@@ -1807,7 +1811,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
         SmecCalculationComponents components,
         decimal doorAddonPrice,
         List<PricingLine> lines,
-        List<string> warnings)
+        List<string> warnings,
+        List<string> blockers)
     {
         if (request.Series.Contains("ELE", StringComparison.OrdinalIgnoreCase)
             && request.CapacityKg <= 1050
@@ -1848,13 +1853,33 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             AddReadyLine(lines, "door-height", $"Высота дверей HH {doorHeight:0} мм", amount, amount);
         }
 
-        if (EqualsText(GetSpecificationField(request, "Car Size"), "PXX")
+        if (IsSmecNonstandardCarSize(catalog, request, blockers)
             && baseEntry?.BasicPrice is not null
             && TryReadDecimal(baseEntry.BasicPrice, out var basePrice))
         {
             var amount = Math.Round(basePrice * 0.04m, 2);
             AddReadyLine(lines, "pxx", "Нестандартная кабина PXX (+4% от базовой цены)", amount, amount);
         }
+    }
+
+    private static bool IsSmecNonstandardCarSize(
+        SmecCatalog catalog,
+        PricingCalculationRequest request,
+        List<string>? blockers = null)
+    {
+        var width = GetSpecificationNumber(request, "AA");
+        var depth = GetSpecificationNumber(request, "BB");
+        if (width <= 0 || depth <= 0) return false;
+
+        var sizes = catalog.StandardCarSizes.Where(size =>
+            EqualsText(size.Series, request.Series) && size.Capacity == request.CapacityKg).ToArray();
+        if (sizes.Length == 0)
+        {
+            blockers?.Add($"PXX: для {request.Series}, {request.CapacityKg} кг нет подтверждённых стандартных размеров кабины. Требуется проверка SMEC.");
+            return false;
+        }
+
+        return !sizes.Any(size => size.WidthMm == width && size.DepthMm == depth);
     }
 
     private static decimal? FindSmecFunctionPrice(
@@ -2270,6 +2295,7 @@ public sealed class SmecCatalog
 {
     public List<string> Series { get; set; } = [];
     public List<SmecBasePrice> BasePrices { get; set; } = [];
+    public List<SmecStandardCarSize> StandardCarSizes { get; set; } = [];
     public List<SmecDecorationPrice> Decorations { get; set; } = [];
     public List<PriceEntry> Functions { get; set; } = [];
     public List<PriceEntry> GroupControl { get; set; } = [];
@@ -2283,6 +2309,8 @@ public sealed class SmecCatalog
     public List<SpecificationChoiceGroup> ChoiceGroups { get; set; } = [];
     public List<SmecFloorPatternGroup> FloorPatterns { get; set; } = [];
 }
+
+public sealed record SmecStandardCarSize(string Series, int Capacity, int WidthMm, int DepthMm);
 
 public sealed record XiziBasePrice(
     string Series,
