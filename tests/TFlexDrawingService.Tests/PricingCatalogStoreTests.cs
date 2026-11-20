@@ -1812,16 +1812,16 @@ public sealed class PricingCatalogStoreTests
         });
         var mirrorCopLine = Assert.Single(mirrorCop.Lines, line => line.Label.StartsWith("Панель COP: зеркальная нержавеющая сталь, титановое покрытие ZDT-505", StringComparison.Ordinal));
         Assert.Equal((1200m, 1200m, 1, "ready"), (mirrorCopLine.UnitPriceCny, mirrorCopLine.AmountCny, mirrorCopLine.Quantity, mirrorCopLine.Status));
-        var unsupportedKickplate = await store.CalculateAsync(request with
+        var coloredKickplate = await store.CalculateAsync(request with
         {
             SpecificationFields = request.SpecificationFields!.Where(item => item.Key != "Kickplate Finish")
                 .Append(new KeyValuePair<string, string>("Kickplate Finish", "ZDT-505"))
                 .ToDictionary(item => item.Key, item => item.Value)
         });
-        var unsupportedLine = Assert.Single(unsupportedKickplate.Lines, line => line.Label.Contains("Плинтус кабины: ZDT-505", StringComparison.Ordinal));
-        Assert.Null(unsupportedLine.AmountCny);
-        Assert.Equal("blocked", unsupportedLine.Status);
-        Assert.Equal("blocked", unsupportedKickplate.Status);
+        var coloredLine = Assert.Single(coloredKickplate.Lines, line => line.Label == "Плинтус кабины: титановое покрытие ZDT-505, за кабину");
+        Assert.Equal((1000m, 1000m, 1, "ready"), (coloredLine.UnitPriceCny, coloredLine.AmountCny, coloredLine.Quantity, coloredLine.Status));
+        Assert.Equal(result.TotalCny, coloredKickplate.TotalCny);
+        Assert.Equal(result.Status, coloredKickplate.Status);
         Assert.Equal(6000m, Line("Функция Roller guide shoe").AmountCny);
         Assert.DoesNotContain(result.Warnings, warning => warning.Contains("EI60") && warning.Contains("EI120"));
 

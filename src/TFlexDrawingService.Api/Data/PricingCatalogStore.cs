@@ -1720,7 +1720,8 @@ public sealed class PricingCatalogStore(IWebHostEnvironment environment, IHttpCl
             var code = Field("Kickplate Finish");
             if (EqualsText(code, "SUS-H"))
                 Add("kickplate-finish", "Плинтус кабины: SUS-H, без надбавки по прайсу", 0, 1);
-            else if (Regex.IsMatch(code, @"^ZDT-00[1-6]$", RegexOptions.IgnoreCase))
+            // The confirmed kickplate rate applies to every titanium color.
+            else if (Regex.IsMatch(code, @"^ZDT-\d{3}$", RegexOptions.IgnoreCase))
                 Add("kickplate-finish", $"Плинтус кабины: титановое покрытие {code}, за кабину", 1000, 1);
             else
                 AddSmecPriceOnRequest("kickplate-finish", $"Плинтус кабины: {code}", 1);
